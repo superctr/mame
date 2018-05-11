@@ -24,6 +24,7 @@ public:
 
 protected:
 	// device_t implementation
+	tiny_rom_entry const *device_rom_region() const override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
@@ -48,6 +49,12 @@ private:
 	uint16_t m_dspRoutine;	// offset of currently running update routine
 	uint8_t m_dspRtStep;	// each routine outputs 6 samples before restarting, this indicates the current sample
 	int m_updateFunc;
+	
+	uint16_t m_pan_tables[4][0x62];
+	uint16_t m_lut_09d2[10]; // is this even used?
+	int16_t m_lut_09dc[24];
+	uint16_t m_filter_lut_mode1[5][95];
+	uint16_t m_filter_lut_mode2[95];
 
 	inline int16_t read_sample(uint32_t offset) { return uint16_t(read_byte(offset)) << 8; }
 	void write_data(uint8_t address, uint16_t data);
