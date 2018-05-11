@@ -815,7 +815,7 @@ void qsound_hle_device::dsp_sample_calc_1()	// ROM: 0504
 		curBank = m_ram[chnBase + OFS_CH_BANK];
 		addr = m_ram[chnBase + OFS_CH_RATE] << 4;
 		addr += ((int16_t)m_ram[chnBase + OFS_CH_CUR_ADDR] << 16) | (m_ram[chnBase + OFS_CH_FRAC] << 0);
-		if ((uint16_t)(addr >> 16) >= m_ram[chnBase + OFS_CH_END_ADDR])
+		if ((addr >> 16) >= (int16_t)m_ram[chnBase + OFS_CH_END_ADDR])
 			addr -= (m_ram[chnBase + OFS_CH_LOOP_LEN] << 16);
 		// The DSP's a0/a1 registers are 36 bits. The result is clamped when writing it back to RAM.
 		if (addr > 0x7FFFFFFFLL)
@@ -1039,7 +1039,7 @@ void qsound_hle_device::dsp_sample_calc_2()	// ROM: 08A2
 		curBank = m_ram[chnBase + OFS_CH_BANK];
 		addr = m_ram[chnBase + OFS_CH_RATE] << 4;
 		addr += ((int16_t)m_ram[chnBase + OFS_CH_CUR_ADDR] << 16) | (m_ram[chnBase + OFS_CH_FRAC] << 0);
-		if ((uint16_t)(addr >> 16) >= m_ram[chnBase + OFS_CH_END_ADDR])
+		if ((addr >> 16) >= (int16_t)m_ram[chnBase + OFS_CH_END_ADDR])
 			addr -= (m_ram[chnBase + OFS_CH_LOOP_LEN] << 16);
 		// The DSP's a0/a1 registers are 36 bits. The result is clamped when writing it back to RAM.
 		if (addr > 0x7FFFFFFFLL)
