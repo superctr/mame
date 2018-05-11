@@ -52,7 +52,7 @@ private:
 	
 	uint16_t m_pan_tables[4][0x62];
 	uint16_t m_lut_09d2[10]; // is this even used?
-	int16_t m_lut_09dc[24];
+	int16_t m_adpcm_shift[24];
 	uint16_t m_filter_lut_mode1[5][95];
 	uint16_t m_filter_lut_mode2[95];
 
@@ -71,11 +71,11 @@ private:
 	void dsp_copy_filter_data_2();	// ROM: 004F
 	void dsp_init1();	// ROM: 0288
 	void dsp_init2();	// ROM: 061A
-	void dsp_filter_recalc(uint16_t refreshFlagAddr);	// ROM: 05DD / 099B
+	void dsp_delay_recalc(uint16_t refreshFlagAddr);	// ROM: 05DD / 099B
 	void dsp_update_1();	// ROM: 0314
 	void dsp_update_2();	// ROM: 06B2
-	void dsp_filter_a(uint16_t i1);	// ROM: 0314/036F/03CA
-	void dsp_filter_b(uint16_t i1);	// ROM: 0425/0470/04B4
+	void dsp_update_adpcm_top(uint16_t i1);	// ROM: 0314/036F/03CA
+	void dsp_update_adpcm_bottom(uint16_t i1);	// ROM: 0425/0470/04B4
 	void dsp_sample_calc_1();	// ROM: 0504
 	void dsp_sample_calc_2();	// ROM: 08A2
 	void dsp_run_update();	// ROM: 08A2
