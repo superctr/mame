@@ -465,8 +465,9 @@ void qsound_hle_device::state_refresh_filter_2()
 	m_state = m_next_state = STATE_NORMAL2;
 }
 
-
-int16_t qsound_hle_device::voice_update(struct qsound_voice *v, int32_t *echo_out )
+// Updates a PCM voice. There are 16 voices, each are updated every sample
+// with full rate and volume control.
+int16_t qsound_hle_device::pcm_update(struct qsound_voice *v, int32_t *echo_out)
 {
 	// Read sample from rom and apply volume
 	int16_t output = (v->volume * get_sample(v->bank, v->addr))>>14;
@@ -484,6 +485,57 @@ int16_t qsound_hle_device::voice_update(struct qsound_voice *v, int32_t *echo_ou
 	return output;
 }
 
+// Updates an ADPCM voice. There are 3 voices, one is updated every sample
+// (effectively making the ADPCM rate 1/3 of the master sample rate), and
+// volume is set when starting samples only.
+// The ADPCM algorithm is supposedly similar to Yamaha ADPCM. It also seems
+// like Capcom never used it, so this was not emulated in the earlier QSound
+// emulators.
+void qsound_hle_device::adpcm_update(int voice_no, int nibble)
+{
+	struct qsound_adpcm *v = &m_adpcm[voice_no];
+
+	int8_t step;
+	if(!nibble)
+	{
+		// Mute voice when it reaches the end address.
+		if(v->start_addr == v->end_addr)
+			v->cur_vol = 0;
+		
+		// Playback start flag
+		if(v->flag)
+		{
+			m_voice_output[16+voice_no] = 0;
+			v->flag = 0;
+			v->signal = 10;
+			v->cur_vol = v->volume;
+			v->cur_addr = v->start_addr;
+		}
+		
+		// get top nibble
+		step = get_sample(v->bank, v->cur_addr) >> 8;
+	}
+	else
+	{
+		// get bottom nibble
+		step = get_sample(v->bank, v->cur_addr++) >> 4;
+	}
+
+	// shift with sign extend
+	step >>= 4;
+	
+	// delta = (0.5 + v->step) * v->signal
+	int32_t delta = ((1+(v->step<<1)) * v->signal)>>1;
+	delta += m_voice_output[16+voice_no];
+	
+	m_voice_output[16+voice_no] = (delta * v->cur_vol)>>16;
+	
+	v->signal = (m_adpcm_shift[8+v->step] * v->signal) >> 4;
+	v->signal = CLAMP(v->signal, 1, 2000);
+}
+
+// The echo effect is pretty simple. A moving average filter is used on
+// the output from the delay line to smooth samples over time. 
 int16_t qsound_hle_device::echo(struct qsound_echo *r,int32_t input)
 {
 	// get average of last 2 samples from the delay line
@@ -519,9 +571,10 @@ void qsound_hle_device::state_normal_update()
 	
 	// update PCM voices
 	for(int i=0; i<16; i++)
-		m_voice_output[i] = voice_update(&m_voice[i], &echo_input);
+		m_voice_output[i] = pcm_update(&m_voice[i], &echo_input);
+
 	// update ADPCM voices (one every third sample)
-	//...
+	adpcm_update(m_state_counter % 3, m_state_counter / 3);
 	
 	echo_output = echo(&m_echo,echo_input);
 	
@@ -596,7 +649,7 @@ int32_t qsound_hle_device::fir(struct qsound_fir *f, int16_t input)
 	return output;
 }
 
-// Apply delay line
+// Apply delay line and component volume
 int32_t qsound_hle_device::delay(struct qsound_delay *d, int32_t input)
 {
 	d->delay_line[d->write_pos++] = input>>16;

@@ -139,7 +139,9 @@ private:
 	int16_t* get_filter_table_1(uint16_t offset);
 	int16_t* get_filter_table_2(uint16_t offset);
 
-	int16_t voice_update(struct qsound_voice *v, int32_t *echo_out );
+	int16_t pcm_update(struct qsound_voice *v, int32_t *echo_out);
+	void adpcm_update(int voice_no, int nibble);
+	
 	int16_t echo(struct qsound_echo *r,int32_t input);
 	void main_update();
 	int32_t fir(struct qsound_fir *f, int16_t input);
