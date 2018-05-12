@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Valley Bell
+// copyright-holders:superctr, Valley Bell
 /*********************************************************
 
     QSound DL-1425 (HLE)
@@ -36,49 +36,115 @@ protected:
 
 private:
 
+	struct qsound_voice {
+		uint16_t bank;
+		int16_t addr; // top word is the sample address
+		uint16_t phase;
+		uint16_t rate;
+		int16_t loop_len;
+		int16_t end_addr;
+		int16_t volume;
+		int16_t echo;
+	};
+
+	struct qsound_adpcm {
+		uint16_t start_addr;
+		uint16_t end_addr;
+		uint16_t bank;
+		int16_t volume;
+		uint16_t flag;
+		int16_t cur_vol;
+		int16_t signal;
+		int16_t cur_addr;
+		int16_t step;
+	};
+
+	// Q1 Filter
+	struct qsound_fir {
+		int tap_count;	// usually 95
+		int delay_pos;
+		int16_t table_pos;
+		int16_t taps[95];
+		int16_t delay_line[95];
+	};
+
+	// Delay line
+	struct qsound_delay {
+		int16_t delay;
+		int16_t volume;
+		int16_t write_pos;
+		int16_t read_pos;
+		int16_t delay_line[51];
+	};
+
+	struct qsound_echo {
+		uint16_t end_pos;
+		
+		int16_t feedback;
+		int16_t length;
+		int16_t last_sample;
+		int16_t delay_line[1024];
+		int16_t delay_pos;
+	};
+
 	// MAME resources
 	sound_stream *m_stream;
 
-	uint16_t m_ram[0x800];	// DSP RAM, 2048 words, 16-bit each
-	int16_t m_testInc;	// test mode increment (Y register)
-	int16_t m_testOut;	// test mode output value (A0 register)
-	uint16_t m_dataLatch;
-	uint8_t m_busyState;
+	uint16_t m_data_latch;
 	int16_t m_out[2];
-	
-	uint16_t m_dspRoutine;	// offset of currently running update routine
-	uint8_t m_dspRtStep;	// each routine outputs 6 samples before restarting, this indicates the current sample
-	int m_updateFunc;
-	
-	uint16_t m_pan_tables[4][0x62];
-	uint16_t m_lut_09d2[10]; // is this even used?
+
+	int16_t m_pan_tables[2][2][98];
 	int16_t m_adpcm_shift[24];
 	uint16_t m_filter_lut_mode1[5][95];
 	uint16_t m_filter_lut_mode2[95];
-
-	inline int16_t read_sample(uint32_t offset) { return uint16_t(read_byte(offset)) << 8; }
-	void write_data(uint8_t address, uint16_t data);
 	
+	qsound_voice m_voice[16];
+	qsound_adpcm m_adpcm[3];
+
+	uint16_t m_voice_pan[16+3];
+	int16_t m_voice_output[16+3];
+
+	qsound_echo m_echo;
+
+	qsound_fir m_filter[2];
+	qsound_fir m_alt_filter[2];
+	
+	qsound_delay m_wet[2];
+	qsound_delay m_dry[2];
+	
+	uint16_t m_state;
+	uint16_t m_next_state;
+	
+	uint16_t m_delay_update;
+	
+	int m_state_counter;
+	int m_ready_flag;
+	
+	uint16_t *register_map[256];
+
+	void write_data(uint8_t addr, uint16_t data);
+	uint16_t read_data(uint8_t addr);
+
+	void init_register_map();
+	void update_sample();
+
+	// DSP states
+	void state_init();
+	void state_refresh_filter_1();
+	void state_refresh_filter_2();
+	void state_normal_update();
+
+	// sub functions
+	int16_t get_sample(uint16_t bank,uint16_t address);
 	int16_t* get_filter_table_1(uint16_t offset);
 	int16_t* get_filter_table_2(uint16_t offset);
-	int16_t dsp_get_sample(uint16_t bank, uint16_t ofs);
-	inline void INC_MODULO(uint16_t* reg, uint16_t rb, uint16_t re);
-	inline int32_t DSP_ROUND(int32_t value);
-	void dsp_do_update_step();
-	void dsp_update_delay();
-	void dsp_update_test();	// ROM: 0018
-	void dsp_copy_filter_data_1();	// ROM: 0039
-	void dsp_copy_filter_data_2();	// ROM: 004F
-	void dsp_init1();	// ROM: 0288
-	void dsp_init2();	// ROM: 061A
-	void dsp_delay_recalc(uint16_t refreshFlagAddr);	// ROM: 05DD / 099B
-	void dsp_update_1();	// ROM: 0314
-	void dsp_update_2();	// ROM: 06B2
-	void dsp_update_adpcm_top(uint16_t i1);	// ROM: 0314/036F/03CA
-	void dsp_update_adpcm_bottom(uint16_t i1);	// ROM: 0425/0470/04B4
-	void dsp_sample_calc_1();	// ROM: 0504
-	void dsp_sample_calc_2();	// ROM: 08A2
-	void dsp_run_update();	// ROM: 08A2
+
+	int16_t voice_update(struct qsound_voice *v, int32_t *echo_out );
+	int16_t echo(struct qsound_echo *r,int32_t input);
+	void main_update();
+	int32_t fir(struct qsound_fir *f, int16_t input);
+	int32_t delay(struct qsound_delay *q, int32_t input);
+	void delay_update(struct qsound_delay *q);
 
 };
 
