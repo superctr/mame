@@ -337,7 +337,6 @@ void qsound_hle_device::update_sample()
 		case STATE_INIT1:
 		case STATE_INIT2:
 			return state_init();
-			return state_init();
 		case STATE_REFRESH1:
 			return state_refresh_filter_1();
 		case STATE_REFRESH2:
