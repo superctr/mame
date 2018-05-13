@@ -106,6 +106,17 @@ void qsound_hle_device::device_start()
 		save_item(NAME(m_voice[j].echo),j);
 	}
 	
+	for(int j=0;j<16;j++) // ADPCM voices
+	{
+		save_item(NAME(m_adpcm[j].start_addr),j);
+		save_item(NAME(m_adpcm[j].end_addr),j);
+		save_item(NAME(m_adpcm[j].bank),j);
+		save_item(NAME(m_adpcm[j].volume),j);
+		save_item(NAME(m_adpcm[j].flag),j);
+		save_item(NAME(m_adpcm[j].cur_vol),j);
+		save_item(NAME(m_adpcm[j].signal),j);
+	}
+	
 	// QSound registers
 	save_item(NAME(m_echo.end_pos));
 	save_item(NAME(m_echo.feedback));
@@ -525,13 +536,15 @@ void qsound_hle_device::adpcm_update(int voice_no, int nibble)
 	// shift with sign extend
 	step >>= 4;
 	
-	// delta = (0.5 + v->step) * v->signal
-	int32_t delta = ((1+(v->step<<1)) * v->signal)>>1;
+	// delta = (0.5 + abs(v->step)) * v->signal
+	int32_t delta = ((1+abs(step<<1)) * v->signal)>>1;
+	if(step <= 0)
+		delta = -delta;
 	delta += m_voice_output[16+voice_no];
 	
 	m_voice_output[16+voice_no] = (delta * v->cur_vol)>>16;
 	
-	v->signal = (m_adpcm_shift[8+v->step] * v->signal) >> 4;
+	v->signal = (m_adpcm_shift[8+step] * v->signal) >> 4;
 	v->signal = CLAMP(v->signal, 1, 2000);
 }
 
