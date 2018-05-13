@@ -484,15 +484,14 @@ int16_t qsound_hle_device::pcm_update(struct qsound_voice *v, int32_t *echo_out)
 	*echo_out += (output * v->echo)<<2;
 	
 	// Add delta to the phase and loop back if required
-	int64_t new_phase = (v->addr<<16) | (v->phase&0xffff);
-	new_phase += v->rate<<4;
+	int32_t new_phase = v->rate + ((v->addr<<12) | (v->phase>>4));
 	
-	if((new_phase>>16) >= v->end_addr)
-		new_phase -= (v->loop_len<<16);
+	if((new_phase>>12) >= v->end_addr)
+		new_phase -= (v->loop_len<<12);
 
-	new_phase = CLAMP(new_phase, -0x80000000LL, 0x7FFFFFFFLL);
-	v->addr = new_phase>>16;
-	v->phase = new_phase&0xffff;
+	new_phase = CLAMP(new_phase, -0x8000000, 0x7FFFFFF);
+	v->addr = new_phase>>12;
+	v->phase = (new_phase<<4)&0xffff;
 	
 	return output;
 }

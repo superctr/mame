@@ -56,7 +56,6 @@ private:
 		int16_t cur_vol;
 		int16_t signal;
 		int16_t cur_addr;
-		int16_t step;
 	};
 
 	// Q1 Filter
