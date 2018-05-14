@@ -94,8 +94,8 @@ private:
 
 	int16_t m_pan_tables[2][2][98];
 	int16_t m_adpcm_shift[24];
-	uint16_t m_filter_lut_mode1[5][95];
-	uint16_t m_filter_lut_mode2[95];
+	uint16_t m_filter_data[5][95];
+	uint16_t m_filter_data2[209]; // Overlapping data (95+19+95)
 	
 	qsound_voice m_voice[16];
 	qsound_adpcm m_adpcm[3];
@@ -135,8 +135,7 @@ private:
 
 	// sub functions
 	int16_t get_sample(uint16_t bank,uint16_t address);
-	int16_t* get_filter_table_1(uint16_t offset);
-	int16_t* get_filter_table_2(uint16_t offset);
+	int16_t* get_filter_table(uint16_t offset);
 
 	int16_t pcm_update(struct qsound_voice *v, int32_t *echo_out);
 	void adpcm_update(int voice_no, int nibble);

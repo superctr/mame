@@ -7,10 +7,7 @@
 
   Driver by superctr with thanks to Valley Bell.
 
-  based on disassembled DSP code...
-
-  TODO:
-  - structure variables
+  Based on disassembled DSP code.
 
   Links:
   https://siliconpr0n.org/map/capcom/dl-1425
@@ -87,8 +84,8 @@ void qsound_hle_device::device_start()
 	uint16_t *dsp_rom = (uint16_t*)memregion("dsp")->base();
 	memcpy(m_pan_tables, &dsp_rom[0x110], sizeof(m_pan_tables));
 	memcpy(m_adpcm_shift, &dsp_rom[0x9dc], sizeof(m_adpcm_shift));
-	memcpy(m_filter_lut_mode1, &dsp_rom[0xd53], sizeof(m_filter_lut_mode1));
-	memcpy(m_filter_lut_mode2, &dsp_rom[0xf73], sizeof(m_filter_lut_mode2));
+	memcpy(m_filter_data, &dsp_rom[0xd53], sizeof(m_filter_data));
+	memcpy(m_filter_data2, &dsp_rom[0xf2e], sizeof(m_filter_data2));
 
 	init_register_map();
 	
@@ -312,29 +309,18 @@ int16_t qsound_hle_device::get_sample(uint16_t bank,uint16_t address)
 	return (int16_t)((sample_data << 8) | (sample_data << 0));	// MAME currently expands the 8 bit ROM data to 16 bits this way.
 }
 
-int16_t* qsound_hle_device::get_filter_table_1(uint16_t offset)
+int16_t* qsound_hle_device::get_filter_table(uint16_t offset)
 {
-	size_t index;
+	int index;
 	
-	if (offset < 0x0D53)
-		return NULL;
-	offset -= 0x0D53;
-	if ((offset % 95) > 0)
-		return NULL;
-	index = offset / 95;
-	if (index >= 5)
-		return NULL;
-	return (int16_t*)&m_filter_lut_mode1[index];	// return beginning of one of the tables
-}
-
-int16_t* qsound_hle_device::get_filter_table_2(uint16_t offset)
-{
-	if (offset < 0x0F73)
-		return NULL;
-	offset -= 0x0F73;
-	if (offset >= 95)
-		return NULL;
-	return (int16_t*)&m_filter_lut_mode2[offset];	// return pointer to table data
+	if (offset >= 0xf2e && offset < 0xfff)
+		return (int16_t*)&m_filter_data2[offset-0xf2e];	// overlapping filter data
+	
+	index = (offset-0xd53)/95;
+	if(index >= 0 && index < 5)
+		return (int16_t*)&m_filter_data[index];	// normal tables
+	
+	return NULL;	// no filter found.
 }
 
 /********************************************************************/
@@ -442,7 +428,7 @@ void qsound_hle_device::state_refresh_filter_1()
 		m_filter[ch].delay_pos = 0;
 		m_filter[ch].tap_count = 95;
 	
-		table = get_filter_table_1(m_filter[ch].table_pos);
+		table = get_filter_table(m_filter[ch].table_pos);
 		if (table != NULL)
 			memcpy(m_filter[ch].taps, table, 95 * sizeof(int16_t));
 	}
@@ -460,14 +446,14 @@ void qsound_hle_device::state_refresh_filter_2()
 		m_filter[ch].delay_pos = 0;
 		m_filter[ch].tap_count = 45;
 	
-		table = get_filter_table_2(m_filter[ch].table_pos);
+		table = get_filter_table(m_filter[ch].table_pos);
 		if (table != NULL)
 			memcpy(m_filter[ch].taps, table, 45 * sizeof(int16_t));
 		
 		m_alt_filter[ch].delay_pos = 0;
 		m_alt_filter[ch].tap_count = 44;
 	
-		table = get_filter_table_2(m_filter[ch].table_pos);
+		table = get_filter_table(m_filter[ch].table_pos);
 		if (table != NULL)
 			memcpy(m_alt_filter[ch].taps, table, 44 * sizeof(int16_t));
 	}
