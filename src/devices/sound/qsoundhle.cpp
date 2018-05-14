@@ -529,7 +529,7 @@ void qsound_hle_device::adpcm_update(int voice_no, int nibble)
 	
 	m_voice_output[16+voice_no] = (delta * v->cur_vol)>>16;
 	
-	v->signal = (m_adpcm_shift[8+step] * v->signal) >> 4;
+	v->signal = (m_adpcm_shift[8+step] * v->signal) >> 6;
 	v->signal = CLAMP(v->signal, 1, 2000);
 }
 
