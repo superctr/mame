@@ -526,6 +526,7 @@ void qsound_hle_device::adpcm_update(int voice_no, int nibble)
 	if(step <= 0)
 		delta = -delta;
 	delta += m_voice_output[16+voice_no];
+	delta = CLAMP(delta,-32768,32767);
 	
 	m_voice_output[16+voice_no] = (delta * v->cur_vol)>>16;
 	

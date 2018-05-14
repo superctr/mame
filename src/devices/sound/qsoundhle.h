@@ -134,17 +134,16 @@ private:
 	void state_normal_update();
 
 	// sub functions
-	int16_t get_sample(uint16_t bank,uint16_t address);
-	int16_t* get_filter_table(uint16_t offset);
+	inline int16_t get_sample(uint16_t bank,uint16_t address);
+	inline int16_t* get_filter_table(uint16_t offset);
 
-	int16_t pcm_update(struct qsound_voice *v, int32_t *echo_out);
-	void adpcm_update(int voice_no, int nibble);
+	inline int16_t pcm_update(struct qsound_voice *v, int32_t *echo_out);
+	inline void adpcm_update(int voice_no, int nibble);
 	
-	int16_t echo(struct qsound_echo *r,int32_t input);
-	void main_update();
-	int32_t fir(struct qsound_fir *f, int16_t input);
-	int32_t delay(struct qsound_delay *q, int32_t input);
-	void delay_update(struct qsound_delay *q);
+	inline int16_t echo(struct qsound_echo *r,int32_t input);
+	inline int32_t fir(struct qsound_fir *f, int16_t input);
+	inline int32_t delay(struct qsound_delay *q, int32_t input);
+	inline void delay_update(struct qsound_delay *q);
 
 };
 
