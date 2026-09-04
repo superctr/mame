@@ -317,12 +317,13 @@ void sh7014_sci_device::update_data_format()
 		return;
 	}
 
-	// Async
+	// Async.  CHR 0 is eight data bits and STOP 0 one stop bit; the parity mode bit picks even or odd
+	// and is only consulted when PE enables parity at all, which multiprocessor mode overrides.
 	set_data_frame(
 		1,
-		(m_smr & SMR_CHR) ? 8 : 7,
-		(m_smr & SMR_MP) ? PARITY_NONE : ((m_smr & SMR_PE) ? PARITY_ODD : PARITY_EVEN), // Multiprocessor mode does not use parity
-		(m_smr & SMR_STOP) ? STOP_BITS_1 : STOP_BITS_2
+		(m_smr & SMR_CHR) ? 7 : 8,
+		((m_smr & (SMR_MP | SMR_PE)) != SMR_PE) ? PARITY_NONE : ((m_smr & SMR_OE) ? PARITY_ODD : PARITY_EVEN),
+		(m_smr & SMR_STOP) ? STOP_BITS_2 : STOP_BITS_1
 	);
 }
 
@@ -354,7 +355,8 @@ void sh7014_sci_device::update_clock()
 		case INTERNAL_ASYNC_OUT:
 		case INTERNAL_SYNC_OUT:
 		{
-			int divider = (1 << (2 * (m_smr & SMR_CKS))) * (m_brr + 1);
+			// phi / (64 x 2^(2n-1) x (N + 1)) asynchronous, phi / (8 x 2^(2n-1) x (N + 1)) synchronous
+			int divider = (1 << (2 * (m_smr & SMR_CKS))) * (m_brr + 1) * ((m_smr & SMR_CA) ? 4 : 32);
 			clock_speed = attotime::from_ticks(divider, clock());
 		}
 		break;

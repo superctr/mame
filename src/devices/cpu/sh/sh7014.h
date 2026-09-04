@@ -29,6 +29,10 @@ public:
 		return m_sci[Sci].lookup()->write_sci_tx();
 	}
 
+	template<int Sci> void sci_rx_w(int state) {
+		m_sci[Sci]->rx_w(state);
+	}
+
 	template<int Sci> void sci_set_external_clock_period(const attotime &period) {
 		m_sci[Sci].lookup()->set_external_clock_period(period);
 	}
