@@ -17,6 +17,7 @@
 #include "sh_mtu.h"
 #include "sh_port.h"
 #include "sh_sci.h"
+#include "sh_wdt.h"
 
 class sh7042_device : public sh2_device
 {
@@ -116,6 +117,7 @@ private:
 	required_device<sh_port16_device> m_porte;
 	required_device<sh_port16_device> m_portf;
 	required_device_array<sh_sci_device, 2> m_sci;
+	required_device<sh_wdt_device> m_wdt;
 
 	devcb_read16::array<8> m_read_adc;
 	devcb_write_line::array<2> m_sci_tx, m_sci_clk;

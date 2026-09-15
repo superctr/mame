@@ -60,6 +60,7 @@ sh7042_device::sh7042_device(const machine_config &mconfig, device_type type, co
 	m_porte(*this, "porte"),
 	m_portf(*this, "portf"),
 	m_sci(*this, "sci%d", 0),
+	m_wdt(*this, "wdt"),
 	m_read_adc(*this, 0),
 	m_sci_tx(*this),
 	m_sci_clk(*this),
@@ -273,6 +274,7 @@ void sh7042_device::map(address_map &map)
 	map(0xffff862c, 0xffff862d).rw(m_bsc, FUNC(sh_bsc_device::rtcsr_r), FUNC(sh_bsc_device::rtcsr_w));
 	map(0xffff862e, 0xffff862f).rw(m_bsc, FUNC(sh_bsc_device::rtcnt_r), FUNC(sh_bsc_device::rtcnt_w));
 	map(0xffff8630, 0xffff8631).rw(m_bsc, FUNC(sh_bsc_device::rtcor_r), FUNC(sh_bsc_device::rtcor_w));
+	map(0xffff8610, 0xffff8613).m(m_wdt, FUNC(sh_wdt_device::map));
 	map(0xffff86b0, 0xffff86b1).rw(m_dmac, FUNC(sh_dmac_device::dmaor_r), FUNC(sh_dmac_device::dmaor_w));
 	map(0xffff86c0, 0xffff86c3).rw(m_dmac0, FUNC(sh_dmac_channel_device::sar_r), FUNC(sh_dmac_channel_device::sar_w));
 	map(0xffff86c4, 0xffff86c7).rw(m_dmac0, FUNC(sh_dmac_channel_device::dar_r), FUNC(sh_dmac_channel_device::dar_w));
@@ -305,6 +307,8 @@ void sh7042_device::device_add_mconfig(machine_config &config)
 	SH_BSC(config, m_bsc);
 	SH_CMT(config, m_cmt, *this, m_intc, 144, 148);
 	SH_DMAC(config, m_dmac, *this);
+	// the interval timer interrupt is vector 152
+	SH_WDT(config, m_wdt, DERIVED_CLOCK(1, 1), m_intc, 152);
 	SH_DMAC_CHANNEL(config, m_dmac0, *this, m_intc, m_dmac, 0);
 	SH_DMAC_CHANNEL(config, m_dmac1, *this, m_intc, m_dmac, 1);
 	SH_DMAC_CHANNEL(config, m_dmac2, *this, m_intc, m_dmac, 2);
