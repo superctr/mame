@@ -51,10 +51,17 @@
     bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
     selects), which nothing answers yet.
 
+    The XV-3080 plays MIDI once its battery SRAM holds a factory reset
+    (UTILITY, cursor right to UTIL 2, FACTORY RESET, ENTER, DEC to lift the
+    write protect, ENTER, ENTER, ENTER); on a blank SRAM it boots to "User
+    Memory Damaged" and no part takes a note.  Its main outputs are the
+    XP's port B; where the other two DACs' ports go is not settled, and
+    which DAC each chip feeds is read from nothing yet.
+
     Not done: the XV chips are their host interface only (sound/roland_xv),
-    which answers the memory scan and the interrupt path but plays nothing;
-    the panel matrix is unnamed, neither wave ROM is dumped (the
-    descrambled set stands in), and MIDI is untested.
+    which answers the memory scan and the interrupt path but plays nothing,
+    and the XV-5080's panel is unnamed; neither wave ROM is dumped (the
+    descrambled set stands in).
 
 ****************************************************************************/
 
@@ -526,11 +533,16 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x01000000, 0x013fffff).ram();
 }
 
-// the two mask ROMs are the XP's chip selects 2 and 3: the firmware's wave
-// scan reads regions 0x20 to 0x3f, then 0x40 and 0x60 for the expansion
-// slots.  The descrambled set is flat, its 32 regions of 1 MB in order.
+// the voices fetch from the two mask ROMs at the address the firmware
+// writes, the set's own offsets from 0, and the four expansion slots begin
+// at 0x2000000; the firmware's wave scan reads the same two ROMs through
+// the aperture at banks 0x20 to 0x3f (with 0x40 and 0x60 for the slots), so
+// the aperture's bank is not the voice's region and the set answers at
+// both until the board's decode of the two is read.  The descrambled set is
+// flat, its 32 regions of 1 MB in order.
 void xv3080_state::xp_rom_map(address_map &map)
 {
+	map(0x0000000, 0x1ffffff).rom().region("waverom", 0);
 	map(0x2000000, 0x3ffffff).rom().region("waverom", 0);
 }
 
@@ -556,80 +568,64 @@ void xv3080_state::lcd_palette(palette_device &palette) const
 //-------------------------------------------------
 
 static INPUT_PORTS_START(xv3080)
-	// the key matrix as the gate array codes it, row in bits 5-3 and column
-	// in bits 2-0; the names are not known yet
+	// the switch matrix of the panel boards (service notes page 28), coded
+	// by the gate array as the scan line YSS0-YSS5 in bits 5-3 and the data
+	// line PD0-PD7 in bits 2-0; sixteen of the codes checked against the
+	// display, the rest follow the schematic
 	PORT_START("KEY0")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 00")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 01")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 02")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 03")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 04")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 05")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 06")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 07")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exp")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Card")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("User")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("GS")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rhythm")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Perform")
 	PORT_START("KEY1")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 08")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 09")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0a")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0b")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0c")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0d")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0e")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 0f")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("8/16")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("7/15")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("6/14")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("5/13")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("4/12")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("3/11")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("2/10")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("1/9")
 	PORT_START("KEY2")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 10")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 11")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 12")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 13")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 14")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 15")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 16")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 17")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_ESC)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Edit")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Utility") PORT_CODE(KEYCODE_U)
+	PORT_BIT(0x3c, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_START("KEY3")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 18")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 19")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1a")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1b")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1c")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1d")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1e")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 1f")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Part Select")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("MIDI Message")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Dec") PORT_CODE(KEYCODE_MINUS_PAD)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inc") PORT_CODE(KEYCODE_PLUS_PAD)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch Finder")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_START("KEY4")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 20")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 21")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 22")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 23")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 24")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 25")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 26")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 27")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Undo")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x03, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_START("KEY5")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 28")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 29")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2a")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2b")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2c")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2d")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2e")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 2f")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("TVA")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("TVF")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch (tone)")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("LFO")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Wave")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Control")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects (tone)")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Common")
 	PORT_START("KEY6")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 30")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 31")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 32")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 33")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 34")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 35")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 36")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 37")
+	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_START("KEY7")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 38")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 39")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3a")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3b")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3c")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3d")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3e")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Key 3f")
+	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
 
 	PORT_START("VALUE")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_SENSITIVITY(25) PORT_KEYDELTA(4) PORT_CODE_DEC(KEYCODE_MINUS) PORT_CODE_INC(KEYCODE_EQUALS) PORT_NAME("Value")
@@ -699,14 +695,14 @@ void xv3080_state::xv3080(machine_config &config)
 	ROLAND_XP(config, m_xp[0], 24.576_MHz_XTAL);
 	m_xp[0]->set_addrmap(roland_xp_device::AS_WAVE, &xv3080_state::xp_rom_map);
 	m_xp[0]->int_callback().set_inputline(m_maincpu, 1);
-	m_xp[0]->add_route(2, "speaker", 1.0, 0);
-	m_xp[0]->add_route(3, "speaker", 1.0, 1);
+	m_xp[0]->add_route(0, "speaker", 1.0, 0); // port B is OUTPUT 1/2 and the headphones
+	m_xp[0]->add_route(1, "speaker", 1.0, 1);
 
 	ROLAND_XP(config, m_xp[1], 24.576_MHz_XTAL);
 	m_xp[1]->set_addrmap(roland_xp_device::AS_WAVE, &xv3080_state::xp_rom_map);
 	m_xp[1]->int_callback().set_inputline(m_maincpu, 2);
-	m_xp[1]->add_route(2, "speaker", 1.0, 0);
-	m_xp[1]->add_route(3, "speaker", 1.0, 1);
+	m_xp[1]->add_route(0, "speaker", 1.0, 0);
+	m_xp[1]->add_route(1, "speaker", 1.0, 1);
 }
 
 void xv5080_state::xv5080(machine_config &config)
@@ -787,5 +783,5 @@ ROM_END
 
 
 //    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY   FULLNAME   FLAGS
-SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", MACHINE_NOT_WORKING )
 SYST( 2000, xv5080, 0,      0,      xv5080,  xv3080, xv5080_state, empty_init, "Roland", "XV-5080", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
