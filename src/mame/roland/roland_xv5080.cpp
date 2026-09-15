@@ -51,9 +51,10 @@
     bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
     selects), which nothing answers yet.
 
-    Not done: the XV chips are a logged register window that answers the
-    busy flag only, the panel matrix is unnamed, neither wave ROM is
-    dumped (the descrambled set stands in), and MIDI is untested.
+    Not done: the XV chips are their host interface only (sound/roland_xv),
+    which answers the memory scan and the interrupt path but plays nothing;
+    the panel matrix is unnamed, neither wave ROM is dumped (the
+    descrambled set stands in), and MIDI is untested.
 
 ****************************************************************************/
 
@@ -64,6 +65,7 @@
 #include "cpu/sh/sh7042.h"
 #include "machine/nvram.h"
 #include "sound/roland_xp.h"
+#include "sound/roland_xv.h"
 #include "video/hd44780.h"
 #include "video/sed1330.h"
 
@@ -74,9 +76,8 @@
 #include <algorithm>
 
 #define LOG_GA      (1U << 1)
-#define LOG_XV      (1U << 2)
 
-#define VERBOSE (LOG_GENERAL | LOG_GA | LOG_XV)
+#define VERBOSE (LOG_GENERAL | LOG_GA)
 #include "logmacro.h"
 
 
@@ -154,7 +155,9 @@ class xv5080_state : public xv3080_state
 public:
 	xv5080_state(const machine_config &mconfig, device_type type, const char *tag)
 		: xv3080_state(mconfig, type, tag)
+		, m_xv(*this, "xv%u", 0U)
 		, m_lcdc(*this, "lcdc")
+		, m_waverom(*this, "waverom")
 	{
 	}
 
@@ -166,13 +169,14 @@ protected:
 	virtual u8 ga_switches_r(u8 reg) override;
 
 	void xv5080_map(address_map &map) ATTR_COLD;
+	void xv_wave_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 
-	template <int Chip> u8 xv_r(offs_t offset);
-	template <int Chip> void xv_w(offs_t offset, u8 data);
+	u16 wave_rom_r(offs_t offset);
 
+	required_device_array<roland_xv_device, 2> m_xv;
 	required_device<sed1330_device> m_lcdc;
-	u8 m_xv_regs[2][0x200]{};
+	required_region_ptr<u8> m_waverom;
 };
 
 
@@ -242,13 +246,11 @@ void xv3080_state::machine_reset()
 void xv5080_state::machine_start()
 {
 	xv3080_state::machine_start();
-	save_item(NAME(m_xv_regs));
 }
 
 void xv5080_state::machine_reset()
 {
 	xv3080_state::machine_reset();
-	std::fill(&m_xv_regs[0][0], &m_xv_regs[0][0] + sizeof(m_xv_regs), 0);
 }
 
 
@@ -483,29 +485,20 @@ void xv3080_state::ga_w(offs_t offset, u8 data)
 
 
 //-------------------------------------------------
-//  the XV-5080's tone generators: a 512 byte window each, byte wide, the
-//  registers 16 bits wide and big endian.  Logged as words on the odd byte.
-//  The boot ROM's access routine waits for bit 6 of register 0x1b to clear
-//  after each transfer, a thousand polls at most: the chip's busy flag.
+//  the XV-5080's wave memory as its chips see it: the two mask ROMs one
+//  byte a cell at 0x02000000, and the chip's own 1M x 16 DRAM (IC18,
+//  IC19) at 0x0c000000, repeating up to the next bank
 //-------------------------------------------------
 
-template <int Chip> u8 xv5080_state::xv_r(offs_t offset)
+u16 xv5080_state::wave_rom_r(offs_t offset)
 {
-	const u16 reg = offset & 0x1ff;
-	u8 data = m_xv_regs[Chip][reg];
-	if (reg == 0x37)
-		data &= ~0x40;
-	if (!machine().side_effects_disabled() && (reg & 1))
-		LOGMASKED(LOG_XV, "%s: XV%d rd %02x = %04x\n", machine().describe_context(), Chip, reg >> 1, (m_xv_regs[Chip][reg & ~1] << 8) | data);
-	return data;
+	return m_waverom[offset & 0x1ffffff];
 }
 
-template <int Chip> void xv5080_state::xv_w(offs_t offset, u8 data)
+void xv5080_state::xv_wave_map(address_map &map)
 {
-	const u16 reg = offset & 0x1ff;
-	m_xv_regs[Chip][reg] = data;
-	if (reg & 1)
-		LOGMASKED(LOG_XV, "%s: XV%d wr %02x = %04x\n", machine().describe_context(), Chip, reg >> 1, (m_xv_regs[Chip][reg & ~1] << 8) | data);
+	map(0x02000000, 0x03ffffff).r(FUNC(xv5080_state::wave_rom_r));
+	map(0x0c000000, 0x0c0fffff).mirror(0x00f00000).ram();
 }
 
 
@@ -533,8 +526,8 @@ void xv3080_state::xv3080_map(address_map &map)
 void xv5080_state::xv5080_map(address_map &map)
 {
 	common_map(map);
-	map(0x00200000, 0x002001ff).mirror(0x0007fe00).rw(FUNC(xv5080_state::xv_r<0>), FUNC(xv5080_state::xv_w<0>));
-	map(0x00280000, 0x002801ff).mirror(0x0007fe00).rw(FUNC(xv5080_state::xv_r<1>), FUNC(xv5080_state::xv_w<1>));
+	map(0x00200000, 0x002001ff).mirror(0x0007fe00).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	map(0x00280000, 0x002801ff).mirror(0x0007fe00).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x005c0000, 0x005c0000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
 	map(0x005c0001, 0x005c0001).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
 	map(0x01000000, 0x013fffff).ram();
@@ -743,6 +736,18 @@ void xv5080_state::xv5080(machine_config &config)
 	m_lcdc->set_addrmap(0, &xv5080_state::lcdc_map);
 
 	SPEAKER(config, "speaker", 2).front();
+
+	ROLAND_XV(config, m_xv[0], 0);
+	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
+	m_xv[0]->int_callback().set_inputline(m_maincpu, 1);
+	m_xv[0]->add_route(0, "speaker", 1.0, 0);
+	m_xv[0]->add_route(1, "speaker", 1.0, 1);
+
+	ROLAND_XV(config, m_xv[1], 0);
+	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
+	m_xv[1]->int_callback().set_inputline(m_maincpu, 2);
+	m_xv[1]->add_route(0, "speaker", 1.0, 0);
+	m_xv[1]->add_route(1, "speaker", 1.0, 1);
 }
 
 
