@@ -17,7 +17,8 @@
     - IC6/IC84 uPD431000 SRAM, 256 kB, battery backed
     - IC5 VG2618165 DRAM, 2 MB; IC95/IC96 LC324260 are the XPs' effect RAM
     - IC1 LH28F160S5T program flash, 2 MB
-    - IC26/IC29 uPD23C128040 wave mask ROMs, 16 MB each (undumped)
+    - IC26/IC29 uPD23C128040 wave mask ROMs, 16 MB each (undumped; the
+      set is in hand descrambled, see the ROM definitions)
     - IC71/IC74/IC79 AK4324 DACs
     - a 40 x 2 character LCD (L4052B1J000) behind the gate array
 
@@ -52,7 +53,7 @@
 
     Not done: the XV chips are a logged register window that answers the
     busy flag only, the panel matrix is unnamed, neither wave ROM is
-    dumped, and MIDI is untested.
+    dumped (the descrambled set stands in), and MIDI is untested.
 
 ****************************************************************************/
 
@@ -539,11 +540,12 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x01000000, 0x013fffff).ram();
 }
 
-// the XP's chip selects 0 and 1 are the two mask ROMs, 16 bits wide
+// the two mask ROMs are the XP's chip selects 2 and 3: the firmware's wave
+// scan reads regions 0x20 to 0x3f, then 0x40 and 0x60 for the expansion
+// slots.  The descrambled set is flat, its 32 regions of 1 MB in order.
 void xv3080_state::xp_rom_map(address_map &map)
 {
-	map(0x0000000, 0x0ffffff).rom().region("waverom", 0x0000000);
-	map(0x1000000, 0x1ffffff).rom().region("waverom", 0x1000000);
+	map(0x2000000, 0x3ffffff).rom().region("waverom", 0);
 }
 
 void xv5080_state::lcdc_map(address_map &map)
@@ -758,6 +760,10 @@ ROM_START(xv3080)
 	ROM_REGION(0x2000000, "waverom", ROMREGION_ERASE00)
 	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, NO_DUMP)
 	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, NO_DUMP)
+	// the pair as Roland's JV-1080 and SRX plugins carry it: the 32 MB
+	// wave set descrambled, one header ("XV3080ROM_Ver001", 1999-10-13)
+	// at the front, where the two chips meet not marked
+	ROM_LOAD("xv3080rom_ver001.bin", 0x0000000, 0x2000000, BAD_DUMP CRC(34e32c1a) SHA1(258f124ae67e4da4a0ae332c4bac79bb96acaf29))
 ROM_END
 
 ROM_START(xv5080)
@@ -770,6 +776,10 @@ ROM_START(xv5080)
 	ROM_REGION(0x2000000, "waverom", ROMREGION_ERASE00)
 	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, NO_DUMP)
 	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, NO_DUMP)
+	// the pair as Roland's JV-1080 and SRX plugins carry it: the 32 MB
+	// wave set descrambled, one header ("XV3080ROM_Ver001", 1999-10-13)
+	// at the front, where the two chips meet not marked
+	ROM_LOAD("xv3080rom_ver001.bin", 0x0000000, 0x2000000, BAD_DUMP CRC(34e32c1a) SHA1(258f124ae67e4da4a0ae332c4bac79bb96acaf29))
 
 	ROM_REGION(0x8000, "iomcu", 0)
 	ROM_LOAD("m38881m2-069fp.ic107", 0x0000, 0x8000, NO_DUMP)
