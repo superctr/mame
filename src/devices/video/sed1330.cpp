@@ -46,8 +46,8 @@
 
 
 #define MX_OR                       0x00
-#define MX_XOR                      0x01    // unimplemented
-#define MX_AND                      0x02    // unimplemented
+#define MX_XOR                      0x01
+#define MX_AND                      0x02
 #define MX_PRIORITY_OR              0x03    // unimplemented
 
 
@@ -80,10 +80,12 @@ void sed1330_device::sed1330(address_map &map)
 }
 
 
-// internal character generator ROM
+// internal character generator ROM: 5 x 7 glyphs in bits 7..3 of eight row
+// bytes a character, in code order from 0x20 (0x20-0x7f and 0xa0-0xdf are
+// the characters it holds, 0x80-0x9f blank)
 ROM_START( sed1330 )
-	ROM_REGION( 0x5c0, "gfx1", 0 ) // internal chargen ROM
-	ROM_LOAD( "sed1330.bin", 0x000, 0x5c0, NO_DUMP )
+	ROM_REGION( 0x600, "gfx1", 0 )
+	ROM_LOAD( "sed1330.bin", 0x000, 0x600, NO_DUMP )
 ROM_END
 
 
@@ -153,7 +155,8 @@ sed1330_device::sed1330_device(const machine_config &mconfig, const char *tag, d
 		device_memory_interface(mconfig, *this),
 		device_video_interface(mconfig, *this),
 		m_bf(0),
-		m_space_config("videoram", ENDIANNESS_LITTLE, 8, 16, 0, address_map_constructor(FUNC(sed1330_device::sed1330), this))
+		m_space_config("videoram", ENDIANNESS_LITTLE, 8, 16, 0, address_map_constructor(FUNC(sed1330_device::sed1330), this)),
+		m_chargen(*this, "gfx1")
 {
 }
 
@@ -610,10 +613,16 @@ void sed1330_device::draw_text_scanline(bitmap_ind16 &bitmap, const rectangle &c
 	{
 		const int sox = sx * m_fx;
 
-		if (m_m0 && !m_m1)
+		if (!m_m1)
 		{
+			// the character generator: the internal ROM, in code order from
+			// 0x20, or the external one in VRAM at 0xf000
 			uint8_t c = m_cache.read_byte(va + sx);
-			uint8_t data = m_cache.read_byte(0xf000 | (m_m2 ? u16(c) << 4 | r : u16(c) << 3 | (r & 7)));
+			uint8_t data;
+			if (m_m0)
+				data = m_cache.read_byte(0xf000 | (m_m2 ? u16(c) << 4 | r : u16(c) << 3 | (r & 7)));
+			else
+				data = (c >= 0x20 && c < 0x20 + m_chargen.bytes() / 8) ? m_chargen[(c - 0x20) * 8 + (r & 7)] : 0;
 			for (int x = 0; x < m_fx; x++, data <<= 1)
 				if (BIT(data, 7) && cliprect.contains(sox + x, y))
 					bitmap.pix(y, sox + x) = 1;
@@ -645,10 +654,19 @@ void sed1330_device::draw_graphics_scanline(bitmap_ind16 &bitmap, const rectangl
 
 		for (int x = 0; x < m_fx; x++, data <<= 1)
 		{
-			// the character pitch need not divide the panel width
+			// the character pitch need not divide the panel width; the layer
+			// composes with what is drawn already as MX says
 			const int px = (sx * m_fx) + x;
 			if (cliprect.contains(px, y))
-				bitmap.pix(y, px) = BIT(data, 7);
+			{
+				uint16_t &pix = bitmap.pix(y, px);
+				switch (m_mx)
+				{
+				case MX_XOR: pix ^= BIT(data, 7); break;
+				case MX_AND: pix &= BIT(data, 7); break;
+				default: pix |= BIT(data, 7); break;
+				}
+			}
 		}
 	}
 }
