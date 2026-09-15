@@ -45,6 +45,9 @@ public:
 	auto write_porte() { return m_write_port16[2].bind(); }
 	auto read_portf()  { return m_read_port16 [3].bind(); }
 
+	template<int Ch> void dreq_w(int state) { dreq_w(Ch, state); }
+	void dreq_w(int ch, int state);
+
 	void internal_update();
 	u16 do_read_adc(int port) { return m_read_adc[port](); }
 	u16 do_read_port16(int port) { return m_read_port16[port](); }
