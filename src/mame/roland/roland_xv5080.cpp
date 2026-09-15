@@ -49,14 +49,15 @@
     dispatches its tasks from the watchdog's interval timer interrupt and
     ticks from MTU1 (XV-3080) or MTU2 (XV-5080).  The XV-3080 also bit
     bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
-    selects), which nothing answers yet.
+    selects) to read the expansion boards' ID PROMs; no board is fitted,
+    so nothing answers.
 
     The XV-3080 plays MIDI once its battery SRAM holds a factory reset
     (UTILITY, cursor right to UTIL 2, FACTORY RESET, ENTER, DEC to lift the
     write protect, ENTER, ENTER, ENTER); on a blank SRAM it boots to "User
-    Memory Damaged" and no part takes a note.  Its main outputs are the
-    XP's port B; where the other two DACs' ports go is not settled, and
-    which DAC each chip feeds is read from nothing yet.
+    Memory Damaged" and no part takes a note.  XP6 #0 drives all three
+    DACs, port B being MIX OUT and the phones, C and D the two DIRECT OUT
+    pairs; #1 has no DAC and reaches them through #0 over the port A bus.
 
     Not done: the XV chips are their host interface only (sound/roland_xv),
     which answers the memory scan and the interrupt path but plays nothing,
@@ -131,6 +132,9 @@ protected:
 	TIMER_CALLBACK_MEMBER(display_request);
 	void porte_w(offs_t offset, u16 data, u16 ddr);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
+	void pump_slave(int state);
+	u32 master_link_r(offs_t strobe);
+	u32 slave_link_r(offs_t strobe);
 
 	required_device<sh7042_device> m_maincpu;
 	optional_device_array<roland_xp_device, 2> m_xp;
@@ -503,6 +507,27 @@ void xv5080_state::xv_wave_map(address_map &map)
 
 
 //-------------------------------------------------
+//  the two XP6s read each other over the port A bus, and #0's frame
+//  clocks #1's
+//-------------------------------------------------
+
+void xv3080_state::pump_slave(int state)
+{
+	m_xp[1]->run_frame();
+}
+
+u32 xv3080_state::master_link_r(offs_t strobe)
+{
+	return m_xp[0]->port_a_out_r(strobe);
+}
+
+u32 xv3080_state::slave_link_r(offs_t strobe)
+{
+	return m_xp[1]->port_a_out_r(strobe);
+}
+
+
+//-------------------------------------------------
 //  address maps
 //-------------------------------------------------
 
@@ -690,19 +715,30 @@ void xv3080_state::xv3080(machine_config &config)
 	HD44780(config, m_lcd, 270'000);
 	m_lcd->set_lcd_size(2, 40);
 
-	SPEAKER(config, "speaker", 2).front();
+	// the three AK4324s all hang off XP6 #0 (IC92): SDOB is MIX OUT and the
+	// phones, SDOC and SDOD DIRECT OUT 1 and 2; #1 (IC93) has no DAC and
+	// reaches them through #0 over the port A bus, its frame clocked by #0
+	SPEAKER(config, "mix", 2).front();
+	SPEAKER(config, "direct1", 2).front();
+	SPEAKER(config, "direct2", 2).front();
 
 	ROLAND_XP(config, m_xp[0], 24.576_MHz_XTAL);
 	m_xp[0]->set_addrmap(roland_xp_device::AS_WAVE, &xv3080_state::xp_rom_map);
 	m_xp[0]->int_callback().set_inputline(m_maincpu, 1);
-	m_xp[0]->add_route(0, "speaker", 1.0, 0); // port B is OUTPUT 1/2 and the headphones
-	m_xp[0]->add_route(1, "speaker", 1.0, 1);
+	m_xp[0]->add_route(0, "mix", 1.0, 0);
+	m_xp[0]->add_route(1, "mix", 1.0, 1);
+	m_xp[0]->add_route(2, "direct1", 1.0, 0);
+	m_xp[0]->add_route(3, "direct1", 1.0, 1);
+	m_xp[0]->add_route(4, "direct2", 1.0, 0);
+	m_xp[0]->add_route(5, "direct2", 1.0, 1);
+	m_xp[0]->port_a_in_callback().set(FUNC(xv3080_state::slave_link_r));
+	m_xp[0]->frame_callback().set(FUNC(xv3080_state::pump_slave));
 
 	ROLAND_XP(config, m_xp[1], 24.576_MHz_XTAL);
 	m_xp[1]->set_addrmap(roland_xp_device::AS_WAVE, &xv3080_state::xp_rom_map);
 	m_xp[1]->int_callback().set_inputline(m_maincpu, 2);
-	m_xp[1]->add_route(0, "speaker", 1.0, 0);
-	m_xp[1]->add_route(1, "speaker", 1.0, 1);
+	m_xp[1]->set_pumped(true);
+	m_xp[1]->port_a_in_callback().set(FUNC(xv3080_state::master_link_r));
 }
 
 void xv5080_state::xv5080(machine_config &config)
