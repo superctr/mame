@@ -10,7 +10,8 @@ class roland_xv_device : public device_t, public device_memory_interface, public
 public:
 	static constexpr feature_type unemulated_features() { return feature::SOUND; }
 
-	// the wave ROM and the sample RAM, 16 bits a cell, addressed by cell
+	// the wave ROMs, the expansion boards and the sample RAM, 16 bits a cell,
+	// addressed by cell, one space the board shares between its chips
 	enum { AS_WAVE = 0 };
 
 	static constexpr int OBJECTS = 64;
@@ -47,11 +48,11 @@ protected:
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
-	u16 word_r(int word);
+	u16 word_peek(int word);
+	void word_taken(int word);
 	void word_w(int word, u16 data);
-	void fifo_reset();
+	void fifo_rewind();
 	void fifo_push(u16 data);
-	u16 fifo_pop();
 	void transfer_read();
 	void transfer_write();
 	void update_irq();
@@ -59,7 +60,7 @@ private:
 	int object() const { return m_regs[MODE] & (OBJECTS - 1); }
 
 	address_space_config m_wave_config;
-	memory_access<32, 1, -1, ENDIANNESS_BIG>::specific m_wave;
+	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
 	devcb_write_line m_int_callback;
 	sound_stream *m_stream;
 
@@ -68,9 +69,8 @@ private:
 	std::unique_ptr<u32[]> m_space;
 	u16 m_address;
 	u16 m_data_high;
-	u16 m_read_latch;
 	u16 m_fifo[FIFO_DEPTH];
-	int m_fifo_count;
+	int m_fifo_write;
 	int m_fifo_read;
 	u16 m_irq_enable;
 	u16 m_irq_pending;

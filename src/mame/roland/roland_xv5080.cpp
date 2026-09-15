@@ -157,7 +157,6 @@ public:
 		: xv3080_state(mconfig, type, tag)
 		, m_xv(*this, "xv%u", 0U)
 		, m_lcdc(*this, "lcdc")
-		, m_waverom(*this, "waverom")
 	{
 	}
 
@@ -172,11 +171,8 @@ protected:
 	void xv_wave_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 
-	u16 wave_rom_r(offs_t offset);
-
 	required_device_array<roland_xv_device, 2> m_xv;
 	required_device<sed1330_device> m_lcdc;
-	required_region_ptr<u8> m_waverom;
 };
 
 
@@ -485,20 +481,17 @@ void xv3080_state::ga_w(offs_t offset, u8 data)
 
 
 //-------------------------------------------------
-//  the XV-5080's wave memory as its chips see it: the two mask ROMs one
-//  byte a cell at 0x02000000, and the chip's own 1M x 16 DRAM (IC18,
-//  IC19) at 0x0c000000, repeating up to the next bank
+//  the XV-5080's wave memory as its chips see it, one space for both: the
+//  two mask ROMs at cell 0, two bytes a cell, the low byte first; the four
+//  SR-JV80 slots at 0x02000000, 0x02800000, 0x03000000 and 0x03800000 (one
+//  byte a cell), the four SRX slots at 0x04000000, 0x06000000, 0x08000000
+//  and 0x0a000000, the two SIMM slots at 0x0c000000 and 0x0e000000.  None
+//  of the slots is filled.
 //-------------------------------------------------
-
-u16 xv5080_state::wave_rom_r(offs_t offset)
-{
-	return m_waverom[offset & 0x1ffffff];
-}
 
 void xv5080_state::xv_wave_map(address_map &map)
 {
-	map(0x02000000, 0x03ffffff).r(FUNC(xv5080_state::wave_rom_r));
-	map(0x0c000000, 0x0c0fffff).mirror(0x00f00000).ram();
+	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
 }
 
 

@@ -31,7 +31,7 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	: device_t(mconfig, ROLAND_XV, tag, owner, clock)
 	, device_memory_interface(mconfig, *this)
 	, device_sound_interface(mconfig, *this)
-	, m_wave_config("wave", ENDIANNESS_BIG, 16, 32, -1)
+	, m_wave_config("wave", ENDIANNESS_LITTLE, 16, 32, -1)
 	, m_int_callback(*this)
 	, m_stream(nullptr)
 {
@@ -53,9 +53,8 @@ void roland_xv_device::device_start()
 	save_pointer(NAME(m_space), 0x10000);
 	save_item(NAME(m_address));
 	save_item(NAME(m_data_high));
-	save_item(NAME(m_read_latch));
 	save_item(NAME(m_fifo));
-	save_item(NAME(m_fifo_count));
+	save_item(NAME(m_fifo_write));
 	save_item(NAME(m_fifo_read));
 	save_item(NAME(m_irq_enable));
 	save_item(NAME(m_irq_pending));
@@ -70,8 +69,8 @@ void roland_xv_device::device_reset()
 	std::fill_n(m_space.get(), 0x10000, 0);
 	m_address = 0;
 	m_data_high = 0;
-	m_read_latch = 0;
-	fifo_reset();
+	std::fill(std::begin(m_fifo), std::end(m_fifo), 0);
+	fifo_rewind();
 	m_irq_enable = 0;
 	m_irq_pending = 0;
 	std::fill(std::begin(m_irq_voice), std::end(m_irq_voice), 0);
@@ -85,19 +84,19 @@ void roland_xv_device::sound_stream_update(sound_stream &stream)
 
 
 //-------------------------------------------------
-//  the window: a word is its high byte then its low byte, the low byte
-//  commits a write and the high byte takes a read's side effects
+//  the window: a word is its high byte then its low byte, and the low byte
+//  is where a write commits and a read takes its side effects
 //-------------------------------------------------
 
 u8 roland_xv_device::read(offs_t offset)
 {
 	const int word = (offset >> 1) & 0xff;
-	if (BIT(offset, 0))
-		return m_read_latch & 0xff;
-	if (machine().side_effects_disabled())
-		return word_r(word) >> 8;
-	m_read_latch = word_r(word);
-	return m_read_latch >> 8;
+	const u16 data = word_peek(word);
+	if (!BIT(offset, 0))
+		return data >> 8;
+	if (!machine().side_effects_disabled())
+		word_taken(word);
+	return data & 0xff;
 }
 
 void roland_xv_device::write(offs_t offset, u8 data)
@@ -109,7 +108,7 @@ void roland_xv_device::write(offs_t offset, u8 data)
 		word_w(word, (m_regs[word] & 0xff00) | data);
 }
 
-u16 roland_xv_device::word_r(int word)
+u16 roland_xv_device::word_peek(int word)
 {
 	switch (word)
 	{
@@ -117,15 +116,10 @@ u16 roland_xv_device::word_r(int word)
 		return m_space[m_address] >> 16;
 
 	case DATA_LOW:
-	{
-		const u16 data = m_space[m_address] & 0xffff;
-		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
-		m_address++;
-		return data;
-	}
+		return m_space[m_address] & 0xffff;
 
 	case FIFO:
-		return fifo_pop();
+		return m_fifo[m_fifo_read];
 
 	case IRQ_MASK:
 		return m_irq_pending;
@@ -139,6 +133,21 @@ u16 roland_xv_device::word_r(int word)
 		if (word >= OBJECT_BASE && word < OBJECT_END)
 			return m_object_regs[object()][word - OBJECT_BASE];
 		return m_regs[word];
+	}
+}
+
+void roland_xv_device::word_taken(int word)
+{
+	switch (word)
+	{
+	case DATA_LOW:
+		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
+		m_address++;
+		break;
+
+	case FIFO:
+		m_fifo_read = (m_fifo_read + 1) % FIFO_DEPTH;
+		break;
 	}
 }
 
@@ -171,12 +180,12 @@ void roland_xv_device::word_w(int word, u16 data)
 		break;
 
 	case FIFO_CONTROL:
-		fifo_reset();
+		fifo_rewind();
 		break;
 
 	case COMMAND_STROBE:
-		LOGMASKED(LOG_XFER, "%s: command %04x (strobe %04x)\n", machine().describe_context(), m_fifo_count ? m_fifo[m_fifo_count - 1] : 0, data);
-		fifo_reset();
+		LOGMASKED(LOG_XFER, "%s: command %04x (strobe %04x)\n", machine().describe_context(), m_fifo[0], data);
+		fifo_rewind();
 		break;
 
 	case XFER_COMMAND:
@@ -221,37 +230,32 @@ void roland_xv_device::word_w(int word, u16 data)
 
 
 //-------------------------------------------------
-//  the FIFO and the transfer engine.  A read request fills the FIFO from
+//  the FIFO and the transfer engine.  Word 0x09 rewinds both pointers and
+//  keeps the contents: the host writes it before pushing a write's data
+//  and again before pulling a read's.  A read request fills the FIFO from
 //  the wave space and a write request empties it there; both finish at
 //  once, so the status word never shows either flag.
 //-------------------------------------------------
 
-void roland_xv_device::fifo_reset()
+void roland_xv_device::fifo_rewind()
 {
-	m_fifo_count = 0;
+	m_fifo_write = 0;
 	m_fifo_read = 0;
 }
 
 void roland_xv_device::fifo_push(u16 data)
 {
-	if (m_fifo_count < FIFO_DEPTH)
-		m_fifo[m_fifo_count++] = data;
-}
-
-u16 roland_xv_device::fifo_pop()
-{
-	if (m_fifo_read < m_fifo_count)
-		return m_fifo[m_fifo_read++];
-	return 0;
+	m_fifo[m_fifo_write] = data;
+	m_fifo_write = (m_fifo_write + 1) % FIFO_DEPTH;
 }
 
 void roland_xv_device::transfer_read()
 {
 	const u32 address = (u32(m_regs[READ_ADDRESS]) << 16) | m_regs[READ_ADDRESS + 1];
 	const u32 length = (u32(m_regs[READ_LENGTH]) << 16) | m_regs[READ_LENGTH + 1];
-	fifo_reset();
+	fifo_rewind();
 	for (u32 i = 0; i < length && i < FIFO_DEPTH; i++)
-		m_fifo[m_fifo_count++] = m_wave.read_word(address + i);
+		fifo_push(m_wave.read_word(address + i));
 	LOGMASKED(LOG_XFER, "%s: read %08x x %x: %04x %04x %04x %04x\n", machine().describe_context(), address, length, m_fifo[0], m_fifo[1], m_fifo[2], m_fifo[3]);
 }
 
@@ -260,9 +264,9 @@ void roland_xv_device::transfer_write()
 	const u32 address = (u32(m_regs[WRITE_ADDRESS]) << 16) | m_regs[WRITE_ADDRESS + 1];
 	const u32 length = (u32(m_regs[WRITE_LENGTH]) << 16) | m_regs[WRITE_LENGTH + 1];
 	LOGMASKED(LOG_XFER, "%s: write %08x x %x: %04x %04x %04x %04x\n", machine().describe_context(), address, length, m_fifo[0], m_fifo[1], m_fifo[2], m_fifo[3]);
-	for (u32 i = 0; i < length && i < u32(m_fifo_count); i++)
+	for (u32 i = 0; i < length && i < FIFO_DEPTH; i++)
 		m_wave.write_word(address + i, m_fifo[i]);
-	fifo_reset();
+	fifo_rewind();
 }
 
 
