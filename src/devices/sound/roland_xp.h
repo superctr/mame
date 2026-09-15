@@ -110,6 +110,7 @@ protected:
 		u8 phase = IDLE;
 		u8 format = 0;
 		u8 fade_entry = 0;
+		u8 launched = 0;
 	};
 
 	struct address_step

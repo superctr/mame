@@ -339,6 +339,7 @@ void roland_xp_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, phase));
 	save_item(STRUCT_MEMBER(m_voices, format));
 	save_item(STRUCT_MEMBER(m_voices, fade_entry));
+	save_item(STRUCT_MEMBER(m_voices, launched));
 }
 
 void roland_xp_device::device_reset()
@@ -628,7 +629,10 @@ void roland_xp_device::commit_run_mask()
 	m_run_pending = 0;
 	for (int n = 0; n < MAX_VOICES; n++)
 		if (BIT(launched, n))
+		{
 			m_voices[n].phase = PRELOAD;
+			m_voices[n].launched = 1;
+		}
 }
 
 
@@ -907,7 +911,7 @@ void roland_xp_device::run_voice(int n)
 	if (!running(n))
 	{
 		const s32 smooth = page(n, SMOOTH) & 0xffff;
-		if (smooth)
+		if (smooth && v.launched)
 			set_page(n, SMOOTH, u32(std::max((smooth * 7) >> 3, 1)));
 		set_page(n, FILTER_BAND, 0);
 		set_page(n, FILTER_LOW, 0);
