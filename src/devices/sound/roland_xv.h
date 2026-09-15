@@ -25,7 +25,7 @@ public:
 		IRQ_MASK = 0x0f, IRQ_ACK = 0x10, IRQ_VOICE = 0x10, STATUS = 0x1b,
 		XFER_COMMAND = 0x25, WRITE_ADDRESS = 0x26, WRITE_LENGTH = 0x2a, READ_GO = 0x2d, READ_ADDRESS = 0x2e,
 		READ_LENGTH = 0x32, COMMAND_STROBE = 0x36,
-		OBJECT_BASE = 0x60, VOICE_COMMAND = 0x94, BLOCK_CONTROL = 0x96, OBJECT_END = 0xa0
+		OBJECT_BASE = 0x60, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96, OBJECT_END = 0x100
 	};
 
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
