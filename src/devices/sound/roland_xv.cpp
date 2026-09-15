@@ -213,8 +213,8 @@ void roland_xv_device::word_w(int word, u16 data)
 		if (word >= OBJECT_BASE && word < OBJECT_END)
 		{
 			m_object_regs[object()][word - OBJECT_BASE] = data;
-			if (word == VOICE_COMMAND + 1)
-				LOGMASKED(LOG_OBJECT, "%s: object %02x command %04x%04x\n", machine().describe_context(), object(), m_object_regs[object()][VOICE_COMMAND - OBJECT_BASE], data);
+			if (word == LEVEL_RAMP + 1)
+				LOGMASKED(LOG_OBJECT, "%s: object %02x level %04x%04x\n", machine().describe_context(), object(), m_object_regs[object()][LEVEL_RAMP - OBJECT_BASE], data);
 			else if (word == BLOCK_CONTROL + 1)
 				LOGMASKED(LOG_OBJECT, "%s: object %02x control %04x%04x\n", machine().describe_context(), object(), m_object_regs[object()][BLOCK_CONTROL - OBJECT_BASE], data);
 			else
