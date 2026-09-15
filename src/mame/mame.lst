@@ -40405,6 +40405,10 @@ u110
 u20
 u220
 
+@source:roland/roland_xv5080.cpp
+xv3080
+xv5080
+
 @source:rolm/r9751.cpp
 r9751
 
