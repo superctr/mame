@@ -558,17 +558,13 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x01000000, 0x013fffff).ram();
 }
 
-// the voices fetch from the two mask ROMs at the address the firmware
-// writes, the set's own offsets from 0, and the four expansion slots begin
-// at 0x2000000; the firmware's wave scan reads the same two ROMs through
-// the aperture at banks 0x20 to 0x3f (with 0x40 and 0x60 for the slots), so
-// the aperture's bank is not the voice's region and the set answers at
-// both until the board's decode of the two is read.  The descrambled set is
-// flat, its 32 regions of 1 MB in order.
+// IC26 on chip select 0 and IC29 on chip select 1, word-wide, the
+// descrambled set's 32 regions of 1 MB in order; chip selects 2 and 3 are
+// the four SR-JV80 sockets (8 MB each) and 4 to 7 the two EXP connectors,
+// which the firmware's boot scan probes and must find empty.
 void xv3080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x1ffffff).rom().region("waverom", 0);
-	map(0x2000000, 0x3ffffff).rom().region("waverom", 0);
 }
 
 void xv5080_state::lcdc_map(address_map &map)
