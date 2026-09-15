@@ -138,6 +138,16 @@ void sh7042_device::device_start()
 	m_pcf_if = 0;
 }
 
+void sh7042_device::dreq_w(int ch, int state)
+{
+	switch(ch) {
+	case 0: m_dmac0->dreq_w(state); break;
+	case 1: m_dmac1->dreq_w(state); break;
+	case 2: m_dmac2->dreq_w(state); break;
+	case 3: m_dmac3->dreq_w(state); break;
+	}
+}
+
 void sh7042_device::execute_set_input(int irqline, int state)
 {
 	m_intc->set_input(irqline, state);
@@ -295,10 +305,10 @@ void sh7042_device::device_add_mconfig(machine_config &config)
 	SH_BSC(config, m_bsc);
 	SH_CMT(config, m_cmt, *this, m_intc, 144, 148);
 	SH_DMAC(config, m_dmac, *this);
-	SH_DMAC_CHANNEL(config, m_dmac0, *this, m_intc);
-	SH_DMAC_CHANNEL(config, m_dmac1, *this, m_intc);
-	SH_DMAC_CHANNEL(config, m_dmac2, *this, m_intc);
-	SH_DMAC_CHANNEL(config, m_dmac3, *this, m_intc);
+	SH_DMAC_CHANNEL(config, m_dmac0, *this, m_intc, m_dmac, 0);
+	SH_DMAC_CHANNEL(config, m_dmac1, *this, m_intc, m_dmac, 1);
+	SH_DMAC_CHANNEL(config, m_dmac2, *this, m_intc, m_dmac, 2);
+	SH_DMAC_CHANNEL(config, m_dmac3, *this, m_intc, m_dmac, 3);
 	SH_MTU(config, m_mtu, *this, 5);
 	SH_MTU_CHANNEL(config, m_mtu0, *this, 4, 0x60, m_intc, 88,
 			sh_mtu_channel_device::DIV_1,
