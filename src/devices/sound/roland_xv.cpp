@@ -4,12 +4,27 @@
 
     Roland XV tone generator (TC223C660CF-503, RA08-503)
 
-    The XP's successor: 64 voices a chip, two chips in an XV-5080.  Only
-    the host interface is here: the 16-bit register window, the address
-    spaces reached through it (the DSP program rows, the scalars, the wide
-    records and the per-voice longs), the FIFO transfer engine onto the
-    chip's own wave and sample memory, the object-indexed register file
-    and the interrupt path.  It plays nothing.
+    The XP's successor: 64 voices a chip, two chips in an XV-5080.  The
+    host sees a 16-bit register window: the address spaces reached through
+    it (the DSP program rows, the scalars, the wide records and the
+    per-voice longs), the FIFO transfer engine onto the chip's own wave and
+    sample memory, the object-indexed voice file and the interrupt path.
+
+    A voice reads the XP's sample format at a 25-bit sample address, steps
+    it by a linear 18-bit pitch (0x10000 = one sample an output sample),
+    runs its cutoff, feedback, level and pitch through host-targeted ramps
+    with a 4-bit rate code each, filters, scales by a Q15 level and adds
+    itself to up to six buses at six send levels.  The effect DSP is not
+    here yet: every output pair is summed onto the stream and the chorus
+    and reverb sends (buses 6 and 7) go nowhere.
+
+    TODO:
+    - the ramp codes 0..3 are bounded, not measured; the ramp's granularity
+    - the filter's state width, rounding and saturation; the BPF and PKG taps
+    - the DSP, the effect buses and the serial link
+    - expansion-board and sample-RAM wave formats
+    - paired structures (word 0xc4 bits 11:8, word 0xc3)
+    - reason 8
 
 ***************************************************************************/
 
@@ -25,6 +40,46 @@
 
 #define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT | LOG_SPACE)
 #include "logmacro.h"
+
+namespace {
+
+const s16 interp_weights[3][128] = {
+	{
+		3385, 3401, 3417, 3432, 3448, 3463, 3478, 3492, 3506, 3521, 3535, 3548, 3562, 3575, 3588, 3601,
+		3614, 3626, 3638, 3650, 3662, 3673, 3685, 3696, 3707, 3718, 3728, 3739, 3749, 3759, 3768, 3778,
+		3787, 3796, 3805, 3814, 3823, 3831, 3839, 3847, 3855, 3863, 3870, 3878, 3885, 3892, 3899, 3905,
+		3912, 3918, 3924, 3930, 3936, 3942, 3948, 3953, 3958, 3963, 3968, 3973, 3978, 3983, 3987, 3991,
+		3995, 4000, 4004, 4007, 4011, 4015, 4018, 4022, 4025, 4028, 4031, 4034, 4037, 4040, 4042, 4045,
+		4047, 4050, 4052, 4054, 4057, 4059, 4061, 4063, 4064, 4066, 4068, 4070, 4071, 4073, 4074, 4076,
+		4077, 4078, 4079, 4081, 4082, 4083, 4084, 4085, 4086, 4086, 4087, 4088, 4089, 4089, 4090, 4091,
+		4091, 4092, 4092, 4093, 4093, 4094, 4094, 4094, 4094, 4095, 4095, 4095, 4095, 4095, 4095, 4095,
+	},
+	{
+		 710,  726,  742,  758,  775,  792,  809,  826,  844,  861,  879,  897,  915,  933,  952,  971,
+		 990, 1009, 1028, 1047, 1067, 1087, 1106, 1126, 1147, 1167, 1188, 1208, 1229, 1250, 1271, 1292,
+		1314, 1335, 1357, 1379, 1400, 1423, 1445, 1467, 1489, 1512, 1534, 1557, 1580, 1602, 1625, 1648,
+		1671, 1695, 1718, 1741, 1764, 1788, 1811, 1835, 1858, 1882, 1906, 1929, 1953, 1977, 2000, 2024,
+		2048, 2071, 2095, 2119, 2143, 2166, 2190, 2214, 2237, 2261, 2284, 2308, 2331, 2355, 2378, 2401,
+		2425, 2448, 2471, 2494, 2517, 2539, 2562, 2585, 2607, 2630, 2652, 2674, 2696, 2718, 2740, 2762,
+		2783, 2805, 2826, 2847, 2868, 2889, 2910, 2931, 2951, 2971, 2991, 3011, 3031, 3051, 3070, 3089,
+		3108, 3127, 3146, 3164, 3182, 3200, 3218, 3236, 3253, 3271, 3288, 3304, 3321, 3338, 3354, 3370,
+	},
+	{
+		   0,    0,    0,    1,    1,    1,    2,    2,    3,    3,    3,    4,    4,    5,    5,    6,
+		   6,    7,    8,    8,    9,   10,   10,   11,   12,   13,   14,   15,   16,   17,   18,   19,
+		  20,   22,   23,   24,   26,   27,   29,   30,   32,   34,   36,   38,   40,   42,   44,   46,
+		  49,   51,   53,   56,   59,   62,   65,   68,   71,   74,   77,   81,   84,   88,   92,   96,
+		 100,  104,  109,  113,  118,  122,  127,  132,  137,  143,  148,  154,  160,  165,  171,  178,
+		 184,  191,  197,  204,  211,  219,  226,  234,  241,  249,  257,  266,  274,  283,  292,  301,
+		 310,  319,  329,  339,  349,  359,  369,  380,  391,  402,  413,  424,  436,  448,  460,  472,
+		 484,  497,  510,  523,  536,  549,  563,  577,  591,  605,  619,  634,  648,  663,  679,  694,
+	},
+};
+
+// the samples a ramp takes to land, by rate code: 2 ms a code from 2 to 10 ms, 0xf at once
+const u16 ramp_samples[16] = { 88, 176, 265, 353, 441, 441, 441, 441, 441, 441, 441, 441, 441, 441, 441, 0 };
+
+} // anonymous namespace
 
 DEFINE_DEVICE_TYPE(ROLAND_XV, roland_xv_device, "roland_xv", "Roland XV tone generator")
 
@@ -46,7 +101,7 @@ device_memory_interface::space_config_vector roland_xv_device::memory_space_conf
 void roland_xv_device::device_start()
 {
 	space(AS_WAVE).specific(m_wave);
-	m_stream = stream_alloc(0, 2, 44100);
+	m_stream = stream_alloc(0, 2, SAMPLE_RATE);
 	m_space = std::make_unique<u32[]>(0x10000);
 
 	save_item(NAME(m_regs));
@@ -62,13 +117,22 @@ void roland_xv_device::device_start()
 	save_item(NAME(m_irq_voice));
 	save_item(NAME(m_irq_waiting));
 	save_item(NAME(m_int_state));
-	save_item(STRUCT_MEMBER(m_ramps, target));
-	save_item(STRUCT_MEMBER(m_ramps, rate));
-	save_item(STRUCT_MEMBER(m_ramps, running));
-	save_item(STRUCT_MEMBER(m_ramps, lands_seconds));
-	save_item(STRUCT_MEMBER(m_ramps, lands_attoseconds));
-
-	m_ramp_timer = timer_alloc(FUNC(roland_xv_device::ramp_tick), this);
+	save_item(NAME(m_run_mask));
+	save_item(STRUCT_MEMBER(m_voices, address));
+	save_item(STRUCT_MEMBER(m_voices, phase));
+	save_item(STRUCT_MEMBER(m_voices, predictor));
+	save_item(STRUCT_MEMBER(m_voices, backward));
+	save_item(STRUCT_MEMBER(m_voices, launch));
+	save_item(STRUCT_MEMBER(m_voices, fetching));
+	save_item(STRUCT_MEMBER(m_voices, was_running));
+	save_item(STRUCT_MEMBER(m_voices, filter_low));
+	save_item(STRUCT_MEMBER(m_voices, filter_band));
+	save_item(STRUCT_MEMBER(m_voices, ramp_current));
+	save_item(STRUCT_MEMBER(m_voices, ramp_target));
+	save_item(STRUCT_MEMBER(m_voices, ramp_position));
+	save_item(STRUCT_MEMBER(m_voices, ramp_step));
+	save_item(STRUCT_MEMBER(m_voices, ramp_remaining));
+	save_item(STRUCT_MEMBER(m_voices, ramp_armed));
 }
 
 void roland_xv_device::device_reset()
@@ -86,16 +150,29 @@ void roland_xv_device::device_reset()
 	std::fill(std::begin(m_irq_waiting), std::end(m_irq_waiting), 0);
 	m_int_state = false;
 	m_int_callback(0);
-	for (auto &voice : m_ramps)
-		for (auto &r : voice)
-			r = ramp();
-	m_ramp_timer->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
+	m_run_mask = 0;
+	for (auto &v : m_voices)
+		v = voice();
 }
 
 void roland_xv_device::sound_stream_update(sound_stream &stream)
 {
+	for (int i = 0; i < stream.samples(); i++)
+	{
+		s32 buses[BUSES] = { 0 };
+		for (int n = 0; n < OBJECTS; n++)
+			run_voice(n, buses);
+		s32 left = 0, right = 0;
+		for (int pair = 0; pair < 16; pair += 2)
+			if (pair != BUS_CHORUS)
+			{
+				left += buses[pair];
+				right += buses[pair + 1];
+			}
+		stream.put_int_clamp(0, i, left, 1 << OUTPUT_BITS);
+		stream.put_int_clamp(1, i, right, 1 << OUTPUT_BITS);
+	}
 }
-
 
 //-------------------------------------------------
 //  the window: a word is its high byte then its low byte, and the low byte
@@ -116,6 +193,8 @@ u8 roland_xv_device::read(offs_t offset)
 void roland_xv_device::write(offs_t offset, u8 data)
 {
 	const int word = (offset >> 1) & 0xff;
+	if (word >= OBJECT_BASE || (word >= RUN_MASK && word <= RUN_COMMIT))
+		m_stream->update();
 	if (!BIT(offset, 0))
 		m_regs[word] = (m_regs[word] & 0x00ff) | (data << 8);
 	else
@@ -142,8 +221,10 @@ u16 roland_xv_device::word_peek(int word)
 		return 0;
 
 	default:
-		if (word > IRQ_VOICE && word < IRQ_VOICE + IRQ_REASONS)
+		if (word >= IRQ_VOICE && word < IRQ_VOICE + IRQ_REASONS)
 			return m_irq_voice[word - IRQ_VOICE];
+		if (word == CUTOFF || word == FEEDBACK || word == LEVEL)
+			return m_voices[object()].ramp_current[word == CUTOFF ? RAMP_CUTOFF : word == FEEDBACK ? RAMP_FEEDBACK : RAMP_LEVEL];
 		if (word >= OBJECT_BASE && word < OBJECT_END)
 			return m_object_regs[object()][word - OBJECT_BASE];
 		return m_regs[word];
@@ -212,6 +293,14 @@ void roland_xv_device::word_w(int word, u16 data)
 			transfer_read();
 		break;
 
+	case RUN_MASK: case RUN_MASK + 1: case RUN_MASK + 2: case RUN_MASK + 3:
+		run_mask_w(word, data);
+		break;
+
+	case RUN_COMMIT:
+		run_mask_w(word, data);
+		break;
+
 	case IRQ_MASK:
 		LOGMASKED(LOG_IRQ, "%s: interrupt mask %04x\n", machine().describe_context(), data);
 		m_irq_enable = data;
@@ -233,29 +322,93 @@ void roland_xv_device::word_w(int word, u16 data)
 
 	default:
 		if (word >= OBJECT_BASE && word < OBJECT_END)
-		{
-			m_object_regs[object()][word - OBJECT_BASE] = data;
-			const u32 value = (u32(m_object_regs[object()][(word & ~1) - OBJECT_BASE]) << 16) | data;
-			if (word == CUTOFF_RAMP + 1)
-				start_ramp(object(), RAMP_CUTOFF, value);
-			else if (word == FEEDBACK_RAMP + 1)
-				start_ramp(object(), RAMP_FEEDBACK, value);
-			else if (word == LEVEL_RAMP + 1)
-				start_ramp(object(), RAMP_LEVEL, value);
-			else if (word == PITCH_RAMP + 1)
-				start_ramp(object(), RAMP_PITCH, value);
-			if (word == LEVEL_RAMP + 1)
-				LOGMASKED(LOG_OBJECT, "%s: object %03x level %04x%04x\n", machine().describe_context(), m_regs[MODE], m_object_regs[object()][LEVEL_RAMP - OBJECT_BASE], data);
-			else if (word == BLOCK_CONTROL + 1)
-				LOGMASKED(LOG_OBJECT, "%s: object %03x control %04x%04x\n", machine().describe_context(), m_regs[MODE], m_object_regs[object()][BLOCK_CONTROL - OBJECT_BASE], data);
-			else
-				LOGMASKED(LOG_OBJECT, "%s: object %03x word %02x = %04x\n", machine().describe_context(), m_regs[MODE], word, data);
-		}
+			object_w(object(), word, data);
 		else if (word < 0x60)
 			LOGMASKED(LOG_REGS, "%s: register %02x = %04x\n", machine().describe_context(), word, data);
 		else
 			LOGMASKED(LOG_GENERAL, "%s: unknown register %02x = %04x\n", machine().describe_context(), word, data);
 		break;
+	}
+}
+
+
+void roland_xv_device::object_w(int voice, int word, u16 data)
+{
+	m_object_regs[voice][word - OBJECT_BASE] = data;
+	const u32 value = object_long(voice, word & ~1);
+	switch (word)
+	{
+	case START + 1:
+		m_voices[voice].launch = true;
+		break;
+
+	case PITCH_STEP + 1:
+		seed_ramp(voice, RAMP_PITCH, value & 0x3ffff);
+		break;
+
+	case CUTOFF:
+		seed_ramp(voice, RAMP_CUTOFF, data);
+		break;
+
+	case FEEDBACK:
+		seed_ramp(voice, RAMP_FEEDBACK, data);
+		break;
+
+	case LEVEL:
+		seed_ramp(voice, RAMP_LEVEL, data);
+		break;
+
+	case CUTOFF_RAMP + 1:
+		start_ramp(voice, RAMP_CUTOFF, value);
+		break;
+
+	case FEEDBACK_RAMP + 1:
+		start_ramp(voice, RAMP_FEEDBACK, value);
+		break;
+
+	case LEVEL_RAMP + 1:
+		start_ramp(voice, RAMP_LEVEL, value);
+		LOGMASKED(LOG_OBJECT, "%s: object %03x level %08x\n", machine().describe_context(), m_regs[MODE], value);
+		return;
+
+	case PITCH_RAMP + 1:
+		start_ramp(voice, RAMP_PITCH, value);
+		break;
+
+	case SEND_PORT_A + 1:
+	case SEND_PORT_B + 1:
+		m_object_regs[voice][SEND_BASE + ((value >> 23) & 3) * 2 + 1 - OBJECT_BASE] = value & 0xffff;
+		break;
+
+	case BLOCK_CONTROL + 1:
+		LOGMASKED(LOG_OBJECT, "%s: object %03x control %08x\n", machine().describe_context(), m_regs[MODE], value);
+		return;
+	}
+	LOGMASKED(LOG_OBJECT, "%s: object %03x word %02x = %04x\n", machine().describe_context(), m_regs[MODE], word, data);
+}
+
+
+//-------------------------------------------------
+//  the run mask: word 0x0d bit 0 is voice 0, word 0x0a bit 15 voice 63.
+//  A written bit takes effect at once; a cleared one waits for the
+//  commit, a write of word 0x0e, which reads back with its busy bit clear.
+//-------------------------------------------------
+
+void roland_xv_device::run_mask_w(int word, u16 data)
+{
+	u64 written = 0;
+	for (int w = 0; w < 4; w++)
+		written |= u64(m_regs[RUN_MASK + 3 - w]) << (16 * w);
+	if (word == RUN_COMMIT)
+	{
+		m_run_mask = written;
+		m_regs[RUN_COMMIT] = data & 0x7f;
+		LOGMASKED(LOG_REGS, "%s: run mask commit %016llx\n", machine().describe_context(), (unsigned long long)m_run_mask);
+	}
+	else
+	{
+		m_run_mask |= written;
+		LOGMASKED(LOG_REGS, "%s: run mask word %02x = %04x\n", machine().describe_context(), word, data);
 	}
 }
 
@@ -331,39 +484,220 @@ void roland_xv_device::raise_irq(int reason, int voice)
 
 //-------------------------------------------------
 //  ramps: a target long carries a 4-bit rate code (bits 19:16; 22:19 on
-//  the pitch), 0xf a jump; the pitch's bit 23 and the others' bit 21
-//  restart from the seed word.  The chip's rate law is not known, so a
-//  ramp lands after a placeholder time and its reason is raised then.
+//  the pitch), a landing time of 2 ms a code and 0xf a jump; the pitch's
+//  bit 23 and the others' bit 21 arm the arrival interrupt, the pitch's
+//  bit 24 jumps, the level's bit 20 alone mutes.  The current registers
+//  seed the ramps and read back.
 //-------------------------------------------------
 
-void roland_xv_device::start_ramp(int voice, int kind, u32 value)
+void roland_xv_device::seed_ramp(int n, int kind, s32 value)
 {
-	ramp &r = m_ramps[voice][kind];
-	const bool pitch = kind == RAMP_PITCH;
-	r.rate = pitch ? (value >> 19) & 0xf : (value >> 16) & 0xf;
-	r.target = pitch ? value & 0x3ffff : value & 0xffff;
-	const bool jump = r.rate == 0xf || (pitch && BIT(value, 23)) || (kind == RAMP_LEVEL && (value & 0x00300000) == 0x00100000);
-	const attotime lands = machine().time() + (jump ? attotime::zero : attotime::from_msec(1000 >> (r.rate / 2)));
-	r.lands_seconds = lands.seconds();
-	r.lands_attoseconds = lands.attoseconds();
-	r.running = true;
+	voice &v = m_voices[n];
+	v.ramp_current[kind] = value;
+	v.ramp_position[kind] = value << RAMP_FRACTION_BITS;
+	v.ramp_remaining[kind] = 0;
 }
 
-TIMER_CALLBACK_MEMBER(roland_xv_device::ramp_tick)
+void roland_xv_device::start_ramp(int n, int kind, u32 value)
 {
-	const attotime now = machine().time();
-	for (int voice = 0; voice < OBJECTS; voice++)
-		for (int kind = 0; kind < RAMPS; kind++)
+	voice &v = m_voices[n];
+	const bool pitch = kind == RAMP_PITCH;
+	const int rate = pitch ? (value >> 19) & 0xf : (value >> 16) & 0xf;
+	v.ramp_target[kind] = pitch ? value & 0x3ffff : value & 0xffff;
+	v.ramp_armed[kind] = pitch ? BIT(value, 23) : BIT(value, 21);
+	if (kind == RAMP_LEVEL && (value & 0x00300000) == 0x00100000)
+	{
+		seed_ramp(n, kind, 0);
+		v.ramp_target[kind] = 0;
+		v.ramp_armed[kind] = false;
+	}
+	const u16 samples = (pitch && BIT(value, 24)) ? 0 : ramp_samples[rate];
+	v.ramp_position[kind] = v.ramp_current[kind] << RAMP_FRACTION_BITS;
+	v.ramp_step[kind] = samples ? ((v.ramp_target[kind] - v.ramp_current[kind]) << RAMP_FRACTION_BITS) / samples : 0;
+	v.ramp_remaining[kind] = std::max<u16>(samples, 1);
+}
+
+void roland_xv_device::service_ramp(int n, int kind)
+{
+	voice &v = m_voices[n];
+	if (!v.ramp_remaining[kind])
+		return;
+	if (--v.ramp_remaining[kind])
+	{
+		v.ramp_position[kind] += v.ramp_step[kind];
+		v.ramp_current[kind] = v.ramp_position[kind] >> RAMP_FRACTION_BITS;
+		return;
+	}
+	v.ramp_current[kind] = v.ramp_target[kind];
+	v.ramp_position[kind] = v.ramp_target[kind] << RAMP_FRACTION_BITS;
+	if (!v.ramp_armed[kind])
+		return;
+	switch (kind)
+	{
+	case RAMP_CUTOFF: raise_irq(IRQ_CUTOFF_LANDED, n); break;
+	case RAMP_LEVEL: raise_irq(IRQ_LEVEL_LANDED, n); break;
+	case RAMP_PITCH: raise_irq(IRQ_PITCH_LANDED, n); break;
+	}
+}
+
+
+//-------------------------------------------------
+//  the wave reader: the XP's sample format at a 25-bit sample address,
+//  two samples a cell, the low byte first; each 1 MB region's first 32 kB
+//  is its exponent-nibble table
+//-------------------------------------------------
+
+u8 roland_xv_device::sample_byte(u32 sample)
+{
+	const u16 cell = m_wave.read_word(sample >> 1);
+	return BIT(sample, 0) ? cell >> 8 : cell & 0xff;
+}
+
+roland_xv_device::wave_cell roland_xv_device::cell_at(u32 address)
+{
+	const u8 byte = sample_byte(address);
+	const u8 shifts = sample_byte((address & ~0xfffff) | ((address & 0xfffff) >> 5));
+	const int exponent = BIT(address, 4) ? (shifts >> 4) : (shifts & 0x0f);
+	return wave_cell{ exponent > 10 ? 0 : s8(byte), exponent };
+}
+
+s32 roland_xv_device::delta_of(wave_cell c)
+{
+	return c.mantissa << c.exponent;
+}
+
+s32 roland_xv_device::tap(s32 weight, wave_cell c)
+{
+	const s32 p = (weight * c.mantissa) & ~3;
+	return c.exponent <= 10 ? p >> (10 - c.exponent) : p << (c.exponent - 10);
+}
+
+void roland_xv_device::launch(int n)
+{
+	voice &v = m_voices[n];
+	v.launch = false;
+	v.fetching = true;
+	v.address = object_long(n, START) & 0x1ffffff;
+	v.phase = 0;
+	v.predictor = 0;
+	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
+	v.filter_low = 0;
+	v.filter_band = 0;
+}
+
+roland_xv_device::address_step roland_xv_device::advance(int n, address_step s) const
+{
+	const u32 loop = object_long(n, LOOP_START) & 0x1ffffff;
+	const u32 end = object_long(n, END) & 0x1ffffff;
+	const bool looping = loop < end;
+	const bool alternate = BIT(object_word(n, VOICE_CONTROL), 11);
+
+	if (!s.backward)
+	{
+		if (!looping)
+			return { s.address >= end ? s.address : s.address + 1, false };
+		if (s.address >= end)
+			return alternate ? address_step{ s.address, true } : address_step{ loop, false };
+		return { s.address + 1, false };
+	}
+
+	if (s.address <= loop)
+	{
+		if (alternate && looping)
+			return { s.address, false };
+		return { s.address, true };
+	}
+	return { s.address - 1, true };
+}
+
+
+//-------------------------------------------------
+//  the filter: the XP's state-variable structure, the cutoff and feedback
+//  coefficients Q15 words, the type nibble the output tap; OFF is the
+//  high tap with both coefficients at zero
+//-------------------------------------------------
+
+s32 roland_xv_device::filter(int n, s32 sample)
+{
+	voice &v = m_voices[n];
+	const int type = object_word(n, FILTER_TYPE) & 0xf;
+	const s32 f = v.ramp_current[RAMP_CUTOFF];
+	const s32 q = v.ramp_current[RAMP_FEEDBACK];
+	s32 low = clamp24(v.filter_low + (s64(f) * v.filter_band) / (1 << 15));
+	const s32 high = clamp24(sample - (s32((s64(q) * v.filter_band) / (1 << 15)) + low));
+	const s32 band = clamp24(v.filter_band + (s64(f) * high) / (1 << 15));
+	v.filter_low = low;
+	v.filter_band = band;
+	switch (type)
+	{
+	case FILTER_LPF: return low;
+	case FILTER_BPF: return band;
+	case FILTER_PKG: return clamp24(s64(high) - low);
+	default: return high;
+	}
+}
+
+
+//-------------------------------------------------
+//  the voice
+//-------------------------------------------------
+
+void roland_xv_device::run_voice(int n, s32 *buses)
+{
+	voice &v = m_voices[n];
+	const bool run = running(n);
+	if (!run)
+	{
+		v.was_running = false;
+		return;
+	}
+	if (v.launch || !v.was_running)
+		launch(n);
+	v.was_running = true;
+
+	for (int kind = 0; kind < RAMPS; kind++)
+		service_ramp(n, kind);
+
+	const u16 control = object_word(n, VOICE_CONTROL);
+	if (!BIT(control, 12) || BIT(control, 13) || !v.fetching)
+		return;
+
+	address_step s{ v.address, v.backward };
+	s32 sum = 4 * v.predictor;
+	for (int i = 0; i < 3; i++)
+	{
+		sum += tap(interp_weights[i][v.phase >> 9], cell_at(s.address));
+		s = advance(n, s);
+	}
+	s32 sample = wrap20(sum) >> (3 - std::min(3, (control >> 1) & 3));
+
+	const u32 accumulated = u32(v.phase) + u32(v.ramp_current[RAMP_PITCH] & 0x3ffff);
+	v.phase = accumulated & 0xffff;
+	address_step current{ v.address, v.backward };
+	for (u32 carry = accumulated >> 16; carry; carry--)
+	{
+		v.predictor = wrap18(v.predictor + delta_of(cell_at(current.address)));
+		const address_step next = advance(n, current);
+		if (next.address == current.address && next.backward == current.backward)
 		{
-			ramp &r = m_ramps[voice][kind];
-			if (!r.running || attotime(r.lands_seconds, r.lands_attoseconds) > now)
-				continue;
-			r.running = false;
-			if (kind == RAMP_LEVEL)
-				raise_irq(IRQ_LEVEL_LANDED, voice);
-			else if (kind == RAMP_CUTOFF)
-				raise_irq(IRQ_CUTOFF_LANDED, voice);
-			else if (kind == RAMP_PITCH)
-				raise_irq(IRQ_PITCH_LANDED, voice);
+			v.fetching = false;
+			raise_irq(IRQ_ONE_SHOT_END, n);
+			break;
 		}
+		current = next;
+	}
+	v.address = current.address;
+	v.backward = current.backward;
+
+	sample = clamp24((s64(sample) * object_long(n, WAVE_SCALE)) / (1 << 15));
+	sample = filter(n, sample);
+	const s32 output = clamp24((s64(sample) * v.ramp_current[RAMP_LEVEL]) / (1 << 15));
+
+	for (int slot = 0; slot < SENDS; slot++)
+	{
+		const int bus = object_word(n, SEND_BASE + slot * 2) & 0xff;
+		const s32 level = object_word(n, SEND_BASE + slot * 2 + 1);
+		if (bus < BUSES && level)
+			buses[bus] += s32((s64(output) * level) / (1 << 15));
+	}
 }
