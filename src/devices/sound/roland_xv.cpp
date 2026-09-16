@@ -19,12 +19,14 @@
     and reverb sends (buses 6 and 7) go nowhere.
 
     TODO:
-    - the ramp codes 0..3 are bounded, not measured; the ramp's granularity
+    - the ramp's granularity, and whether its table is samples or a divider
+    - the send ports ramp their slot's level rather than setting it
+    - the steal's mute is a fade, not the instant zero this does
     - the filter's state width, rounding and saturation; the BPF and PKG taps
     - the DSP, the effect buses and the serial link
     - expansion-board and sample-RAM wave formats
     - paired structures (word 0xc4 bits 11:8, word 0xc3)
-    - reason 8
+    - reason 8, and reasons 3, 6 and 7
 
 ***************************************************************************/
 
@@ -76,8 +78,10 @@ const s16 interp_weights[3][128] = {
 	},
 };
 
-// the samples a ramp takes to land, by rate code: 2 ms a code from 2 to 10 ms, 0xf at once
-const u16 ramp_samples[16] = { 88, 176, 265, 353, 441, 441, 441, 441, 441, 441, 441, 441, 441, 441, 441, 0 };
+// the samples a ramp takes to land, by rate code: 2 ms a code to 20 ms, then 4 ms
+// a code to 40 ms, and 48 ms for 0xf
+const u16 ramp_samples[16] = {
+	88, 176, 265, 353, 441, 529, 617, 706, 794, 882, 1058, 1235, 1411, 1588, 1764, 2117 };
 
 } // anonymous namespace
 
@@ -375,6 +379,22 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		start_ramp(voice, RAMP_PITCH, value);
 		break;
 
+	case PITCH_INCREMENT + 1:
+		increment_ramp(voice, RAMP_PITCH, value);
+		break;
+
+	case CUTOFF_INCREMENT + 1:
+		increment_ramp(voice, RAMP_CUTOFF, value);
+		break;
+
+	case FEEDBACK_INCREMENT + 1:
+		increment_ramp(voice, RAMP_FEEDBACK, value);
+		break;
+
+	case LEVEL_INCREMENT + 1:
+		increment_ramp(voice, RAMP_LEVEL, value);
+		break;
+
 	case SEND_PORT_A + 1:
 	case SEND_PORT_B + 1:
 		if (const int slot = (value >> 23) & 7; slot < SENDS)
@@ -499,11 +519,23 @@ void roland_xv_device::seed_ramp(int n, int kind, s32 value)
 	v.ramp_remaining[kind] = 0;
 }
 
+// the samples the slope a voice is already running on needs to reach its target
+u16 roland_xv_device::steps_to_target(int n, int kind) const
+{
+	const voice &v = m_voices[n];
+	const s32 distance = v.ramp_target[kind] - v.ramp_current[kind];
+	if (!v.ramp_step[kind] || (distance < 0) != (v.ramp_step[kind] < 0))
+		return 0;
+	const s64 steps = ((s64(distance) << RAMP_FRACTION_BITS) / v.ramp_step[kind]) + 1;
+	return u16(std::clamp<s64>(steps, 1, 0xffff));
+}
+
 void roland_xv_device::start_ramp(int n, int kind, u32 value)
 {
 	voice &v = m_voices[n];
 	const bool pitch = kind == RAMP_PITCH;
 	const int rate = pitch ? (value >> 19) & 0xf : (value >> 16) & 0xf;
+	const bool restart = !BIT(value, pitch ? 24 : 22);
 	v.ramp_target[kind] = pitch ? value & 0x3ffff : value & 0xffff;
 	v.ramp_armed[kind] = pitch ? BIT(value, 23) : BIT(value, 21);
 	if (kind == RAMP_LEVEL && (value & 0x00300000) == 0x00100000)
@@ -512,10 +544,32 @@ void roland_xv_device::start_ramp(int n, int kind, u32 value)
 		v.ramp_target[kind] = 0;
 		v.ramp_armed[kind] = false;
 	}
-	const u16 samples = (pitch && BIT(value, 24)) ? 0 : ramp_samples[rate];
+	if (v.ramp_target[kind] == v.ramp_current[kind])
+	{
+		v.ramp_position[kind] = v.ramp_current[kind] << RAMP_FRACTION_BITS;
+		v.ramp_step[kind] = 0;
+		v.ramp_remaining[kind] = 1;
+		return;
+	}
+	if (!restart)
+	{
+		v.ramp_remaining[kind] = v.ramp_remaining[kind] ? steps_to_target(n, kind) : 0;
+		return;
+	}
+	const u16 samples = ramp_samples[rate];
 	v.ramp_position[kind] = v.ramp_current[kind] << RAMP_FRACTION_BITS;
-	v.ramp_step[kind] = samples ? ((v.ramp_target[kind] - v.ramp_current[kind]) << RAMP_FRACTION_BITS) / samples : 0;
-	v.ramp_remaining[kind] = std::max<u16>(samples, 1);
+	v.ramp_step[kind] = ((v.ramp_target[kind] - v.ramp_current[kind]) << RAMP_FRACTION_BITS) / samples;
+	v.ramp_remaining[kind] = samples;
+}
+
+// words 0x7c/7d and 0xa0-0xa5 set a ramp's per-sample increment outright, in the
+// ramp's own units; a restart takes it back from the rate code
+void roland_xv_device::increment_ramp(int n, int kind, u32 value)
+{
+	voice &v = m_voices[n];
+	v.ramp_step[kind] = s32(std::clamp<s64>(s64(s32(value)) << RAMP_FRACTION_BITS,
+			std::numeric_limits<s32>::min(), std::numeric_limits<s32>::max()));
+	v.ramp_remaining[kind] = steps_to_target(n, kind);
 }
 
 void roland_xv_device::service_ramp(int n, int kind)
