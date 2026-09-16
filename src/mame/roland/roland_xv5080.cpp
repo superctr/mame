@@ -889,4 +889,4 @@ ROM_END
 
 //    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY   FULLNAME   FLAGS
 SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", MACHINE_NOT_WORKING )
-SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, empty_init, "Roland", "XV-5080", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, empty_init, "Roland", "XV-5080", MACHINE_NOT_WORKING )
