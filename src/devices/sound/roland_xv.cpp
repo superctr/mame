@@ -656,8 +656,9 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, 
 {
 	const u32 loop = object_long(n, LOOP_START) & 0x1ffffff;
 	const u32 end = object_long(n, END) & 0x1ffffff;
-	const bool looping = loop < end;
-	const bool alternate = BIT(object_word(n, VOICE_CONTROL), 11);
+	const int mode = (object_word(n, VOICE_CONTROL) >> 10) & 3;
+	const bool looping = mode != LOOP_NONE && loop < end;
+	const bool alternate = mode == LOOP_ALTERNATE;
 	const bool past_end = s.address > end || (s.address == end && phase >= loop_fraction(n, false));
 
 	if (!s.backward)
