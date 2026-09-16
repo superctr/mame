@@ -58,6 +58,9 @@ public:
 
 	enum filter_type { FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_OFF = 7 };
 
+	// word 0x60 bits 11:10
+	enum loop_mode { LOOP_NONE = 0, LOOP_FORWARD = 1, LOOP_ALTERNATE = 2 };
+
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_callback.bind(); }
