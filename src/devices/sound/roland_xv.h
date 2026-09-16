@@ -38,7 +38,7 @@ public:
 	// the per-voice register file behind word 0x02, by word number
 	enum voice_word
 	{
-		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, WAVE_SCALE = 0x76,
+		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
 		START = 0x80, LOOP_START = 0x82, END = 0x84,
 		CUTOFF_RAMP = 0x90, FEEDBACK_RAMP = 0x92, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96,
 		SEND_PORT_A = 0x98, SEND_PORT_B = 0x9a, PITCH_RAMP = 0x9c,
@@ -105,6 +105,7 @@ protected:
 	{
 		u32 address;
 		bool backward;
+		bool wrapped;
 	};
 
 	u16 object_word(int voice, int word) const { return m_object_regs[voice][word - OBJECT_BASE]; }
@@ -133,7 +134,8 @@ private:
 	static s32 delta_of(wave_cell c);
 	static s32 tap(s32 weight, wave_cell c);
 	void launch(int n);
-	address_step advance(int n, address_step s) const;
+	u32 loop_fraction(int n, bool at_loop) const;
+	address_step advance(int n, address_step s, u32 phase) const;
 	s32 filter(int n, s32 sample);
 	void run_voice(int n, s32 *buses);
 
