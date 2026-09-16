@@ -25,8 +25,17 @@ public:
 		IRQ_MASK = 0x0f, IRQ_ACK = 0x10, IRQ_VOICE = 0x10, STATUS = 0x1b,
 		XFER_COMMAND = 0x25, WRITE_ADDRESS = 0x26, WRITE_LENGTH = 0x2a, READ_GO = 0x2d, READ_ADDRESS = 0x2e,
 		READ_LENGTH = 0x32, COMMAND_STROBE = 0x36,
-		OBJECT_BASE = 0x60, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96, OBJECT_END = 0x100
+		OBJECT_BASE = 0x60, CUTOFF_RAMP = 0x90, FEEDBACK_RAMP = 0x92, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96,
+		PITCH_RAMP = 0x9c, OBJECT_END = 0x100
 	};
+
+	// the interrupt reasons a voice raises, each with its own voice-number word at IRQ_VOICE + reason
+	enum irq_reason
+	{
+		IRQ_ONE_SHOT_END = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_LEVEL_LANDED = 4, IRQ_VOICE_MARKER = 8
+	};
+
+	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMPS };
 
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
@@ -56,6 +65,9 @@ private:
 	void transfer_read();
 	void transfer_write();
 	void update_irq();
+	void raise_irq(int reason, int voice);
+	void start_ramp(int voice, int kind, u32 value);
+	TIMER_CALLBACK_MEMBER(ramp_tick);
 
 	int object() const { return m_regs[MODE] & (OBJECTS - 1); }
 
@@ -75,7 +87,19 @@ private:
 	u16 m_irq_enable;
 	u16 m_irq_pending;
 	u8 m_irq_voice[IRQ_REASONS];
+	u64 m_irq_waiting[IRQ_REASONS];
 	bool m_int_state;
+
+	struct ramp
+	{
+		u32 target = 0;
+		u8 rate = 0;
+		bool running = false;
+		seconds_t lands_seconds = 0;
+		attoseconds_t lands_attoseconds = 0;
+	};
+	ramp m_ramps[OBJECTS][RAMPS];
+	emu_timer *m_ramp_timer;
 };
 
 DECLARE_DEVICE_TYPE(ROLAND_XV, roland_xv_device)

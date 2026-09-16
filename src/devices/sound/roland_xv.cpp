@@ -16,13 +16,14 @@
 #include "emu.h"
 #include "roland_xv.h"
 
+
 #define LOG_REGS    (1U << 1)
 #define LOG_XFER    (1U << 2)
 #define LOG_SPACE   (1U << 3)
 #define LOG_OBJECT  (1U << 4)
 #define LOG_IRQ     (1U << 5)
 
-#define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT)
+#define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT | LOG_SPACE)
 #include "logmacro.h"
 
 DEFINE_DEVICE_TYPE(ROLAND_XV, roland_xv_device, "roland_xv", "Roland XV tone generator")
@@ -59,7 +60,15 @@ void roland_xv_device::device_start()
 	save_item(NAME(m_irq_enable));
 	save_item(NAME(m_irq_pending));
 	save_item(NAME(m_irq_voice));
+	save_item(NAME(m_irq_waiting));
 	save_item(NAME(m_int_state));
+	save_item(STRUCT_MEMBER(m_ramps, target));
+	save_item(STRUCT_MEMBER(m_ramps, rate));
+	save_item(STRUCT_MEMBER(m_ramps, running));
+	save_item(STRUCT_MEMBER(m_ramps, lands_seconds));
+	save_item(STRUCT_MEMBER(m_ramps, lands_attoseconds));
+
+	m_ramp_timer = timer_alloc(FUNC(roland_xv_device::ramp_tick), this);
 }
 
 void roland_xv_device::device_reset()
@@ -74,8 +83,13 @@ void roland_xv_device::device_reset()
 	m_irq_enable = 0;
 	m_irq_pending = 0;
 	std::fill(std::begin(m_irq_voice), std::end(m_irq_voice), 0);
+	std::fill(std::begin(m_irq_waiting), std::end(m_irq_waiting), 0);
 	m_int_state = false;
 	m_int_callback(0);
+	for (auto &voice : m_ramps)
+		for (auto &r : voice)
+			r = ramp();
+	m_ramp_timer->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
 }
 
 void roland_xv_device::sound_stream_update(sound_stream &stream)
@@ -206,6 +220,14 @@ void roland_xv_device::word_w(int word, u16 data)
 
 	case IRQ_ACK:
 		m_irq_pending &= ~data;
+		for (int reason = 0; reason < IRQ_REASONS; reason++)
+			if (BIT(data, reason) && m_irq_waiting[reason])
+			{
+				const int voice = std::countr_zero(m_irq_waiting[reason]);
+				m_irq_waiting[reason] &= ~(u64(1) << voice);
+				m_irq_voice[reason] = voice;
+				m_irq_pending |= 1 << reason;
+			}
 		update_irq();
 		break;
 
@@ -213,12 +235,21 @@ void roland_xv_device::word_w(int word, u16 data)
 		if (word >= OBJECT_BASE && word < OBJECT_END)
 		{
 			m_object_regs[object()][word - OBJECT_BASE] = data;
+			const u32 value = (u32(m_object_regs[object()][(word & ~1) - OBJECT_BASE]) << 16) | data;
+			if (word == CUTOFF_RAMP + 1)
+				start_ramp(object(), RAMP_CUTOFF, value);
+			else if (word == FEEDBACK_RAMP + 1)
+				start_ramp(object(), RAMP_FEEDBACK, value);
+			else if (word == LEVEL_RAMP + 1)
+				start_ramp(object(), RAMP_LEVEL, value);
+			else if (word == PITCH_RAMP + 1)
+				start_ramp(object(), RAMP_PITCH, value);
 			if (word == LEVEL_RAMP + 1)
-				LOGMASKED(LOG_OBJECT, "%s: object %02x level %04x%04x\n", machine().describe_context(), object(), m_object_regs[object()][LEVEL_RAMP - OBJECT_BASE], data);
+				LOGMASKED(LOG_OBJECT, "%s: object %03x level %04x%04x\n", machine().describe_context(), m_regs[MODE], m_object_regs[object()][LEVEL_RAMP - OBJECT_BASE], data);
 			else if (word == BLOCK_CONTROL + 1)
-				LOGMASKED(LOG_OBJECT, "%s: object %02x control %04x%04x\n", machine().describe_context(), object(), m_object_regs[object()][BLOCK_CONTROL - OBJECT_BASE], data);
+				LOGMASKED(LOG_OBJECT, "%s: object %03x control %04x%04x\n", machine().describe_context(), m_regs[MODE], m_object_regs[object()][BLOCK_CONTROL - OBJECT_BASE], data);
 			else
-				LOGMASKED(LOG_OBJECT, "%s: object %02x word %02x = %04x\n", machine().describe_context(), object(), word, data);
+				LOGMASKED(LOG_OBJECT, "%s: object %03x word %02x = %04x\n", machine().describe_context(), m_regs[MODE], word, data);
 		}
 		else if (word < 0x60)
 			LOGMASKED(LOG_REGS, "%s: register %02x = %04x\n", machine().describe_context(), word, data);
@@ -283,4 +314,56 @@ void roland_xv_device::update_irq()
 		m_int_state = state;
 		m_int_callback(state ? 1 : 0);
 	}
+}
+
+void roland_xv_device::raise_irq(int reason, int voice)
+{
+	if (BIT(m_irq_pending, reason))
+	{
+		m_irq_waiting[reason] |= u64(1) << voice;
+		return;
+	}
+	m_irq_voice[reason] = voice;
+	m_irq_pending |= 1 << reason;
+	update_irq();
+}
+
+
+//-------------------------------------------------
+//  ramps: a target long carries a 4-bit rate code (bits 19:16; 22:19 on
+//  the pitch), 0xf a jump; the pitch's bit 23 and the others' bit 21
+//  restart from the seed word.  The chip's rate law is not known, so a
+//  ramp lands after a placeholder time and its reason is raised then.
+//-------------------------------------------------
+
+void roland_xv_device::start_ramp(int voice, int kind, u32 value)
+{
+	ramp &r = m_ramps[voice][kind];
+	const bool pitch = kind == RAMP_PITCH;
+	r.rate = pitch ? (value >> 19) & 0xf : (value >> 16) & 0xf;
+	r.target = pitch ? value & 0x3ffff : value & 0xffff;
+	const bool jump = r.rate == 0xf || (pitch && BIT(value, 23)) || (kind == RAMP_LEVEL && (value & 0x00300000) == 0x00100000);
+	const attotime lands = machine().time() + (jump ? attotime::zero : attotime::from_msec(1000 >> (r.rate / 2)));
+	r.lands_seconds = lands.seconds();
+	r.lands_attoseconds = lands.attoseconds();
+	r.running = true;
+}
+
+TIMER_CALLBACK_MEMBER(roland_xv_device::ramp_tick)
+{
+	const attotime now = machine().time();
+	for (int voice = 0; voice < OBJECTS; voice++)
+		for (int kind = 0; kind < RAMPS; kind++)
+		{
+			ramp &r = m_ramps[voice][kind];
+			if (!r.running || attotime(r.lands_seconds, r.lands_attoseconds) > now)
+				continue;
+			r.running = false;
+			if (kind == RAMP_LEVEL)
+				raise_irq(IRQ_LEVEL_LANDED, voice);
+			else if (kind == RAMP_CUTOFF)
+				raise_irq(IRQ_CUTOFF_LANDED, voice);
+			else if (kind == RAMP_PITCH)
+				raise_irq(IRQ_PITCH_LANDED, voice);
+		}
 }
