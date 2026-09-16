@@ -35,6 +35,13 @@
     - IC71/IC74/IC79/IC82 AK4324 DACs
     - IC107 M38881M2 for the SmartMedia, SCSI and R-BUS side (undumped)
 
+    XV-5080 tone-generator clock (service notes, page 23): IC24's PLL
+    locks its VCO to 768*fs using IC23's divide-by-three feedback from
+    the 256*fs reference. IC21B divides the VCO by two, so XVCLK at both
+    chips' CKI pins is 384*fs: 16.9344 MHz at 44.1 kHz or 18.432 MHz at
+    48 kHz. The XV's internal clock multiplier is unknown; its clock
+    timing and sample-rate switching are not modelled here.
+
     The bus map follows giulioz's emulator of both machines: the two tone
     generator windows at 0x00200000 and 0x00280000 (CS0), the graphic LCD
     at 0x005c0000 and the gate array at 0x006c0000 (CS1), the battery SRAM
