@@ -39,9 +39,10 @@ public:
 	enum voice_word
 	{
 		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
-		START = 0x80, LOOP_START = 0x82, END = 0x84,
+		PITCH_INCREMENT = 0x7c, START = 0x80, LOOP_START = 0x82, END = 0x84,
 		CUTOFF_RAMP = 0x90, FEEDBACK_RAMP = 0x92, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96,
 		SEND_PORT_A = 0x98, SEND_PORT_B = 0x9a, PITCH_RAMP = 0x9c,
+		CUTOFF_INCREMENT = 0xa0, FEEDBACK_INCREMENT = 0xa2, LEVEL_INCREMENT = 0xa4,
 		CUTOFF = 0xc0, FEEDBACK = 0xc1, LEVEL = 0xc2, PAIR_BOOST = 0xc3, FILTER_TYPE = 0xc4,
 		SEND_BASE = 0xf0
 	};
@@ -127,6 +128,8 @@ private:
 
 	void start_ramp(int voice, int kind, u32 value);
 	void seed_ramp(int voice, int kind, s32 value);
+	void increment_ramp(int voice, int kind, u32 value);
+	u16 steps_to_target(int voice, int kind) const;
 	void service_ramp(int n, int kind);
 
 	u8 sample_byte(u32 sample);
