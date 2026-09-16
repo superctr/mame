@@ -511,12 +511,13 @@ void roland_xv_device::raise_irq(int reason, int voice)
 //  seed the ramps and read back.
 //-------------------------------------------------
 
+// a seed moves the value a ramp is walking and leaves its slope alone
 void roland_xv_device::seed_ramp(int n, int kind, s32 value)
 {
 	voice &v = m_voices[n];
 	v.ramp_current[kind] = value;
 	v.ramp_position[kind] = value << RAMP_FRACTION_BITS;
-	v.ramp_remaining[kind] = 0;
+	v.ramp_remaining[kind] = v.ramp_remaining[kind] ? steps_to_target(n, kind) : 0;
 }
 
 // the samples the slope a voice is already running on needs to reach its target
@@ -590,6 +591,7 @@ void roland_xv_device::service_ramp(int n, int kind)
 	switch (kind)
 	{
 	case RAMP_CUTOFF: raise_irq(IRQ_CUTOFF_LANDED, n); break;
+	case RAMP_FEEDBACK: raise_irq(IRQ_FEEDBACK_LANDED, n); break;
 	case RAMP_LEVEL: raise_irq(IRQ_LEVEL_LANDED, n); break;
 	case RAMP_PITCH: raise_irq(IRQ_PITCH_LANDED, n); break;
 	}

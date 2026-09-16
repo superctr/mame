@@ -50,7 +50,8 @@ public:
 	// the interrupt reasons a voice raises, each with its own voice-number word at IRQ_VOICE + reason
 	enum irq_reason
 	{
-		IRQ_ONE_SHOT_END = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_LEVEL_LANDED = 4, IRQ_VOICE_MARKER = 8
+		IRQ_ONE_SHOT_END = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_FEEDBACK_LANDED = 3,
+		IRQ_LEVEL_LANDED = 4, IRQ_VOICE_MARKER = 8
 	};
 
 	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMPS };
