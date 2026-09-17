@@ -98,6 +98,7 @@ protected:
 		bool was_running = false;
 		u8 region = REGION_BEFORE;
 		bool finished = false;
+		bool scaled = false;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
 		s32 ramp_current[RAMPS] = { 0 };

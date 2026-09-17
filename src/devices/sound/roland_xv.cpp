@@ -12,7 +12,8 @@
 
     A voice reads the XP's sample format at a 25-bit sample address, steps
     it by a linear 18-bit pitch (0x10000 = one sample an output sample),
-    runs its cutoff, feedback, level and pitch through host-targeted ramps
+    scaled by word 0x76/77 from its first loop crossing on, runs its
+    cutoff, feedback, level and pitch through host-targeted ramps
     with a 4-bit rate code each, filters, scales by a Q15 level and adds
     itself to up to six buses at six send levels.  The effect DSP is not
     here yet: every output pair is summed onto the stream and the chorus
@@ -131,6 +132,7 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, was_running));
 	save_item(STRUCT_MEMBER(m_voices, region));
 	save_item(STRUCT_MEMBER(m_voices, finished));
+	save_item(STRUCT_MEMBER(m_voices, scaled));
 	save_item(STRUCT_MEMBER(m_voices, filter_low));
 	save_item(STRUCT_MEMBER(m_voices, filter_band));
 	save_item(STRUCT_MEMBER(m_voices, ramp_current));
@@ -647,6 +649,7 @@ void roland_xv_device::launch(int n)
 	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
 	v.region = REGION_BEFORE;
 	v.finished = false;
+	v.scaled = false;
 	v.filter_low = 0;
 	v.filter_band = 0;
 }
@@ -698,6 +701,8 @@ void roland_xv_device::cross(int n, u32 address)
 		return;
 	const u16 control = object_word(n, VOICE_CONTROL);
 	const int condition = (control >> 8) & 3;
+	if (v.region == (BIT(control, 6) ? REGION_LOOP : REGION_END))
+		v.scaled = true;
 	if (!v.finished && ((v.region == REGION_END && condition == END_AT_END) || (v.region == REGION_LOOP && condition == END_INSIDE_LOOP)))
 	{
 		v.finished = true;
@@ -769,7 +774,10 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 
 	if (v.fetching)
 	{
-		const u32 accumulated = u32(v.phase) + u32(v.ramp_current[RAMP_PITCH] & 0x3ffff);
+		u32 step = v.ramp_current[RAMP_PITCH] & 0x3ffff;
+		if (v.scaled)
+			step = (u64(step) * object_word(n, WAVE_SCALE + 1)) >> 15;
+		const u32 accumulated = u32(v.phase) + step;
 		u32 phase = accumulated & 0xffff;
 		u32 carry = accumulated >> 16;
 		address_step current{ v.address, v.backward, false };
@@ -799,7 +807,6 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		v.backward = current.backward;
 	}
 
-	sample = clamp24((s64(sample) * object_long(n, WAVE_SCALE)) / (1 << 15));
 	sample = filter(n, sample);
 	const s32 output = clamp24((s64(sample) * v.ramp_current[RAMP_LEVEL]) / (1 << 15));
 
