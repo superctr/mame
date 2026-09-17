@@ -366,6 +366,14 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		seed_ramp(voice, RAMP_PITCH, value & 0x3ffff);
 		break;
 
+	case FILTER_BAND + 1:
+		m_voices[voice].filter_band = wrap24(value);
+		break;
+
+	case FILTER_LOW + 1:
+		m_voices[voice].filter_low = wrap24(value);
+		break;
+
 	case CUTOFF:
 		seed_ramp(voice, RAMP_CUTOFF, data);
 		break;
@@ -719,8 +727,6 @@ void roland_xv_device::launch(int n)
 	v.region = REGION_BEFORE;
 	v.finished = false;
 	v.scaled = false;
-	v.filter_low = 0;
-	v.filter_band = 0;
 }
 
 u32 roland_xv_device::loop_fraction(int n, bool at_loop) const
@@ -792,26 +798,38 @@ s32 roland_xv_device::filter(int n, s32 sample)
 {
 	voice &v = m_voices[n];
 	const int type = object_word(n, FILTER_TYPE) & 0xf;
+	if (type >= FILTER_TYPES)
+		return sample;
+
 	const s32 f = v.ramp_current[RAMP_CUTOFF];
 	const s32 q = v.ramp_current[RAMP_FEEDBACK];
-	s32 low = clamp24(v.filter_low + (s64(f) * v.filter_band) / (1 << 15));
-	const s32 high = clamp24(sample - (s32((s64(q) * v.filter_band) / (1 << 15)) + low));
-	const s32 band = clamp24(v.filter_band + (s64(f) * high) / (1 << 15));
+	const s32 band = v.filter_band;
+
+	if (type >= FILTER_HIGH_POLE)
+	{
+		const s32 high = clamp24(s64(sample) - band);
+		v.filter_band = clamp24(band + (s64(f) * high) / (1 << 15));
+		const s32 tap = type == FILTER_HIGH_POLE ? band : high;
+		return clamp24((type == FILTER_HIGH_POLE ? high : band) + (s64(q) * tap) / (1 << 15));
+	}
+
+	const s32 damping = type < FILTER_LOW_SHELF ? s32((s64(q) * band) / (1 << 15)) : band;
+	const s32 low = clamp24(v.filter_low + (s64(f) * band) / (1 << 15));
+	const s32 high = clamp24(s64(sample) - (damping + low));
 	v.filter_low = low;
-	v.filter_band = band;
+	v.filter_band = clamp24(band + (s64(f) * high) / (1 << 15));
+
 	switch (type)
 	{
 	case FILTER_LPF: return low;
-	case FILTER_BPF: return band;
-	case FILTER_PKG: return clamp24(s64(high) - low);
-	default: return high;
+	case FILTER_BPF: return v.filter_band;
+	case FILTER_HPF: return high;
+	case FILTER_PKG: return clamp24(s64(low) - high);
+	case FILTER_NOTCH: return clamp24(s64(low) + high);
 	}
+	const s32 tap = type == FILTER_LOW_SHELF ? low : type == FILTER_PEAK ? v.filter_band : high;
+	return clamp24(sample + 2 * ((s64(q) * tap) / (1 << 15)));
 }
-
-
-//-------------------------------------------------
-//  the voice
-//-------------------------------------------------
 
 void roland_xv_device::run_voice(int n, s32 *buses)
 {
