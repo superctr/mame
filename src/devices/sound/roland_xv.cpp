@@ -10,8 +10,10 @@
     per-voice longs), the FIFO transfer engine onto the chip's own wave and
     sample memory, the object-indexed voice file and the interrupt path.
 
-    A voice reads the XP's sample format at a 25-bit sample address, steps
-    it by a linear 18-bit pitch (0x10000 = one sample an output sample),
+    A voice reads the XP's 8-bit sample format, or a 16-bit differential
+    one, at a 28-bit address - a memory bank in bits 27:25, a 1 Mi-sample
+    page in it and a 20-bit index the loop points share - and steps it by
+    a linear 18-bit pitch (0x10000 = one sample an output sample),
     scaled by word 0x76/77 from its first loop crossing on, runs its
     cutoff, feedback, level and pitch through host-targeted ramps
     with a 4-bit rate code each, filters, scales by a Q15 level and adds
@@ -23,7 +25,8 @@
     - the ramp's granularity, and whether its table is samples or a divider
     - the filter's state width, rounding and saturation; the BPF and PKG taps
     - the DSP, the effect buses and the serial link
-    - expansion-board and sample-RAM wave formats
+    - the 16-bit format's accumulator width, and the bank widths the
+      configuration words 0x12-0x19 presumably carry
     - paired structures (word 0xc4 bits 11:8, word 0xc3)
     - reason 8
 
@@ -655,9 +658,13 @@ void roland_xv_device::service_ramp(int n, int kind)
 
 
 //-------------------------------------------------
-//  the wave reader: the XP's sample format at a 25-bit sample address,
-//  two samples a cell, the low byte first; each 1 MB region's first 32 kB
-//  is its exponent-nibble table.  Word 0x60 bit 7 gives the loop points a
+//  the wave reader: word 0x60 bits 13:12 pick the XP's 8-bit format (1),
+//  two samples a cell with the low byte first and each 1 Mi-sample page's
+//  first 32 Ki its exponent-nibble table, or a 16-bit differential one
+//  (0), a signed cell a sample.  Bits 27:25 of the address are the bank:
+//  the internal set, the SR-JV80 slots (a byte-wide device, one sample a
+//  cell), the four SRX slots and the two SIMMs; the loop points keep only
+//  their 20-bit index.  Word 0x60 bit 7 gives the loop points a
 //  sub-sample fraction each, the two bytes of word 0x74/75, which the
 //  forward loop takes.  Bits 11:10 are the loop mode; the end (word 0x84)
 //  is where a loop rewinds or a ping-pong turns in either direction, the
@@ -665,16 +672,26 @@ void roland_xv_device::service_ramp(int n, int kind)
 //  voice with no loop holds at its end
 //-------------------------------------------------
 
-u8 roland_xv_device::sample_byte(u32 sample)
+u32 roland_xv_device::cell_of(u32 sample, bool wide)
 {
-	const u16 cell = m_wave.read_word(sample >> 1);
-	return BIT(sample, 0) ? cell >> 8 : cell & 0xff;
+	const int bank = (sample >> 25) & 7;
+	if (wide || bank == BANK_BYTE_WIDE)
+		return sample & ADDRESS_MASK;
+	return (sample & ADDRESS_MASK & ~0x1ffffff) | ((sample & 0x1ffffff) >> 1);
 }
 
-roland_xv_device::wave_cell roland_xv_device::cell_at(u32 address)
+u8 roland_xv_device::sample_byte(u32 sample)
 {
+	const u16 cell = m_wave.read_word(cell_of(sample, false));
+	return ((sample >> 25) & 7) != BANK_BYTE_WIDE && BIT(sample, 0) ? cell >> 8 : cell & 0xff;
+}
+
+roland_xv_device::wave_cell roland_xv_device::cell_at(u32 address, bool wide)
+{
+	if (wide)
+		return wave_cell{ s16(m_wave.read_word(cell_of(address, true))), 0 };
 	const u8 byte = sample_byte(address);
-	const u8 shifts = sample_byte((address & ~0xfffff) | ((address & 0xfffff) >> 5));
+	const u8 shifts = sample_byte(in_page(address, (address & PAGE_MASK) >> 5));
 	const int exponent = BIT(address, 4) ? (shifts >> 4) : (shifts & 0x0f);
 	return wave_cell{ exponent > 10 ? 0 : s8(byte), exponent };
 }
@@ -695,7 +712,7 @@ void roland_xv_device::launch(int n)
 	voice &v = m_voices[n];
 	v.launch = false;
 	v.fetching = true;
-	v.address = object_long(n, START) & 0x1ffffff;
+	v.address = object_long(n, START) & ADDRESS_MASK;
 	v.phase = 0;
 	v.predictor = 0;
 	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
@@ -716,28 +733,29 @@ u32 roland_xv_device::loop_fraction(int n, bool at_loop) const
 
 roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, u32 phase) const
 {
-	const u32 loop = object_long(n, LOOP_START) & 0x1ffffff;
-	const u32 end = object_long(n, END) & 0x1ffffff;
+	const u32 loop = object_long(n, LOOP_START) & PAGE_MASK;
+	const u32 end = object_long(n, END) & PAGE_MASK;
+	const u32 index = s.address & PAGE_MASK;
 	const int mode = (object_word(n, VOICE_CONTROL) >> 10) & 3;
 
 	if (!s.backward)
 	{
-		const bool past_end = s.address > end || (s.address == end && phase >= loop_fraction(n, false));
+		const bool past_end = index > end || (index == end && phase >= loop_fraction(n, false));
 		if (!past_end)
-			return { s.address + 1, false, false };
+			return { in_page(s.address, index + 1), false, false };
 		switch (mode)
 		{
-		case LOOP_FORWARD: return { loop, false, true };
+		case LOOP_FORWARD: return { in_page(s.address, loop), false, true };
 		case LOOP_ALTERNATE: return { s.address, true, false };
 		default: return { s.address, false, false };
 		}
 	}
 
 	if (mode == LOOP_ALTERNATE)
-		return s.address <= loop ? address_step{ s.address, false, false } : address_step{ s.address - 1, true, false };
-	if (s.address > end)
-		return { s.address - 1, true, false };
-	return mode == LOOP_FORWARD ? address_step{ loop, true, false } : address_step{ s.address, true, false };
+		return index <= loop ? address_step{ s.address, false, false } : address_step{ in_page(s.address, index - 1), true, false };
+	if (index > end)
+		return { in_page(s.address, index - 1), true, false };
+	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, false } : address_step{ s.address, true, false };
 }
 
 // the region a fetched sample lies in, and what word 0x60 makes of the crossing: bit 6
@@ -745,9 +763,10 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, 
 void roland_xv_device::cross(int n, u32 address)
 {
 	voice &v = m_voices[n];
-	if (address == (object_long(n, END) & 0x1ffffff))
+	const u32 index = address & PAGE_MASK;
+	if (index == (object_long(n, END) & PAGE_MASK))
 		v.region = REGION_END;
-	else if (address == (object_long(n, LOOP_START) & 0x1ffffff))
+	else if (index == (object_long(n, LOOP_START) & PAGE_MASK))
 		v.region = REGION_LOOP;
 	else
 		return;
@@ -811,15 +830,16 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		service_ramp(n, kind);
 
 	const u16 control = object_word(n, VOICE_CONTROL);
-	if (!BIT(control, 12) || BIT(control, 13))
+	if (BIT(control, 13))
 		return;
+	const bool wide = !BIT(control, 12);
 	const int mode = (control >> 10) & 3;
 
 	address_step s{ v.address, v.backward, false };
 	s32 sum = 4 * v.predictor;
 	for (int i = 0; i < 3; i++)
 	{
-		sum += tap(interp_weights[i][v.phase >> 9], cell_at(s.address));
+		sum += tap(interp_weights[i][v.phase >> 9], cell_at(s.address, wide));
 		s = advance(n, s, v.phase);
 	}
 	s32 sample = wrap20(sum) >> (3 - std::min(3, (control >> 1) & 3));
@@ -836,7 +856,8 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		while (carry)
 		{
 			carry--;
-			v.predictor = wrap18(v.predictor + delta_of(cell_at(current.address)));
+			const s32 predictor = v.predictor + delta_of(cell_at(current.address, wide));
+			v.predictor = wide ? wrap16(predictor) : wrap18(predictor);
 			cross(n, current.address);
 			if (mode == LOOP_NONE && v.region == REGION_END)
 			{
@@ -846,8 +867,8 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 			const address_step next = advance(n, current, phase);
 			if (next.wrapped)
 			{
-				const u64 end = object_long(n, END) & 0x1ffffff;
-				const u64 over = (u64(current.address) - end) * 0x10000 + phase - loop_fraction(n, false);
+				const u64 end = object_long(n, END) & PAGE_MASK;
+				const u64 over = (u64(current.address & PAGE_MASK) - end) * 0x10000 + phase - loop_fraction(n, false);
 				const u32 total = u32(std::min<u64>(over, 0xffff)) + loop_fraction(n, true);
 				phase = total & 0xffff;
 				carry += total >> 16;
