@@ -66,10 +66,10 @@
     DACs, port B being MIX OUT and the phones, C and D the two DIRECT OUT
     pairs; #1 has no DAC and reaches them through #0 over the port A bus.
 
-    Not done: the XV chips are their host interface only (sound/roland_xv),
-    which answers the memory scan and the interrupt path but plays nothing,
-    and the XV-5080's blank SRAM still wants its factory reset; neither
-    wave ROM is dumped (the descrambled set stands in).
+    Not done: the XV chips (sound/roland_xv) carry a provisional effect DSP
+    whose arithmetic is unmeasured, the XV-5080's blank SRAM still wants its
+    factory reset, and neither wave ROM is dumped (the descrambled set
+    stands in).
 
 ****************************************************************************/
 
@@ -836,19 +836,30 @@ void xv5080_state::xv5080(machine_config &config)
 	m_lcdc->set_screen("screen");
 	m_lcdc->set_addrmap(0, &xv5080_state::lcdc_map);
 
-	SPEAKER(config, "speaker", 2).front();
+	// the four AK4324s all hang off XV #0 (IC13): OUTPUT A is MIX OUT and
+	// the phones, then OUTPUT B, C and D; #1 (IC12) has no DAC and reaches
+	// them through #0 over the transport link, its frame run by #0
+	SPEAKER(config, "mix", 2).front();
+	SPEAKER(config, "outb", 2).front();
+	SPEAKER(config, "outc", 2).front();
+	SPEAKER(config, "outd", 2).front();
 
 	ROLAND_XV(config, m_xv[0], 0);
 	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
 	m_xv[0]->int_callback().set_inputline(m_maincpu, 1);
-	m_xv[0]->add_route(0, "speaker", 1.0, 0);
-	m_xv[0]->add_route(1, "speaker", 1.0, 1);
+	m_xv[0]->set_link(m_xv[1]);
+	m_xv[0]->add_route(0, "mix", 1.0, 0);
+	m_xv[0]->add_route(1, "mix", 1.0, 1);
+	m_xv[0]->add_route(2, "outb", 1.0, 0);
+	m_xv[0]->add_route(3, "outb", 1.0, 1);
+	m_xv[0]->add_route(4, "outc", 1.0, 0);
+	m_xv[0]->add_route(5, "outc", 1.0, 1);
+	m_xv[0]->add_route(6, "outd", 1.0, 0);
+	m_xv[0]->add_route(7, "outd", 1.0, 1);
 
 	ROLAND_XV(config, m_xv[1], 0);
 	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
 	m_xv[1]->int_callback().set_inputline(m_maincpu, 2);
-	m_xv[1]->add_route(0, "speaker", 1.0, 0);
-	m_xv[1]->add_route(1, "speaker", 1.0, 1);
 }
 
 
