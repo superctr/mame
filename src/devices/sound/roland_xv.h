@@ -24,6 +24,9 @@ public:
 	static constexpr u32 SAMPLE_RATE = 44100;
 	static constexpr int RAMP_FRACTION_BITS = 12;
 	static constexpr int OUTPUT_BITS = 18;
+	static constexpr u32 ADDRESS_MASK = 0x0fffffff;
+	static constexpr u32 PAGE_MASK = 0x000fffff;
+	static constexpr int BANK_BYTE_WIDE = 1;
 
 	// the registers of the window, by word number
 	enum register_word
@@ -57,6 +60,9 @@ public:
 	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMP_SEND_A, RAMP_SEND_B, RAMPS };
 
 	enum filter_type { FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_OFF = 7 };
+
+	// word 0x60 bits 13:12
+	enum sample_format { FORMAT_WIDE = 0, FORMAT_DPCM = 1 };
 
 	// word 0x60 bits 11:10
 	enum loop_mode { LOOP_NONE = 0, LOOP_FORWARD = 1, LOOP_ALTERNATE = 2 };
@@ -149,8 +155,10 @@ private:
 	u16 steps_to_target(int voice, int kind) const;
 	void service_ramp(int n, int kind);
 
+	static u32 cell_of(u32 sample, bool wide);
+	static u32 in_page(u32 address, u32 index) { return (address & ~PAGE_MASK) | (index & PAGE_MASK); }
 	u8 sample_byte(u32 sample);
-	wave_cell cell_at(u32 address);
+	wave_cell cell_at(u32 address, bool wide);
 	static s32 delta_of(wave_cell c);
 	static s32 tap(s32 weight, wave_cell c);
 	void launch(int n);
@@ -165,6 +173,7 @@ private:
 	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x800000, 0x7fffff)); }
 	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
 	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
+	static s32 wrap16(s32 value) { return s16(value); }
 
 	address_space_config m_wave_config;
 	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
