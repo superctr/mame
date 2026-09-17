@@ -129,6 +129,8 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, launch));
 	save_item(STRUCT_MEMBER(m_voices, fetching));
 	save_item(STRUCT_MEMBER(m_voices, was_running));
+	save_item(STRUCT_MEMBER(m_voices, region));
+	save_item(STRUCT_MEMBER(m_voices, finished));
 	save_item(STRUCT_MEMBER(m_voices, filter_low));
 	save_item(STRUCT_MEMBER(m_voices, filter_band));
 	save_item(STRUCT_MEMBER(m_voices, ramp_current));
@@ -603,7 +605,10 @@ void roland_xv_device::service_ramp(int n, int kind)
 //  two samples a cell, the low byte first; each 1 MB region's first 32 kB
 //  is its exponent-nibble table.  Word 0x60 bit 7 gives the loop points a
 //  sub-sample fraction each, the two bytes of word 0x74/75, which the
-//  forward loop takes
+//  forward loop takes.  Bits 11:10 are the loop mode; the end (word 0x84)
+//  is where a loop rewinds or a ping-pong turns in either direction, the
+//  loop start (word 0x82) the rewind target and the other turn, and a
+//  voice with no loop holds at its end
 //-------------------------------------------------
 
 u8 roland_xv_device::sample_byte(u32 sample)
@@ -640,6 +645,8 @@ void roland_xv_device::launch(int n)
 	v.phase = 0;
 	v.predictor = 0;
 	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
+	v.region = REGION_BEFORE;
+	v.finished = false;
 	v.filter_low = 0;
 	v.filter_band = 0;
 }
@@ -657,26 +664,45 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, 
 	const u32 loop = object_long(n, LOOP_START) & 0x1ffffff;
 	const u32 end = object_long(n, END) & 0x1ffffff;
 	const int mode = (object_word(n, VOICE_CONTROL) >> 10) & 3;
-	const bool looping = mode != LOOP_NONE && loop < end;
-	const bool alternate = mode == LOOP_ALTERNATE;
-	const bool past_end = s.address > end || (s.address == end && phase >= loop_fraction(n, false));
 
 	if (!s.backward)
 	{
-		if (!looping)
-			return { s.address >= end ? s.address : s.address + 1, false, false };
-		if (past_end)
-			return alternate ? address_step{ s.address, true, false } : address_step{ loop, false, true };
-		return { s.address + 1, false, false };
+		const bool past_end = s.address > end || (s.address == end && phase >= loop_fraction(n, false));
+		if (!past_end)
+			return { s.address + 1, false, false };
+		switch (mode)
+		{
+		case LOOP_FORWARD: return { loop, false, true };
+		case LOOP_ALTERNATE: return { s.address, true, false };
+		default: return { s.address, false, false };
+		}
 	}
 
-	if (s.address <= loop)
+	if (mode == LOOP_ALTERNATE)
+		return s.address <= loop ? address_step{ s.address, false, false } : address_step{ s.address - 1, true, false };
+	if (s.address > end)
+		return { s.address - 1, true, false };
+	return mode == LOOP_FORWARD ? address_step{ loop, true, false } : address_step{ s.address, true, false };
+}
+
+// the region a fetched sample lies in, and what word 0x60 makes of the crossing: bit 6
+// picks the crossing that adopts the second pitch scale, bits 9:8 the one that finishes
+void roland_xv_device::cross(int n, u32 address)
+{
+	voice &v = m_voices[n];
+	if (address == (object_long(n, END) & 0x1ffffff))
+		v.region = REGION_END;
+	else if (address == (object_long(n, LOOP_START) & 0x1ffffff))
+		v.region = REGION_LOOP;
+	else
+		return;
+	const u16 control = object_word(n, VOICE_CONTROL);
+	const int condition = (control >> 8) & 3;
+	if (!v.finished && ((v.region == REGION_END && condition == END_AT_END) || (v.region == REGION_LOOP && condition == END_INSIDE_LOOP)))
 	{
-		if (alternate && looping)
-			return { s.address, false, false };
-		return { s.address, true, false };
+		v.finished = true;
+		raise_irq(IRQ_FINISHED, n);
 	}
-	return { s.address - 1, true, false };
 }
 
 
@@ -728,8 +754,9 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		service_ramp(n, kind);
 
 	const u16 control = object_word(n, VOICE_CONTROL);
-	if (!BIT(control, 12) || BIT(control, 13) || !v.fetching)
+	if (!BIT(control, 12) || BIT(control, 13))
 		return;
+	const int mode = (control >> 10) & 3;
 
 	address_step s{ v.address, v.backward, false };
 	s32 sum = 4 * v.predictor;
@@ -740,34 +767,37 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 	}
 	s32 sample = wrap20(sum) >> (3 - std::min(3, (control >> 1) & 3));
 
-	const u32 accumulated = u32(v.phase) + u32(v.ramp_current[RAMP_PITCH] & 0x3ffff);
-	u32 phase = accumulated & 0xffff;
-	u32 carry = accumulated >> 16;
-	address_step current{ v.address, v.backward, false };
-	while (carry)
+	if (v.fetching)
 	{
-		carry--;
-		v.predictor = wrap18(v.predictor + delta_of(cell_at(current.address)));
-		const address_step next = advance(n, current, phase);
-		if (next.address == current.address && next.backward == current.backward)
+		const u32 accumulated = u32(v.phase) + u32(v.ramp_current[RAMP_PITCH] & 0x3ffff);
+		u32 phase = accumulated & 0xffff;
+		u32 carry = accumulated >> 16;
+		address_step current{ v.address, v.backward, false };
+		while (carry)
 		{
-			v.fetching = false;
-			raise_irq(IRQ_ONE_SHOT_END, n);
-			break;
+			carry--;
+			v.predictor = wrap18(v.predictor + delta_of(cell_at(current.address)));
+			cross(n, current.address);
+			if (mode == LOOP_NONE && v.region == REGION_END)
+			{
+				v.fetching = false;
+				break;
+			}
+			const address_step next = advance(n, current, phase);
+			if (next.wrapped)
+			{
+				const u64 end = object_long(n, END) & 0x1ffffff;
+				const u64 over = (u64(current.address) - end) * 0x10000 + phase - loop_fraction(n, false);
+				const u32 total = u32(std::min<u64>(over, 0xffff)) + loop_fraction(n, true);
+				phase = total & 0xffff;
+				carry += total >> 16;
+			}
+			current = next;
 		}
-		if (next.wrapped)
-		{
-			const u64 end = object_long(n, END) & 0x1ffffff;
-			const u64 over = (u64(current.address) - end) * 0x10000 + phase - loop_fraction(n, false);
-			const u32 total = u32(std::min<u64>(over, 0xffff)) + loop_fraction(n, true);
-			phase = total & 0xffff;
-			carry += total >> 16;
-		}
-		current = next;
+		v.phase = u16(phase);
+		v.address = current.address;
+		v.backward = current.backward;
 	}
-	v.phase = u16(phase);
-	v.address = current.address;
-	v.backward = current.backward;
 
 	sample = clamp24((s64(sample) * object_long(n, WAVE_SCALE)) / (1 << 15));
 	sample = filter(n, sample);

@@ -50,7 +50,7 @@ public:
 	// the interrupt reasons a voice raises, each with its own voice-number word at IRQ_VOICE + reason
 	enum irq_reason
 	{
-		IRQ_ONE_SHOT_END = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_FEEDBACK_LANDED = 3,
+		IRQ_FINISHED = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_FEEDBACK_LANDED = 3,
 		IRQ_LEVEL_LANDED = 4, IRQ_VOICE_MARKER = 8
 	};
 
@@ -60,6 +60,12 @@ public:
 
 	// word 0x60 bits 11:10
 	enum loop_mode { LOOP_NONE = 0, LOOP_FORWARD = 1, LOOP_ALTERNATE = 2 };
+
+	// word 0x60 bits 9:8: when the voice reports itself finished
+	enum end_condition { END_NEVER = 0, END_INSIDE_LOOP = 2, END_AT_END = 3 };
+
+	// where a voice's last fetched sample lies: before either point, at the end, or from the loop start on
+	enum region { REGION_END = 1, REGION_LOOP = 0, REGION_BEFORE = 2 };
 
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
@@ -90,6 +96,8 @@ protected:
 		bool launch = false;
 		bool fetching = false;
 		bool was_running = false;
+		u8 region = REGION_BEFORE;
+		bool finished = false;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
 		s32 ramp_current[RAMPS] = { 0 };
@@ -143,6 +151,7 @@ private:
 	void launch(int n);
 	u32 loop_fraction(int n, bool at_loop) const;
 	address_step advance(int n, address_step s, u32 phase) const;
+	void cross(int n, u32 address);
 	s32 filter(int n, s32 sample);
 	void run_voice(int n, s32 *buses);
 
