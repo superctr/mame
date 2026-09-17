@@ -225,6 +225,24 @@ void sed1330_device::device_start()
 
 void sed1330_device::device_reset()
 {
+	m_ir = 0;
+	m_dor = 0;
+	m_pbc = 0;
+	m_d = 0;
+	m_sleep = 0;
+	m_sag = 0;
+	m_m0 = m_m1 = m_m2 = m_ws = m_iv = m_wf = 0;
+	m_fx = m_fy = 1;
+	m_cr = m_tcr = 0;
+	m_lf = 0;
+	m_ap = 0;
+	m_sad1 = m_sad2 = m_sad3 = m_sad4 = 0;
+	m_sl1 = m_sl2 = 0;
+	m_hdotscr = 0;
+	m_fp = 0;
+	m_csr = 0;
+	m_cd = m_crx = m_cry = m_cm = m_fc = 0;
+	m_mx = m_dm = m_ov = 0;
 }
 
 
