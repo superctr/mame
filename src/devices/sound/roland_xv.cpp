@@ -17,14 +17,32 @@
     scaled by word 0x76/77 from its first loop crossing on, runs its
     cutoff, feedback, level and pitch through host-targeted ramps
     with a 4-bit rate code each, filters, scales by a Q15 level and adds
-    itself to up to six buses at six send levels.  The effect DSP is not
-    here yet: every output pair is summed onto the stream and the chorus
-    and reverb sends (buses 6 and 7) go nowhere.
+    itself to up to six of sixteen buses at six send levels.
+
+    The buses land in the effect DSP's mix cells, one a bus, and the DSP
+    runs its program once an output sample: up to 768 three-word rows with
+    a multiplier, two accumulators, four read latches and a conditional
+    family with one delay slot, over a 1024-cell ring that slides one cell
+    a sample (IRAM and the ERAM staging cells), the sixty-four mix and
+    transport cells that do not slide, and a bank of sixty-four
+    coefficients the host writes through the object path.  Wide records at
+    0x3000 move cells to and from a 2^19-cell external memory behind a
+    cursor that falls once a sample, a mode-0 row with an address requests
+    a fractional tap from it, and the four DAC pairs are the transport
+    slots 0x2cc-0x2cf and 0x2dc-0x2df.  Two chips share a transport block:
+    the one given set_link() runs the other from its own stream and moves
+    seventeen words each way between samples.
+
+    The arithmetic is a provisional policy: 32-bit accumulators and
+    product with 23 fraction bits, every store, transfer, immediate add
+    and magnitude clamped to 24 bits, products truncated toward zero.
+    Whether the chip is wider or narrower, and where it clamps, is unread.
 
     TODO:
     - the ramp's granularity, and whether its table is samples or a divider
     - the filter's state width, rounding and saturation; the BPF and PKG taps
-    - the DSP, the effect buses and the serial link
+    - the DSP's widths, its clamp sites, the ERAM's service order, condition
+      codes 4/5/e/f and multiplier selector e, which are unobserved
     - the 16-bit format's accumulator width, and the bank widths the
       configuration words 0x12-0x19 presumably carry
     - paired structures (word 0xc4 bits 11:8, word 0xc3)
@@ -41,8 +59,9 @@
 #define LOG_SPACE   (1U << 3)
 #define LOG_OBJECT  (1U << 4)
 #define LOG_IRQ     (1U << 5)
+#define LOG_DSP     (1U << 6)
 
-#define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT | LOG_SPACE)
+#define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT | LOG_SPACE | LOG_DSP)
 #include "logmacro.h"
 
 namespace {
@@ -98,9 +117,11 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	: device_t(mconfig, ROLAND_XV, tag, owner, clock)
 	, device_memory_interface(mconfig, *this)
 	, device_sound_interface(mconfig, *this)
+	, m_link(*this, finder_base::DUMMY_TAG)
 	, m_wave_config("wave", ENDIANNESS_LITTLE, 16, 32, -1)
 	, m_int_callback(*this)
 	, m_stream(nullptr)
+	, m_master(nullptr)
 {
 }
 
@@ -112,8 +133,11 @@ device_memory_interface::space_config_vector roland_xv_device::memory_space_conf
 void roland_xv_device::device_start()
 {
 	space(AS_WAVE).specific(m_wave);
-	m_stream = stream_alloc(0, 2, SAMPLE_RATE);
+	m_stream = stream_alloc(0, OUTPUTS, SAMPLE_RATE);
 	m_space = std::make_unique<u32[]>(0x10000);
+	m_eram = std::make_unique<s32[]>(ERAM_CELLS);
+	if (m_link)
+		m_link->m_master = this;
 
 	save_item(NAME(m_regs));
 	save_item(NAME(m_object_regs));
@@ -149,6 +173,32 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, ramp_fade));
 	save_item(STRUCT_MEMBER(m_voices, ramp_armed));
 	save_item(STRUCT_MEMBER(m_voices, send_slot));
+	save_item(STRUCT_MEMBER(m_rows, w0));
+	save_item(STRUCT_MEMBER(m_rows, w1));
+	save_item(STRUCT_MEMBER(m_rows, operand));
+	save_pointer(NAME(m_eram), ERAM_CELLS);
+	save_item(NAME(m_bus));
+	save_item(NAME(m_bank));
+	save_item(NAME(m_cursor));
+	save_item(NAME(m_acc));
+	save_item(NAME(m_product));
+	save_item(NAME(m_latch));
+	save_item(NAME(m_flag_value));
+	save_item(NAME(m_flag_raw));
+	save_item(NAME(m_last_value));
+	save_item(NAME(m_last_raw));
+	save_item(NAME(m_last_hold));
+	save_item(STRUCT_MEMBER(m_taps, cell));
+	save_item(STRUCT_MEMBER(m_taps, delay));
+	save_item(NAME(m_tap_count));
+}
+
+void roland_xv_device::device_post_load()
+{
+	m_rows_end = -1;
+	for (int n = 0; n < DSP_ROWS; n++)
+		decode_row(n);
+	m_transfers_stale = true;
 }
 
 void roland_xv_device::device_reset()
@@ -169,24 +219,80 @@ void roland_xv_device::device_reset()
 	m_run_mask = 0;
 	for (auto &v : m_voices)
 		v = voice();
+	for (auto &r : m_rows)
+		r = dsp_row();
+	m_rows_end = -1;
+	std::fill_n(m_eram.get(), ERAM_CELLS, 0);
+	std::fill(std::begin(m_bus), std::end(m_bus), 0);
+	std::fill(std::begin(m_bank), std::end(m_bank), 0);
+	m_cursor = 0;
+	m_acc[0] = m_acc[1] = 0;
+	m_product = 0;
+	std::fill(std::begin(m_latch), std::end(m_latch), 0);
+	m_flag_value = 0;
+	m_flag_raw = 0;
+	m_last_value = 0;
+	m_last_raw = 0;
+	m_last_hold = true;
+	m_transfer_count = 0;
+	m_transfers_stale = true;
+	m_tap_count = 0;
+	m_logged = 0;
 }
 
+// a linked chip's frames are run from its master's stream; its own stream is silent
 void roland_xv_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
-		s32 buses[BUSES] = { 0 };
-		for (int n = 0; n < OBJECTS; n++)
-			run_voice(n, buses);
-		s32 left = 0, right = 0;
-		for (int pair = 0; pair < 16; pair += 2)
-			if (pair != BUS_CHORUS)
-			{
-				left += buses[pair];
-				right += buses[pair + 1];
-			}
-		stream.put_int_clamp(0, i, left, 1 << OUTPUT_BITS);
-		stream.put_int_clamp(1, i, right, 1 << OUTPUT_BITS);
+		if (!m_master)
+		{
+			if (m_link)
+				m_link->frame();
+			frame();
+			if (m_link)
+				exchange();
+		}
+		for (int pair = 0; pair < DAC_PAIRS; pair++)
+		{
+			stream.put_int_clamp(2 * pair, i, m_master ? 0 : m_bus[DAC_L + pair - IBUS_MIX], 1 << DSP_FRACTION_BITS);
+			stream.put_int_clamp(2 * pair + 1, i, m_master ? 0 : m_bus[DAC_R + pair - IBUS_MIX], 1 << DSP_FRACTION_BITS);
+		}
+	}
+}
+
+void roland_xv_device::sync()
+{
+	if (m_master)
+		m_master->m_stream->update();
+	else
+		m_stream->update();
+}
+
+// one output sample: the voices onto the mix cells with the four guard bits the
+// program expects, then the DSP over them
+void roland_xv_device::frame()
+{
+	s32 buses[BUSES] = { 0 };
+	for (int n = 0; n < OBJECTS; n++)
+		run_voice(n, buses);
+	for (int bus = 0; bus < BUSES; bus++)
+		m_bus[bus] = clamp24(s64(buses[bus]) * 2);
+	run_dsp();
+}
+
+// the seventeen words each way, one sample late
+void roland_xv_device::exchange()
+{
+	for (int n = 0; n < LINK_WORDS_L; n++)
+	{
+		m_link->m_bus[LINK_OUT_L + n - IBUS_MIX] = m_bus[LINK_OUT_L + n - IBUS_MIX];
+		m_bus[LINK_IN_L + n - IBUS_MIX] = m_link->m_bus[LINK_IN_L + n - IBUS_MIX];
+	}
+	for (int n = 0; n < LINK_WORDS_R; n++)
+	{
+		m_link->m_bus[LINK_OUT_R + n - IBUS_MIX] = m_bus[LINK_OUT_R + n - IBUS_MIX];
+		m_bus[LINK_IN_R + n - IBUS_MIX] = m_link->m_bus[LINK_IN_R + n - IBUS_MIX];
 	}
 }
 
@@ -198,6 +304,8 @@ void roland_xv_device::sound_stream_update(sound_stream &stream)
 u8 roland_xv_device::read(offs_t offset)
 {
 	const int word = (offset >> 1) & 0xff;
+	if (word == DATA_HIGH || word == DATA_LOW)
+		sync();
 	const u16 data = word_peek(word);
 	if (!BIT(offset, 0))
 		return data >> 8;
@@ -209,8 +317,8 @@ u8 roland_xv_device::read(offs_t offset)
 void roland_xv_device::write(offs_t offset, u8 data)
 {
 	const int word = (offset >> 1) & 0xff;
-	if (word >= OBJECT_BASE || (word >= RUN_MASK && word <= RUN_COMMIT))
-		m_stream->update();
+	if (word >= OBJECT_BASE || (word >= RUN_MASK && word <= RUN_COMMIT) || word == DATA_LOW)
+		sync();
 	if (!BIT(offset, 0))
 		m_regs[word] = (m_regs[word] & 0x00ff) | (data << 8);
 	else
@@ -253,7 +361,7 @@ void roland_xv_device::word_taken(int word)
 	{
 	case DATA_LOW:
 		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
-		m_address++;
+		m_address = next_address(m_address);
 		break;
 
 	case FIFO:
@@ -276,9 +384,9 @@ void roland_xv_device::word_w(int word, u16 data)
 		break;
 
 	case DATA_LOW:
-		m_space[m_address] = (u32(m_data_high) << 16) | data;
+		space_w(m_address, (u32(m_data_high) << 16) | data);
 		LOGMASKED(LOG_SPACE, "%s: write %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
-		m_address++;
+		m_address = next_address(m_address);
 		m_data_high = 0;
 		break;
 
@@ -428,7 +536,8 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		break;
 
 	case BLOCK_CONTROL + 1:
-		LOGMASKED(LOG_OBJECT, "%s: object %03x control %08x\n", machine().describe_context(), m_regs[MODE], value);
+		m_bank[voice] = s32(s16(data)) << (DSP_FRACTION_BITS - 15);
+		LOGMASKED(LOG_OBJECT, "%s: parameter %02x = %08x\n", machine().describe_context(), voice, value);
 		return;
 	}
 	LOGMASKED(LOG_OBJECT, "%s: object %03x word %02x = %04x\n", machine().describe_context(), m_regs[MODE], word, data);
@@ -456,6 +565,48 @@ void roland_xv_device::run_mask_w(int word, u16 data)
 	{
 		m_run_mask |= written;
 		LOGMASKED(LOG_REGS, "%s: run mask word %02x = %04x\n", machine().describe_context(), word, data);
+	}
+}
+
+
+//-------------------------------------------------
+//  the spaces behind word 0x06.  The counter steps a program row's three
+//  words and then the next row's first: the fourth slot, the runtime
+//  operand, is reached only by its own address, and whichever of the
+//  third and fourth was written last is the operand the row runs with.
+//  Every write lands at once; the wide records are decoded again at the
+//  next sample.
+//-------------------------------------------------
+
+u16 roland_xv_device::next_address(u16 address)
+{
+	if ((address & 0xf003) == (SPACE_PRAM | 2))
+		return address + 2;
+	return address + 1;
+}
+
+void roland_xv_device::space_w(u16 address, u32 data)
+{
+	m_space[address] = data;
+	switch (address & 0xf000)
+	{
+	case SPACE_PRAM:
+	{
+		const int n = (address >> 2) & (DSP_ROWS - 1);
+		switch (address & 3)
+		{
+		case 0: m_rows[n].w0 = data; break;
+		case 1: m_rows[n].w1 = data; break;
+		default: m_rows[n].operand = data; break;
+		}
+		decode_row(n);
+		break;
+	}
+
+	case SPACE_RECORDS:
+		if (address < SPACE_RECORDS + RECORDS)
+			m_transfers_stale = true;
+		break;
 	}
 }
 
@@ -908,4 +1059,286 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		if (bus < BUSES && level)
 			buses[bus] += s32((s64(output) * level) / (1 << 15));
 	}
+}
+
+
+//-------------------------------------------------
+//  the DSP.  A row is W0 (the ALU: left and right operands, their signs,
+//  the destination, a wrap, a second memory operation in W2, the
+//  conditional family; the multiplier's operand and whether it takes the
+//  C latch), W1 (a memory operation with its ten-bit address, the
+//  coefficient shift, the multiply request) and W2 (the coefficient, an
+//  immediate, or the second memory operation).  Every operand a row uses
+//  is the state it was entered with.
+//-------------------------------------------------
+
+void roland_xv_device::decode_row(int n)
+{
+	dsp_row &r = m_rows[n];
+	u16 control = r.w0;
+	u16 bus = r.w1;
+	r.conditional = BIT(r.w0, 15);
+	r.branch = r.conditional && BIT(r.w0, 14);
+	r.condition = 0;
+	r.displacement = 0;
+	if (r.conditional)
+	{
+		control = r.w0 & 0x3fff;
+		r.condition = r.w1 & 0xf;
+		r.displacement = s8((r.w1 >> 4) & 0xff);
+		bus = r.w1 & 0xe000;
+		if (BIT(r.w1, 12) && !BIT(r.w1, 15))
+			control |= 0x4000;
+	}
+	r.multiply = BIT(bus, 15);
+	r.shift = (0x4210 >> (4 * ((bus >> 13) & 3))) & 0xf;
+	r.mode = (bus >> 10) & 7;
+	r.address = bus & 0x3ff;
+	r.mode2 = (r.operand >> 10) & 7;
+	r.address2 = r.operand & 0x3ff;
+	r.second = BIT(control, 14) && !r.multiply && r.mode2 != MEM_NONE;
+	r.cell_coefficient = BIT(control, 0);
+	r.source = (control >> 1) & 7;
+	r.left = (control >> 8) & 7;
+	r.right = (control >> 4) & 7;
+	r.negate_left = BIT(control, 11);
+	r.negate_right = BIT(control, 7);
+	r.to_b = BIT(control, 12);
+	r.wrap = BIT(control, 13);
+	r.hold = r.left == LEFT_ZERO && r.right == RIGHT_ZERO;
+	const bool immediate = r.right == RIGHT_K23 || r.right == RIGHT_K19 || r.right == RIGHT_K15;
+	r.clamp = immediate && (r.left != LEFT_ZERO || r.negate_right);
+	if (!r.multiply && r.right == RIGHT_K23)
+		r.immediate = r.operand;
+	else if (!r.multiply && r.right == RIGHT_K19)
+		r.immediate = s32(r.operand) << 4;
+	else
+		r.immediate = s32(s16(r.operand)) << (DSP_FRACTION_BITS - 15 + r.shift);
+
+	const bool nop = !r.w0 && !r.w1;
+	if (!nop && n > m_rows_end)
+		m_rows_end = n;
+	else if (nop && n == m_rows_end)
+		while (m_rows_end >= 0 && !m_rows[m_rows_end].w0 && !m_rows[m_rows_end].w1)
+			m_rows_end--;
+}
+
+// a block is a header and the records after it up to the next header; a zero
+// word is not a record, and a record before any header is nothing
+void roland_xv_device::decode_transfers()
+{
+	m_transfer_count = 0;
+	m_transfers_stale = false;
+	bool open = false;
+	u16 write_base = 0, read_base = 0;
+	for (int n = 0; n < RECORDS; n++)
+	{
+		const u32 word = m_space[SPACE_RECORDS + n] & 0xfffff;
+		if ((word & 0xfc000) == 0xfc000)
+		{
+			write_base = IBUS_STAGING + ((word >> 7) & 0x7f);
+			read_base = IBUS_STAGING + (word & 0x7f);
+			open = true;
+		}
+		else if (open && word)
+		{
+			const bool write = BIT(word, 19);
+			m_transfers[m_transfer_count++] = transfer{ write, write ? write_base++ : read_base++, word & 0x7ffff };
+		}
+	}
+}
+
+s32 roland_xv_device::cell_r(u16 address) const
+{
+	if (address < IBUS_MIX || (address >= IBUS_STAGING && address < IBUS_BANK))
+		return wrap24(s32(m_space[ring_index(address)]));
+	if (address < IBUS_STAGING)
+		return m_bus[address - IBUS_MIX];
+	if (address < IBUS_BANK_END)
+		return m_bank[address - IBUS_BANK];
+	return 0;
+}
+
+void roland_xv_device::cell_w(u16 address, s32 value)
+{
+	if (address < IBUS_MIX || (address >= IBUS_STAGING && address < IBUS_BANK))
+		m_space[ring_index(address)] = u32(value);
+	else if (address < IBUS_STAGING)
+		m_bus[address - IBUS_MIX] = value;
+}
+
+void roland_xv_device::log_once(int what, const char *text)
+{
+	if (BIT(m_logged, what))
+		return;
+	m_logged |= 1 << what;
+	LOGMASKED(LOG_DSP, "%s: %s\n", machine().describe_context(), text);
+}
+
+// the sample: the read records into their cells, the rows from 0 to the halt,
+// the write records out of theirs, the cursor down, the taps deposited
+void roland_xv_device::run_dsp()
+{
+	if (m_transfers_stale)
+		decode_transfers();
+	for (int n = 0; n < m_transfer_count; n++)
+		if (!m_transfers[n].write)
+			cell_w(m_transfers[n].cell, m_eram[eram_index(m_transfers[n].offset)]);
+
+	int pc = 0;
+	for (int steps = 0; pc <= m_rows_end && steps < DSP_ROW_BUDGET; steps++)
+	{
+		const dsp_row &row = m_rows[pc];
+		if (!row.conditional)
+		{
+			execute(row, true);
+			pc++;
+			continue;
+		}
+		const bool taken = condition(row.condition);
+		execute(row, row.branch || taken);
+		if (!row.branch)
+		{
+			pc++;
+			continue;
+		}
+		if (pc + 1 >= DSP_ROWS)
+			break;
+		const dsp_row &slot = m_rows[pc + 1];
+		if (slot.branch)
+			log_once(0, "branch in a delay slot");
+		execute(slot, !slot.conditional || slot.branch || condition(slot.condition));
+		steps++;
+		const int target = pc + 1 + row.displacement;
+		if (taken && target == pc)
+			break;
+		pc = taken ? target & (DSP_ROWS - 1) : pc + 2;
+	}
+
+	for (int n = 0; n < m_transfer_count; n++)
+		if (m_transfers[n].write)
+			m_eram[eram_index(m_transfers[n].offset)] = cell_r(m_transfers[n].cell);
+	m_cursor--;
+	for (int n = 0; n < m_tap_count; n++)
+	{
+		const s32 whole = m_taps[n].delay >> 4;
+		cell_w(m_taps[n].cell, m_eram[eram_index(whole)]);
+		cell_w(m_taps[n].cell + 1, m_eram[eram_index(whole + 1)]);
+		cell_w(m_taps[n].cell + 2, (m_taps[n].delay & 15) << (DSP_FRACTION_BITS - 4));
+	}
+	m_tap_count = 0;
+}
+
+bool roland_xv_device::condition(int code)
+{
+	switch (code)
+	{
+	case 0x0: return false;
+	case 0x1: return true;
+	case 0x2: return m_flag_value == 0;
+	case 0x3: return m_flag_value != 0;
+	case 0x6: return m_flag_raw >= (1 << DSP_FRACTION_BITS) || m_flag_raw <= -(1 << DSP_FRACTION_BITS);
+	case 0x7: return m_flag_raw < (1 << DSP_FRACTION_BITS) && m_flag_raw > -(1 << DSP_FRACTION_BITS);
+	case 0x8: case 0xc: return m_flag_value >= 0;
+	case 0x9: case 0xd: return m_flag_value < 0;
+	case 0xa: return m_flag_value > 0;
+	case 0xb: return m_flag_value <= 0;
+	default:
+		log_once(1, "unobserved condition code");
+		return false;
+	}
+}
+
+void roland_xv_device::execute(const dsp_row &row, bool commit)
+{
+	const s32 a = m_acc[0], b = m_acc[1], p = m_product;
+	const s32 r = m_latch[0], sl = m_latch[1], m = m_latch[2], c = m_latch[3];
+	const s32 k = row.immediate;
+
+	s64 left = 0;
+	switch (row.left)
+	{
+	case LEFT_R: left = r; break;
+	case LEFT_S: left = sl; break;
+	case LEFT_M: left = m; break;
+	case LEFT_A: left = a; break;
+	case LEFT_B: left = b; break;
+	case LEFT_MAG_A: left = clamp24(std::abs(s64(a))); break;
+	case LEFT_MAG_B: left = clamp24(std::abs(s64(b))); break;
+	}
+	s64 right = 0;
+	switch (row.right)
+	{
+	case RIGHT_A: right = a; break;
+	case RIGHT_B: right = b; break;
+	case RIGHT_R: right = r; break;
+	case RIGHT_K23: case RIGHT_K19: case RIGHT_K15: right = k; break;
+	case RIGHT_P: right = p; break;
+	}
+
+	for (int op = 0; op < (row.second ? 2 : 1); op++)
+	{
+		const int mode = op ? row.mode2 : row.mode;
+		const u16 address = op ? row.address2 : row.address;
+		switch (mode)
+		{
+		case MEM_NONE:
+			if (address && m_tap_count < TAPS)
+				m_taps[m_tap_count++] = tap_request{ u16(address | 0x100), a };
+			break;
+		case MEM_STORE_P: cell_w(address, clamp24(p)); break;
+		case MEM_STORE_A: cell_w(address, clamp24(a)); break;
+		case MEM_STORE_B: cell_w(address, clamp24(b)); break;
+		default: m_latch[mode - MEM_READ_R] = cell_r(address); break;
+		}
+	}
+
+	s64 operand = 0;
+	switch (row.source)
+	{
+	case SOURCE_R: operand = r; break;
+	case SOURCE_S: operand = sl; break;
+	case SOURCE_M: operand = m; break;
+	case SOURCE_C: operand = c; break;
+	case SOURCE_A: operand = a; break;
+	case SOURCE_B: operand = b; break;
+	case SOURCE_P: operand = p; break;
+	default: log_once(2, "unobserved multiplier selector"); break;
+	}
+	bool product = true;
+	s64 coefficient = 0;
+	if (row.multiply)
+		coefficient = s32(s16(row.operand)) << (DSP_FRACTION_BITS - 15);
+	else if (row.cell_coefficient)
+		coefficient = c;
+	else if (row.source == SOURCE_M || row.source == SOURCE_A)
+		coefficient = a;
+	else if (row.source == SOURCE_S)
+		coefficient = s64(c) - (1 << DSP_FRACTION_BITS);
+	else
+		product = false;
+	if (product)
+		m_product = s32((operand * coefficient) / (s64(1) << (DSP_FRACTION_BITS - row.shift)));
+
+	const s32 destination = row.to_b ? b : a;
+	s64 result = destination;
+	if (!row.hold)
+		result = (row.negate_left ? -left : left) + (row.negate_right ? -right : right);
+	const s64 raw = result;
+	if (row.wrap)
+		result = wrap24(s32(result));
+	else if (row.clamp)
+		result = clamp24(result);
+	const s32 value = s32(result);
+	if (commit)
+		m_acc[row.to_b ? 1 : 0] = value;
+
+	if (!m_last_hold)
+	{
+		m_flag_value = m_last_value;
+		m_flag_raw = m_last_raw;
+	}
+	m_last_value = value;
+	m_last_raw = raw;
+	m_last_hold = row.hold;
 }
