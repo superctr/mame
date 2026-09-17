@@ -51,10 +51,10 @@ public:
 	enum irq_reason
 	{
 		IRQ_FINISHED = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_FEEDBACK_LANDED = 3,
-		IRQ_LEVEL_LANDED = 4, IRQ_VOICE_MARKER = 8
+		IRQ_LEVEL_LANDED = 4, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8
 	};
 
-	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMPS };
+	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMP_SEND_A, RAMP_SEND_B, RAMPS };
 
 	enum filter_type { FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_OFF = 7 };
 
@@ -108,6 +108,7 @@ protected:
 		u16 ramp_remaining[RAMPS] = { 0 };
 		s32 ramp_fade[RAMPS] = { 0 };
 		bool ramp_armed[RAMPS] = { false };
+		u8 send_slot[2] = { 0, 0 };
 	};
 
 	struct wave_cell
@@ -142,6 +143,8 @@ private:
 
 	void start_ramp(int voice, int kind, u32 value);
 	void seed_ramp(int voice, int kind, s32 value);
+	void set_current(int voice, int kind, s32 value);
+	void send_port_w(int voice, int kind, u32 value);
 	void increment_ramp(int voice, int kind, u32 value);
 	u16 steps_to_target(int voice, int kind) const;
 	void service_ramp(int n, int kind);

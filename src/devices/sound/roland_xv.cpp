@@ -21,12 +21,11 @@
 
     TODO:
     - the ramp's granularity, and whether its table is samples or a divider
-    - the send ports ramp their slot's level rather than setting it
     - the filter's state width, rounding and saturation; the BPF and PKG taps
     - the DSP, the effect buses and the serial link
     - expansion-board and sample-RAM wave formats
     - paired structures (word 0xc4 bits 11:8, word 0xc3)
-    - reason 8, and reasons 3, 6 and 7
+    - reason 8
 
 ***************************************************************************/
 
@@ -146,6 +145,7 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, ramp_remaining));
 	save_item(STRUCT_MEMBER(m_voices, ramp_fade));
 	save_item(STRUCT_MEMBER(m_voices, ramp_armed));
+	save_item(STRUCT_MEMBER(m_voices, send_slot));
 }
 
 void roland_xv_device::device_reset()
@@ -349,6 +349,10 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 {
 	m_object_regs[voice][word - OBJECT_BASE] = data;
 	const u32 value = object_long(voice, word & ~1);
+	if (word >= SEND_BASE && BIT(word, 0))
+		for (int port = 0; port < 2; port++)
+			if (m_voices[voice].send_slot[port] == (word - SEND_BASE) >> 1)
+				seed_ramp(voice, RAMP_SEND_A + port, data);
 	switch (word)
 	{
 	case START + 1:
@@ -405,9 +409,11 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		break;
 
 	case SEND_PORT_A + 1:
+		send_port_w(voice, RAMP_SEND_A, value);
+		break;
+
 	case SEND_PORT_B + 1:
-		if (const int slot = (value >> 23) & 7; slot < SENDS)
-			m_object_regs[voice][SEND_BASE + slot * 2 + 1 - OBJECT_BASE] = value & 0xffff;
+		send_port_w(voice, RAMP_SEND_B, value);
 		break;
 
 	case BLOCK_CONTROL + 1:
@@ -519,8 +525,31 @@ void roland_xv_device::raise_irq(int reason, int voice)
 //  arrival interrupt, the pitch's bit 24 and the others' bit 22 keep the
 //  slope in flight, and bit 20 on a cutoff, feedback or level long fades
 //  the value to zero on a parabola whose deceleration the code sets.  The
-//  current registers seed the ramps and read back.
+//  current registers seed the ramps and read back.  The two send ports are
+//  two more ramps of the same shape, each aimed by bits 25:23 at one send
+//  slot whose level register is the ramp's current; their bit 20 is a
+//  faster fade, and a landing arms reason 6 or 7.
 //-------------------------------------------------
+
+void roland_xv_device::set_current(int n, int kind, s32 value)
+{
+	voice &v = m_voices[n];
+	v.ramp_current[kind] = value;
+	if (kind >= RAMP_SEND_A)
+		m_object_regs[n][SEND_BASE + v.send_slot[kind - RAMP_SEND_A] * 2 + 1 - OBJECT_BASE] = u16(value);
+}
+
+void roland_xv_device::send_port_w(int n, int kind, u32 value)
+{
+	voice &v = m_voices[n];
+	const int slot = (value >> 23) & 7;
+	if (slot >= SENDS)
+		return;
+	v.send_slot[kind - RAMP_SEND_A] = slot;
+	v.ramp_current[kind] = object_word(n, SEND_BASE + slot * 2 + 1);
+	v.ramp_position[kind] = v.ramp_current[kind] << RAMP_FRACTION_BITS;
+	start_ramp(n, kind, value);
+}
 
 // a seed moves the value a ramp is walking and leaves its slope alone
 void roland_xv_device::seed_ramp(int n, int kind, s32 value)
@@ -553,7 +582,7 @@ void roland_xv_device::start_ramp(int n, int kind, u32 value)
 	v.ramp_fade[kind] = 0;
 	if (!pitch && BIT(value, 20))
 	{
-		v.ramp_fade[kind] = mute_fade[rate];
+		v.ramp_fade[kind] = kind >= RAMP_SEND_A ? 1 : mute_fade[rate];
 		v.ramp_target[kind] = 0;
 		v.ramp_remaining[kind] = 0;
 		return;
@@ -592,10 +621,10 @@ void roland_xv_device::service_ramp(int n, int kind)
 	if (v.ramp_fade[kind])
 	{
 		v.ramp_position[kind] += v.ramp_step[kind];
-		v.ramp_step[kind] -= v.ramp_fade[kind];
+		v.ramp_step[kind] -= kind >= RAMP_SEND_A ? v.ramp_position[kind] >> 4 : v.ramp_fade[kind];
 		if (v.ramp_position[kind] > 0)
 		{
-			v.ramp_current[kind] = v.ramp_position[kind] >> RAMP_FRACTION_BITS;
+			set_current(n, kind, v.ramp_position[kind] >> RAMP_FRACTION_BITS);
 			return;
 		}
 		v.ramp_fade[kind] = 0;
@@ -605,10 +634,10 @@ void roland_xv_device::service_ramp(int n, int kind)
 	else if (--v.ramp_remaining[kind])
 	{
 		v.ramp_position[kind] += v.ramp_step[kind];
-		v.ramp_current[kind] = v.ramp_position[kind] >> RAMP_FRACTION_BITS;
+		set_current(n, kind, v.ramp_position[kind] >> RAMP_FRACTION_BITS);
 		return;
 	}
-	v.ramp_current[kind] = v.ramp_target[kind];
+	set_current(n, kind, v.ramp_target[kind]);
 	v.ramp_position[kind] = v.ramp_target[kind] << RAMP_FRACTION_BITS;
 	v.ramp_step[kind] = 0;
 	if (!v.ramp_armed[kind])
@@ -619,6 +648,8 @@ void roland_xv_device::service_ramp(int n, int kind)
 	case RAMP_FEEDBACK: raise_irq(IRQ_FEEDBACK_LANDED, n); break;
 	case RAMP_LEVEL: raise_irq(IRQ_LEVEL_LANDED, n); break;
 	case RAMP_PITCH: raise_irq(IRQ_PITCH_LANDED, n); break;
+	case RAMP_SEND_A: raise_irq(IRQ_SEND_A_LANDED, n); break;
+	case RAMP_SEND_B: raise_irq(IRQ_SEND_B_LANDED, n); break;
 	}
 }
 
