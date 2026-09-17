@@ -1311,7 +1311,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 		coefficient = s32(s16(row.operand)) << (DSP_FRACTION_BITS - 15);
 	else if (row.cell_coefficient)
 		coefficient = c;
-	else if (row.source == SOURCE_M || row.source == SOURCE_A)
+	else if (row.source == SOURCE_M || row.source == SOURCE_A || row.source == SOURCE_B)
 		coefficient = a;
 	else if (row.source == SOURCE_S)
 		coefficient = s64(c) - (1 << DSP_FRACTION_BITS);
