@@ -92,8 +92,8 @@ public:
 	// the spaces behind word 0x06, by their top nibble
 	enum host_space { SPACE_IRAM = 0x0000, SPACE_PRAM = 0x1000, SPACE_IORAM = 0x2000, SPACE_RECORDS = 0x3000 };
 
-	// the DSP's ten-bit data addresses: IRAM and the ERAM staging cells slide under the
-	// cursor, the mix cells and transport slots stay put, the parameter bank is read-only
+	// the DSP's ten-bit data addresses: IRAM slides under the cursor; the mix cells, the
+	// transport slots and the ERAM staging cells stay put; the parameter bank is read-only
 	enum ibus
 	{
 		IBUS_IRAM_END = 0x280, IBUS_MIX = 0x280, IBUS_TRANSPORT = 0x2c0, IBUS_STAGING = 0x300,
@@ -228,7 +228,7 @@ protected:
 
 	optional_device<roland_xv_device> m_link;
 	std::unique_ptr<u32[]> m_space;
-	s32 m_bus[IBUS_STAGING - IBUS_MIX];
+	s32 m_bus[IBUS_BANK - IBUS_MIX];
 	u32 m_cursor;
 
 private:

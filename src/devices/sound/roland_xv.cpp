@@ -23,9 +23,9 @@
     runs its program once an output sample: up to 768 three-word rows with
     a multiplier, two accumulators, four read latches and a conditional
     family with one delay slot, over a 1024-cell ring that slides one cell
-    a sample (IRAM and the ERAM staging cells), the sixty-four mix and
-    transport cells that do not slide, and a bank of sixty-four
-    coefficients the host writes through the object path.  Wide records at
+    a sample (IRAM), the mix, transport and ERAM staging cells that do not
+    slide, and a bank of sixty-four coefficients the host writes through
+    the object path.  Wide records at
     0x3000 move cells to and from a 2^19-cell external memory behind a
     cursor that falls once a sample, a mode-0 row with an address requests
     a fractional tap from it, and the four DAC pairs are the transport
@@ -1150,9 +1150,9 @@ void roland_xv_device::decode_transfers()
 
 s32 roland_xv_device::cell_r(u16 address) const
 {
-	if (address < IBUS_MIX || (address >= IBUS_STAGING && address < IBUS_BANK))
+	if (address < IBUS_MIX)
 		return wrap24(s32(m_space[ring_index(address)]));
-	if (address < IBUS_STAGING)
+	if (address < IBUS_BANK)
 		return m_bus[address - IBUS_MIX];
 	if (address < IBUS_BANK_END)
 		return m_bank[address - IBUS_BANK];
@@ -1161,9 +1161,9 @@ s32 roland_xv_device::cell_r(u16 address) const
 
 void roland_xv_device::cell_w(u16 address, s32 value)
 {
-	if (address < IBUS_MIX || (address >= IBUS_STAGING && address < IBUS_BANK))
+	if (address < IBUS_MIX)
 		m_space[ring_index(address)] = u32(value);
-	else if (address < IBUS_STAGING)
+	else if (address < IBUS_BANK)
 		m_bus[address - IBUS_MIX] = value;
 }
 
