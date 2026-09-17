@@ -43,6 +43,7 @@ public:
 	{
 		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
 		PITCH_INCREMENT = 0x7c, START = 0x80, LOOP_START = 0x82, END = 0x84,
+		FILTER_BAND = 0xb0, FILTER_LOW = 0xb2,
 		CUTOFF_RAMP = 0x90, FEEDBACK_RAMP = 0x92, LEVEL_RAMP = 0x94, BLOCK_CONTROL = 0x96,
 		SEND_PORT_A = 0x98, SEND_PORT_B = 0x9a, PITCH_RAMP = 0x9c,
 		CUTOFF_INCREMENT = 0xa0, FEEDBACK_INCREMENT = 0xa2, LEVEL_INCREMENT = 0xa4,
@@ -59,7 +60,13 @@ public:
 
 	enum ramp_kind { RAMP_CUTOFF, RAMP_FEEDBACK, RAMP_LEVEL, RAMP_PITCH, RAMP_SEND_A, RAMP_SEND_B, RAMPS };
 
-	enum filter_type { FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_OFF = 7 };
+	// word 0xc4 bits 3:0; a type at or above FILTER_TYPES passes the input through
+	enum filter_type
+	{
+		FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_NOTCH = 4,
+		FILTER_LOW_SHELF = 5, FILTER_PEAK = 6, FILTER_HIGH_SHELF = 7,
+		FILTER_HIGH_POLE = 8, FILTER_LOW_POLE = 9, FILTER_TYPES = 10
+	};
 
 	// word 0x60 bits 13:12
 	enum sample_format { FORMAT_WIDE = 0, FORMAT_DPCM = 1 };
@@ -174,6 +181,7 @@ private:
 	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
 	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
 	static s32 wrap16(s32 value) { return s16(value); }
+	static s32 wrap24(s32 value) { return s32(u32(value) << 8) >> 8; }
 
 	address_space_config m_wave_config;
 	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
