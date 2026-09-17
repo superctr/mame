@@ -106,6 +106,7 @@ protected:
 		s32 ramp_position[RAMPS] = { 0 };
 		s32 ramp_step[RAMPS] = { 0 };
 		u16 ramp_remaining[RAMPS] = { 0 };
+		s32 ramp_fade[RAMPS] = { 0 };
 		bool ramp_armed[RAMPS] = { false };
 	};
 

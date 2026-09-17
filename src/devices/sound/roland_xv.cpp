@@ -22,7 +22,6 @@
     TODO:
     - the ramp's granularity, and whether its table is samples or a divider
     - the send ports ramp their slot's level rather than setting it
-    - the steal's mute is a fade, not the instant zero this does
     - the filter's state width, rounding and saturation; the BPF and PKG taps
     - the DSP, the effect buses and the serial link
     - expansion-board and sample-RAM wave formats
@@ -84,6 +83,11 @@ const s16 interp_weights[3][128] = {
 const u16 ramp_samples[16] = {
 	88, 176, 265, 353, 441, 529, 617, 706, 794, 882, 1058, 1235, 1411, 1588, 1764, 2117 };
 
+// what a muted ramp's slope loses each sample, by rate code, in the ramp's
+// fraction: 3.5 Q15 steps a sample at code 0, halving every four codes
+const s32 mute_fade[16] = {
+	14336, 12288, 10240, 8192, 7168, 6144, 5120, 4096, 3584, 3072, 2560, 2048, 1792, 1536, 1280, 1024 };
+
 } // anonymous namespace
 
 DEFINE_DEVICE_TYPE(ROLAND_XV, roland_xv_device, "roland_xv", "Roland XV tone generator")
@@ -140,6 +144,7 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, ramp_position));
 	save_item(STRUCT_MEMBER(m_voices, ramp_step));
 	save_item(STRUCT_MEMBER(m_voices, ramp_remaining));
+	save_item(STRUCT_MEMBER(m_voices, ramp_fade));
 	save_item(STRUCT_MEMBER(m_voices, ramp_armed));
 }
 
@@ -509,10 +514,12 @@ void roland_xv_device::raise_irq(int reason, int voice)
 
 //-------------------------------------------------
 //  ramps: a target long carries a 4-bit rate code (bits 19:16; 22:19 on
-//  the pitch), a landing time of 2 ms a code and 0xf a jump; the pitch's
-//  bit 23 and the others' bit 21 arm the arrival interrupt, the pitch's
-//  bit 24 jumps, the level's bit 20 alone mutes.  The current registers
-//  seed the ramps and read back.
+//  the pitch) and a landing time of 2 ms a code to 20 ms, 4 ms a code to
+//  40 ms, then 48 ms; the pitch's bit 23 and the others' bit 21 arm the
+//  arrival interrupt, the pitch's bit 24 and the others' bit 22 keep the
+//  slope in flight, and bit 20 on a cutoff, feedback or level long fades
+//  the value to zero on a parabola whose deceleration the code sets.  The
+//  current registers seed the ramps and read back.
 //-------------------------------------------------
 
 // a seed moves the value a ramp is walking and leaves its slope alone
@@ -543,11 +550,13 @@ void roland_xv_device::start_ramp(int n, int kind, u32 value)
 	const bool restart = !BIT(value, pitch ? 24 : 22);
 	v.ramp_target[kind] = pitch ? value & 0x3ffff : value & 0xffff;
 	v.ramp_armed[kind] = pitch ? BIT(value, 23) : BIT(value, 21);
-	if (kind == RAMP_LEVEL && (value & 0x00300000) == 0x00100000)
+	v.ramp_fade[kind] = 0;
+	if (!pitch && BIT(value, 20))
 	{
-		seed_ramp(n, kind, 0);
+		v.ramp_fade[kind] = mute_fade[rate];
 		v.ramp_target[kind] = 0;
-		v.ramp_armed[kind] = false;
+		v.ramp_remaining[kind] = 0;
+		return;
 	}
 	if (v.ramp_target[kind] == v.ramp_current[kind])
 	{
@@ -580,9 +589,20 @@ void roland_xv_device::increment_ramp(int n, int kind, u32 value)
 void roland_xv_device::service_ramp(int n, int kind)
 {
 	voice &v = m_voices[n];
-	if (!v.ramp_remaining[kind])
+	if (v.ramp_fade[kind])
+	{
+		v.ramp_position[kind] += v.ramp_step[kind];
+		v.ramp_step[kind] -= v.ramp_fade[kind];
+		if (v.ramp_position[kind] > 0)
+		{
+			v.ramp_current[kind] = v.ramp_position[kind] >> RAMP_FRACTION_BITS;
+			return;
+		}
+		v.ramp_fade[kind] = 0;
+	}
+	else if (!v.ramp_remaining[kind])
 		return;
-	if (--v.ramp_remaining[kind])
+	else if (--v.ramp_remaining[kind])
 	{
 		v.ramp_position[kind] += v.ramp_step[kind];
 		v.ramp_current[kind] = v.ramp_position[kind] >> RAMP_FRACTION_BITS;
@@ -590,6 +610,7 @@ void roland_xv_device::service_ramp(int n, int kind)
 	}
 	v.ramp_current[kind] = v.ramp_target[kind];
 	v.ramp_position[kind] = v.ramp_target[kind] << RAMP_FRACTION_BITS;
+	v.ramp_step[kind] = 0;
 	if (!v.ramp_armed[kind])
 		return;
 	switch (kind)
