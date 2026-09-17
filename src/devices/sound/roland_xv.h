@@ -223,9 +223,13 @@ protected:
 
 	void run_dsp();
 	void exchange();
+	s32 cell_r(u16 address) const;
+	void cell_w(u16 address, s32 value);
 
 	optional_device<roland_xv_device> m_link;
+	std::unique_ptr<u32[]> m_space;
 	s32 m_bus[IBUS_STAGING - IBUS_MIX];
+	u32 m_cursor;
 
 private:
 	u16 word_peek(int word);
@@ -271,8 +275,6 @@ private:
 	void decode_transfers();
 	u32 ring_index(u16 address) const { return (m_cursor + address) & (RING_CELLS - 1); }
 	u32 eram_index(s32 offset) const { return (m_cursor + offset) & (ERAM_CELLS - 1); }
-	s32 cell_r(u16 address) const;
-	void cell_w(u16 address, s32 value);
 	void execute(const dsp_row &row, bool commit);
 	bool condition(int code);
 	void log_once(int what, const char *text);
@@ -290,7 +292,6 @@ private:
 
 	u16 m_regs[0x100];
 	u16 m_object_regs[OBJECTS][OBJECT_END - OBJECT_BASE];
-	std::unique_ptr<u32[]> m_space;
 	u16 m_address;
 	u16 m_data_high;
 	u16 m_fifo[FIFO_DEPTH];
@@ -309,7 +310,6 @@ private:
 	int m_rows_end;
 	std::unique_ptr<s32[]> m_eram;
 	s32 m_bank[IBUS_BANK_END - IBUS_BANK];
-	u32 m_cursor;
 	s32 m_acc[2];
 	s32 m_product;
 	s32 m_latch[4];
