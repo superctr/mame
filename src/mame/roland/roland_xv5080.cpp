@@ -586,8 +586,8 @@ void xv5080_state::lcdc_map(address_map &map)
 
 void xv3080_state::lcd_palette(palette_device &palette) const
 {
-	palette.set_pen_color(0, rgb_t(0xf8, 0xc8, 0x40)); // backlight
-	palette.set_pen_color(1, rgb_t(0x20, 0x10, 0x00)); // dot on
+	palette.set_pen_color(0, rgb_t(0x50, 0xc8, 0x60)); // backlight
+	palette.set_pen_color(1, rgb_t(0x00, 0x20, 0x08)); // dot on
 }
 
 
