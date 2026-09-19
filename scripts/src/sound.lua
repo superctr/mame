@@ -1835,6 +1835,19 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/sound/roland_ep.h,SOUNDS["ROLANDEP"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDEP"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_ep.cpp",
+		MAME_DIR .. "src/devices/sound/roland_ep.h",
+	}
+end
+
+
+---------------------------------------------------
+--
 --@src/devices/sound/vgm_visualizer.h,SOUNDS["VGMVIZ"] = true
 ---------------------------------------------------
 
