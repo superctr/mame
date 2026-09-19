@@ -1845,6 +1845,17 @@ if SOUNDS["ROLANDEP"] then
 	}
 end
 
+---------------------------------------------------
+--
+--@src/devices/sound/roland_tvf.h,SOUNDS["ROLANDTVF"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDTVF"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_tvf.cpp",
+		MAME_DIR .. "src/devices/sound/roland_tvf.h",
+	}
+end
 
 ---------------------------------------------------
 --
