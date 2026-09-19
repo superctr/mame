@@ -24,7 +24,12 @@
     into the controller; the mailbox byte the ISP answers with ISF0; the
     panel scan, one column a tick into work RAM with the column number
     in DR5H and ISF3 on a change; and the encoder, its steps summed into
-    DR31H with ISF10.  The CSPs are still to come: the TVF's output goes
+    DR31H with ISF10; and the active-sensing timer, which counts in DR4H
+    while DR6H bit 4 is clear (the CPU clears it on every active-sensing
+    byte) and raises ISF8 when the count runs out.  The tick is 1 ms: the
+    tone delay parameter, whose table the owner's manual gives in
+    seconds, comes out at those seconds with it.  The timeout is a guess
+    at 300 ms.  The CSPs are still to come: the TVF's output goes
     straight to the speakers, dry.
 
     The panel is 32 switches on five columns of the ISP's scan plus the
@@ -118,6 +123,8 @@ private:
 	u8 m_scan_column = 0;
 	u8 m_scan_state[8] = {};
 	u8 m_encoder_last = 0;
+	u16 m_sense_ticks = 0;
+	bool m_sense_counting = false;
 	std::unique_ptr<u8[]> m_wave;
 };
 
@@ -150,6 +157,8 @@ void roland_jd990_state::machine_start()
 	save_item(NAME(m_scan_column));
 	save_item(NAME(m_scan_state));
 	save_item(NAME(m_encoder_last));
+	save_item(NAME(m_sense_ticks));
+	save_item(NAME(m_sense_counting));
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
@@ -159,6 +168,8 @@ void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
 
 	const bool start = BIT(m_isp_control, 0) && !BIT(data, 0);
 	m_isp_control = data;
+	m_sense_counting = !BIT(data, 4);
+	m_sense_ticks = 0;
 	if (!start)
 		return;
 
@@ -195,6 +206,17 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 		space.write_byte(0x8ff90 + column, keys);
 		m_maincpu->dr_w(0x0a, column);
 		m_maincpu->isp_raise(3);
+	}
+
+	if (m_sense_counting)
+	{
+		m_sense_ticks++;
+		m_maincpu->dr_w(0x08, m_sense_ticks >> 1);
+		if (m_sense_ticks == 300)
+		{
+			m_sense_counting = false;
+			m_maincpu->isp_raise(8);
+		}
 	}
 
 	const u8 encoder = m_encoder->read();
