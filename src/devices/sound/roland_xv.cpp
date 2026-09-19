@@ -15,8 +15,8 @@
     page in it and a 20-bit index the loop points share - and steps it by
     a linear 18-bit pitch (0x10000 = one sample an output sample),
     scaled by word 0x76/77 from its first loop crossing on, runs its
-    cutoff, feedback, level and pitch through host-targeted ramps
-    with a 4-bit rate code each, filters, scales by a Q15 level and adds
+    cutoff, resonance, amplitude and pitch through host-targeted ramps
+    with a 4-bit rate code each, filters, scales by a Q15 amplitude and adds
     itself to up to six of sixteen buses at six send levels.
 
     The buses land in the effect DSP's mix cells, one a bus, and the DSP
@@ -347,8 +347,8 @@ u16 roland_xv_device::word_peek(int word)
 	default:
 		if (word >= IRQ_VOICE && word < IRQ_VOICE + IRQ_REASONS)
 			return m_irq_voice[word - IRQ_VOICE];
-		if (word == CUTOFF || word == FEEDBACK || word == LEVEL)
-			return m_voices[object()].ramp_current[word == CUTOFF ? RAMP_CUTOFF : word == FEEDBACK ? RAMP_FEEDBACK : RAMP_LEVEL];
+		if (word == CUTOFF || word == RESONANCE || word == AMPLITUDE)
+			return m_voices[object()].ramp_current[word == CUTOFF ? RAMP_CUTOFF : word == RESONANCE ? RAMP_RESONANCE : RAMP_AMPLITUDE];
 		if (word >= OBJECT_BASE && word < OBJECT_END)
 			return m_object_regs[object()][word - OBJECT_BASE];
 		return m_regs[word];
@@ -486,25 +486,25 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		seed_ramp(voice, RAMP_CUTOFF, data);
 		break;
 
-	case FEEDBACK:
-		seed_ramp(voice, RAMP_FEEDBACK, data);
+	case RESONANCE:
+		seed_ramp(voice, RAMP_RESONANCE, data);
 		break;
 
-	case LEVEL:
-		seed_ramp(voice, RAMP_LEVEL, data);
+	case AMPLITUDE:
+		seed_ramp(voice, RAMP_AMPLITUDE, data);
 		break;
 
 	case CUTOFF_RAMP + 1:
 		start_ramp(voice, RAMP_CUTOFF, value);
 		break;
 
-	case FEEDBACK_RAMP + 1:
-		start_ramp(voice, RAMP_FEEDBACK, value);
+	case RESONANCE_RAMP + 1:
+		start_ramp(voice, RAMP_RESONANCE, value);
 		break;
 
-	case LEVEL_RAMP + 1:
-		start_ramp(voice, RAMP_LEVEL, value);
-		LOGMASKED(LOG_OBJECT, "%s: object %03x level %08x\n", machine().describe_context(), m_regs[MODE], value);
+	case AMPLITUDE_RAMP + 1:
+		start_ramp(voice, RAMP_AMPLITUDE, value);
+		LOGMASKED(LOG_OBJECT, "%s: object %03x amplitude %08x\n", machine().describe_context(), m_regs[MODE], value);
 		return;
 
 	case PITCH_RAMP + 1:
@@ -519,12 +519,12 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 		increment_ramp(voice, RAMP_CUTOFF, value);
 		break;
 
-	case FEEDBACK_INCREMENT + 1:
-		increment_ramp(voice, RAMP_FEEDBACK, value);
+	case RESONANCE_INCREMENT + 1:
+		increment_ramp(voice, RAMP_RESONANCE, value);
 		break;
 
-	case LEVEL_INCREMENT + 1:
-		increment_ramp(voice, RAMP_LEVEL, value);
+	case AMPLITUDE_INCREMENT + 1:
+		increment_ramp(voice, RAMP_AMPLITUDE, value);
 		break;
 
 	case SEND_PORT_A + 1:
@@ -685,7 +685,7 @@ void roland_xv_device::raise_irq(int reason, int voice)
 //  the pitch) and a landing time of 2 ms a code to 20 ms, 4 ms a code to
 //  40 ms, then 48 ms; the pitch's bit 23 and the others' bit 21 arm the
 //  arrival interrupt, the pitch's bit 24 and the others' bit 22 keep the
-//  slope in flight, and bit 20 on a cutoff, feedback or level long fades
+//  slope in flight, and bit 20 on a cutoff, resonance or amplitude long fades
 //  the value to zero on a parabola whose deceleration the code sets.  The
 //  current registers seed the ramps and read back.  The two send ports are
 //  two more ramps of the same shape, each aimed by bits 25:23 at one send
@@ -807,8 +807,8 @@ void roland_xv_device::service_ramp(int n, int kind)
 	switch (kind)
 	{
 	case RAMP_CUTOFF: raise_irq(IRQ_CUTOFF_LANDED, n); break;
-	case RAMP_FEEDBACK: raise_irq(IRQ_FEEDBACK_LANDED, n); break;
-	case RAMP_LEVEL: raise_irq(IRQ_LEVEL_LANDED, n); break;
+	case RAMP_RESONANCE: raise_irq(IRQ_RESONANCE_LANDED, n); break;
+	case RAMP_AMPLITUDE: raise_irq(IRQ_AMPLITUDE_LANDED, n); break;
 	case RAMP_PITCH: raise_irq(IRQ_PITCH_LANDED, n); break;
 	case RAMP_SEND_A: raise_irq(IRQ_SEND_A_LANDED, n); break;
 	case RAMP_SEND_B: raise_irq(IRQ_SEND_B_LANDED, n); break;
@@ -940,7 +940,7 @@ void roland_xv_device::cross(int n, u32 address)
 
 
 //-------------------------------------------------
-//  the filter: the XP's state-variable structure, the cutoff and feedback
+//  the filter: the XP's state-variable structure, the cutoff and resonance
 //  coefficients Q15 words, the type nibble the output tap; OFF is the
 //  high tap with both coefficients at zero
 //-------------------------------------------------
@@ -953,7 +953,7 @@ s32 roland_xv_device::filter(int n, s32 sample)
 		return sample;
 
 	const s32 f = v.ramp_current[RAMP_CUTOFF];
-	const s32 q = v.ramp_current[RAMP_FEEDBACK];
+	const s32 q = v.ramp_current[RAMP_RESONANCE];
 	const s32 band = v.filter_band;
 
 	if (type >= FILTER_HIGH_POLE)
@@ -1050,7 +1050,7 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 	}
 
 	sample = filter(n, sample);
-	const s32 output = clamp24((s64(sample) * v.ramp_current[RAMP_LEVEL]) / (1 << 15));
+	const s32 output = clamp24((s64(sample) * v.ramp_current[RAMP_AMPLITUDE]) / (1 << 15));
 
 	for (int slot = 0; slot < SENDS; slot++)
 	{
