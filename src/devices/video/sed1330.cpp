@@ -287,6 +287,12 @@ void sed1330_device::command_w(uint8_t data)
 	case INSTRUCTION_SLEEP_IN:
 		break;
 #endif
+	case INSTRUCTION_DISP_ON:
+	case INSTRUCTION_DISP_OFF:
+		m_d = BIT(m_ir, 0);
+		LOG("SED1330 Display: %s\n", m_d ? "enabled" : "disabled");
+		break;
+
 	case INSTRUCTION_CSRDIR_RIGHT:
 	case INSTRUCTION_CSRDIR_LEFT:
 	case INSTRUCTION_CSRDIR_UP:
@@ -430,10 +436,8 @@ void sed1330_device::data_w(uint8_t data)
 
 	case INSTRUCTION_DISP_ON:
 	case INSTRUCTION_DISP_OFF:
-		m_d = BIT(m_ir, 0);
 		m_fc = data & 0x03;
 		m_fp = data >> 2;
-		LOG("SED1330 Display: %s\n", BIT(m_ir, 0) ? "enabled" : "disabled");
 
 		switch (m_fc)
 		{
