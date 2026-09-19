@@ -29,7 +29,18 @@
     byte) and raises ISF8 when the count runs out.  The tick is 1 ms: the
     tone delay parameter, whose table the owner's manual gives in
     seconds, comes out at those seconds with it.  The timeout is a guess
-    at 300 ms.  The CSPs are still to come: the TVF's output goes
+    at 300 ms.
+
+    FXM is the ISP's too: for a tone with FXM the CPU leaves, per voice,
+    a colour code (1, 2, 3, 4, 6, 8, 10, 14 for colours 1-8) and two
+    pitch ratios, the tone's pitch raised and lowered by the depth in
+    0.06 semitone steps, in work RAM at 08:FB78, 08:FFD0 and 08:FFA0,
+    writes the EP's pitch once and never again, and the ISP alternates
+    the EP's pitch register between the two ratios every colour-code
+    loops of its service loop, deferring while the CPU holds the bus.
+    The loop period is a guess at 100 us; the manual's "small values
+    metallic, large values gritty" fits a modulator from 5 kHz down to
+    360 Hz.  The CSPs are still to come: the TVF's output goes
     straight to the speakers, dry.
 
     The panel is 32 switches on five columns of the ISP's scan plus the
@@ -69,6 +80,7 @@
 
 #define LOG_EP  (1U << 1)
 #define LOG_CSP (1U << 2)
+#define LOG_ISP (1U << 3)
 
 #define VERBOSE (LOG_EP | LOG_CSP)
 #include "logmacro.h"
@@ -100,6 +112,7 @@ private:
 	void isp_reset_w(int state);
 	void isp_dr_w(offs_t offset, u8 data);
 	TIMER_CALLBACK_MEMBER(isp_tick);
+	TIMER_CALLBACK_MEMBER(isp_fxm);
 
 	void mem_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
@@ -118,13 +131,19 @@ private:
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
 
+	static constexpr int FXM_VOICES = 24;
+	static constexpr attotime FXM_PERIOD = attotime::from_usec(100);
+
 	emu_timer *m_isp_tick = nullptr;
+	emu_timer *m_isp_fxm = nullptr;
 	u8 m_isp_control = 0;
 	u8 m_scan_column = 0;
 	u8 m_scan_state[8] = {};
 	u8 m_encoder_last = 0;
 	u16 m_sense_ticks = 0;
 	bool m_sense_counting = false;
+	u8 m_fxm_count[FXM_VOICES] = {};
+	u8 m_fxm_phase[FXM_VOICES] = {};
 	std::unique_ptr<u8[]> m_wave;
 };
 
@@ -153,16 +172,20 @@ void roland_jd990_state::machine_start()
 	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
 
 	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
+	m_isp_fxm = timer_alloc(FUNC(roland_jd990_state::isp_fxm), this);
 	save_item(NAME(m_isp_control));
 	save_item(NAME(m_scan_column));
 	save_item(NAME(m_scan_state));
 	save_item(NAME(m_encoder_last));
 	save_item(NAME(m_sense_ticks));
 	save_item(NAME(m_sense_counting));
+	save_item(NAME(m_fxm_count));
+	save_item(NAME(m_fxm_phase));
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
 {
+	LOGMASKED(LOG_ISP, "%s: DR%d%c = %02X\n", machine().describe_context(), offset >> 1, BIT(offset, 0) ? 'L' : 'H', data);
 	if (offset != 0x0c)
 		return;
 
@@ -184,9 +207,35 @@ void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
 void roland_jd990_state::isp_reset_w(int state)
 {
 	if (state)
+	{
 		m_isp_tick->adjust(attotime::never);
+		m_isp_fxm->adjust(attotime::never);
+	}
 	else
+	{
 		m_isp_tick->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
+		m_isp_fxm->adjust(FXM_PERIOD, 0, FXM_PERIOD);
+	}
+}
+
+TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_fxm)
+{
+	if (BIT(m_maincpu->isp_icf(), 0))
+		return;
+
+	address_space &space = m_maincpu->space(AS_PROGRAM);
+	const u32 keyed = (u32(m_maincpu->dr_r(0x36)) << 24) | (u32(m_maincpu->dr_r(0x37)) << 16) | (u32(m_maincpu->dr_r(0x34)) << 8) | m_maincpu->dr_r(0x35);
+	for (int v = 0; v < FXM_VOICES; v++)
+	{
+		const u8 code = space.read_word(0x8fb78 + 2 * v) >> 8;
+		if (!code || !BIT(keyed, v))
+			continue;
+		if (++m_fxm_count[v] < code)
+			continue;
+		m_fxm_count[v] = 0;
+		m_fxm_phase[v] ^= 1;
+		m_ep->voice_pitch_w(v, space.read_word((m_fxm_phase[v] ? 0x8ffa0 : 0x8ffd0) + 2 * v));
+	}
 }
 
 TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
