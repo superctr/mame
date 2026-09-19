@@ -24,7 +24,8 @@
     into the controller; the mailbox byte the ISP answers with ISF0; the
     panel scan, one column a tick into work RAM with the column number
     in DR5H and ISF3 on a change; and the encoder, its steps summed into
-    DR31H with ISF10.  The EP, the TVF and the CSPs are still to come.
+    DR31H with ISF10.  The CSPs are still to come: the TVF's output goes
+    straight to the speakers, dry.
 
     The panel is 32 switches on five columns of the ISP's scan plus the
     VALUE knob's push switch; the names come from pressing each position
@@ -34,9 +35,8 @@
     The wave ROMs are stored with the EP's address and data lines
     permuted, the SC-55's map per 1 MB region (ep/docs/wave_rom_lines.md);
     the driver undoes it at start, and the three chips form one 6 MB
-    module at address 0 of the EP's wave space, read by the firmware
-    through the EP's read-through; the card and expansion slots sit at
-    0x600000 and above and are empty here.
+    module at address 0 of the EP's wave space; the card and expansion
+    slots sit at 0x600000 and above and are empty here.
 
     The 1 MB map as the firmware uses it: the program ROM in pages 0-7,
     except that the upper half of page 0 is RAM (the image is blank there
@@ -54,10 +54,13 @@
 #include "bus/midi/midi.h"
 #include "cpu/h8500/h8570.h"
 #include "machine/nvram.h"
+#include "sound/roland_ep.h"
+#include "sound/roland_tvf.h"
 #include "video/sed1330.h"
 
 #include "emupal.h"
 #include "screen.h"
+#include "speaker.h"
 
 #define LOG_EP  (1U << 1)
 #define LOG_CSP (1U << 2)
@@ -75,6 +78,8 @@ public:
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
 		, m_lcdc(*this, "lcdc")
+		, m_ep(*this, "ep")
+		, m_tvf(*this, "tvf")
 		, m_waverom(*this, "waverom")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
@@ -95,13 +100,15 @@ private:
 	void lcdc_map(address_map &map) ATTR_COLD;
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
-	u16 ep_r(offs_t offset, u16 mem_mask);
-	void ep_w(offs_t offset, u16 data, u16 mem_mask);
+	u16 page_e_r(offs_t offset, u16 mem_mask);
+	void page_e_w(offs_t offset, u16 data, u16 mem_mask);
 	template <int Chip> u8 csp_r(offs_t offset);
 	template <int Chip> void csp_w(offs_t offset, u8 data);
 
 	required_device<h8570_device> m_maincpu;
 	required_device<sed1330_device> m_lcdc;
+	required_device<roland_ep_device> m_ep;
+	required_device<roland_tvf_device> m_tvf;
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
@@ -111,7 +118,6 @@ private:
 	u8 m_scan_column = 0;
 	u8 m_scan_state[8] = {};
 	u8 m_encoder_last = 0;
-	u16 m_ep_wave_addr[2] = {};
 	std::unique_ptr<u8[]> m_wave;
 };
 
@@ -137,6 +143,7 @@ void roland_jd990_state::machine_start()
 			m_wave[region + i] = data;
 		}
 	}
+	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
 
 	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
 	save_item(NAME(m_isp_control));
@@ -200,28 +207,16 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	}
 }
 
-u16 roland_jd990_state::ep_r(offs_t offset, u16 mem_mask)
+u16 roland_jd990_state::page_e_r(offs_t offset, u16 mem_mask)
 {
-	if (offset == 0x0004 / 2)
-	{
-		const u32 addr = (u32(m_ep_wave_addr[1]) << 16 | m_ep_wave_addr[0]) >> 8;
-		if (addr < m_waverom.bytes())
-			return m_wave[addr];
-		return 0;
-	}
 	if (!machine().side_effects_disabled())
-		LOGMASKED(LOG_EP, "%s: EP/TVF read 0E:%04X (mask %04X)\n", machine().describe_context(), offset << 1, mem_mask);
+		LOGMASKED(LOG_EP, "%s: page 0E read %04X (mask %04X)\n", machine().describe_context(), offset << 1, mem_mask);
 	return 0;
 }
 
-void roland_jd990_state::ep_w(offs_t offset, u16 data, u16 mem_mask)
+void roland_jd990_state::page_e_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if (offset == 0x003c / 2 || offset == 0x003e / 2)
-	{
-		m_ep_wave_addr[offset - 0x003c / 2] = data;
-		return;
-	}
-	LOGMASKED(LOG_EP, "%s: EP/TVF write 0E:%04X = %04X (mask %04X)\n", machine().describe_context(), offset << 1, data, mem_mask);
+	LOGMASKED(LOG_EP, "%s: page 0E write %04X = %04X (mask %04X)\n", machine().describe_context(), offset << 1, data, mem_mask);
 }
 
 template <int Chip>
@@ -243,7 +238,9 @@ void roland_jd990_state::mem_map(address_map &map)
 	map(0x00000, 0x7ffff).rom().region("progrom", 0);
 	map(0x08000, 0x0ffff).mirror(0x80000).ram().share("nvram_hi");
 	map(0x80000, 0x87fff).ram().share("nvram_lo");
-	map(0xe0000, 0xe7fff).rw(FUNC(roland_jd990_state::ep_r), FUNC(roland_jd990_state::ep_w));
+	map(0xe0000, 0xe7fff).rw(FUNC(roland_jd990_state::page_e_r), FUNC(roland_jd990_state::page_e_w));
+	map(0xe0000, 0xe007f).rw(m_ep, FUNC(roland_ep_device::read), FUNC(roland_ep_device::write));
+	map(0xe4000, 0xe407f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xe8000, 0xeffff).ram().share("nvram_hi");
 	map(0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
 	map(0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
@@ -351,6 +348,15 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_lcdc->set_screen("screen");
 	m_lcdc->set_addrmap(0, &roland_jd990_state::lcdc_map);
 
+	SPEAKER(config, "speaker", 2).front();
+
+	ROLAND_EP(config, m_ep, 44100);
+	ROLAND_TVF(config, m_tvf, 44100);
+	for (int n = 0; n < roland_ep_device::VOICES; n++)
+		m_ep->add_route(n, m_tvf, 1.0, n);
+	m_tvf->add_route(0, "speaker", 1.0, 0);
+	m_tvf->add_route(0, "speaker", 1.0, 1);
+
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(h8570_device::sci_rx_w<0>));
 
@@ -371,4 +377,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1993, jd990, 0, 0, jd990, jd990, roland_jd990_state, empty_init, "Roland", "JD-990", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1993, jd990, 0, 0, jd990, jd990, roland_jd990_state, empty_init, "Roland", "JD-990", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
