@@ -1,0 +1,374 @@
+// license:BSD-3-Clause
+// copyright-holders:superctr
+/****************************************************************************
+
+    Roland JD-990 Super JD synthesizer module.
+
+    Main board (service notes):
+    - IC9 H8/570 (R15199852), 20 MHz crystal, mode 3: expanded maximum,
+      16-bit bus, on-chip ROM disabled
+    - IC6 R10-0001 gate array: the chip selects, the panel scan
+    - IC31 program ROM, 256K x 16; IC30/IC32 LC36256 battery-backed RAM
+    - IC22 MB87731A "EP" PCM chip, IC25 MB87424A "TVF", IC27/IC28 TC6088AF
+      "CSP" effect processors, IC26 HG62E11R46FB "IFCS" output stage,
+      PCM61P DAC and eight sample-and-holds
+    - IC8 SED1335F0B LCD controller with IC7 SRM2064, a graphic LCD
+    - IC10 HG62E11R24FS RAM card interface
+
+    The CPU's ISP sub-processor scans the panel, reads the encoder and
+    keeps the firmware's tick and active-sensing timers; its program is in
+    the part, so the driver models what it does.  So far: the tick, at a
+    guessed 1 ms; the display transfer, in which the CPU sets the
+    controller's cursor, puts a work-RAM source address in DR7 and a byte
+    count in DR10 and clears DR6H bit 0, and the ISP streams the bytes
+    into the controller; the mailbox byte the ISP answers with ISF0; the
+    panel scan, one column a tick into work RAM with the column number
+    in DR5H and ISF3 on a change; and the encoder, its steps summed into
+    DR31H with ISF10.  The EP, the TVF and the CSPs are still to come.
+
+    The panel is 32 switches on five columns of the ISP's scan plus the
+    VALUE knob's push switch; the names come from pressing each position
+    in emulation against the owner's manual.  PERFORM has not answered
+    on any position and three positions are unplaced.
+
+    The wave ROMs are stored with the EP's address and data lines
+    permuted, the SC-55's map per 1 MB region (ep/docs/wave_rom_lines.md);
+    the driver undoes it at start, and the three chips form one 6 MB
+    module at address 0 of the EP's wave space, read by the firmware
+    through the EP's read-through; the card and expansion slots sit at
+    0x600000 and above and are empty here.
+
+    The 1 MB map as the firmware uses it: the program ROM in pages 0-7,
+    except that the upper half of page 0 is RAM (the image is blank there
+    and the firmware keeps the same variables at 0:9F48 and 8:9F48); the
+    64 KB battery RAM in page 8; the EP and TVF windows in the lower half
+    of page 0E, with the RAM's upper half again above them (the voice
+    service clears flags in its voice records through that page); the
+    two CSPs, the LCD controller (0F:A000 data, 0F:A002 command) and the
+    CPU's own top-page mirror in page 0F.
+
+****************************************************************************/
+
+#include "emu.h"
+
+#include "bus/midi/midi.h"
+#include "cpu/h8500/h8570.h"
+#include "machine/nvram.h"
+#include "video/sed1330.h"
+
+#include "emupal.h"
+#include "screen.h"
+
+#define LOG_EP  (1U << 1)
+#define LOG_CSP (1U << 2)
+
+#define VERBOSE (LOG_EP | LOG_CSP)
+#include "logmacro.h"
+
+
+namespace {
+
+class roland_jd990_state : public driver_device
+{
+public:
+	roland_jd990_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_lcdc(*this, "lcdc")
+		, m_waverom(*this, "waverom")
+		, m_keys(*this, "KEY%u", 0U)
+		, m_encoder(*this, "ENCODER")
+	{
+	}
+
+	void jd990(machine_config &config);
+
+protected:
+	virtual void machine_start() override ATTR_COLD;
+
+private:
+	void isp_reset_w(int state);
+	void isp_dr_w(offs_t offset, u8 data);
+	TIMER_CALLBACK_MEMBER(isp_tick);
+
+	void mem_map(address_map &map) ATTR_COLD;
+	void lcdc_map(address_map &map) ATTR_COLD;
+	void lcd_palette(palette_device &palette) const ATTR_COLD;
+
+	u16 ep_r(offs_t offset, u16 mem_mask);
+	void ep_w(offs_t offset, u16 data, u16 mem_mask);
+	template <int Chip> u8 csp_r(offs_t offset);
+	template <int Chip> void csp_w(offs_t offset, u8 data);
+
+	required_device<h8570_device> m_maincpu;
+	required_device<sed1330_device> m_lcdc;
+	required_region_ptr<u8> m_waverom;
+	required_ioport_array<8> m_keys;
+	required_ioport m_encoder;
+
+	emu_timer *m_isp_tick = nullptr;
+	u8 m_isp_control = 0;
+	u8 m_scan_column = 0;
+	u8 m_scan_state[8] = {};
+	u8 m_encoder_last = 0;
+	u16 m_ep_wave_addr[2] = {};
+	std::unique_ptr<u8[]> m_wave;
+};
+
+void roland_jd990_state::machine_start()
+{
+	static const u8 addr_lines[20] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14, 19 };
+	static const u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
+	const u32 size = m_waverom.bytes();
+	m_wave = std::make_unique<u8[]>(size);
+	for (u32 region = 0; region < size; region += 0x100000)
+	{
+		for (u32 i = 0; i < 0x100000; i++)
+		{
+			u32 src = 0;
+			for (int bit = 0; bit < 20; bit++)
+				if (BIT(i, bit))
+					src |= 1 << addr_lines[bit];
+			const u8 raw = m_waverom[region + src];
+			u8 data = 0;
+			for (int bit = 0; bit < 8; bit++)
+				if (BIT(raw, data_lines[bit]))
+					data |= 1 << bit;
+			m_wave[region + i] = data;
+		}
+	}
+
+	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
+	save_item(NAME(m_isp_control));
+	save_item(NAME(m_scan_column));
+	save_item(NAME(m_scan_state));
+	save_item(NAME(m_encoder_last));
+}
+
+void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
+{
+	if (offset != 0x0c)
+		return;
+
+	const bool start = BIT(m_isp_control, 0) && !BIT(data, 0);
+	m_isp_control = data;
+	if (!start)
+		return;
+
+	address_space &space = m_maincpu->space(AS_PROGRAM);
+	const u16 src = (m_maincpu->dr_r(0x0e) << 8) | m_maincpu->dr_r(0x0f);
+	const u16 count = (m_maincpu->dr_r(0x14) << 8) | m_maincpu->dr_r(0x15);
+	m_lcdc->command_w(0x42);
+	for (u16 i = 0; i < count; i++)
+		m_lcdc->data_w(space.read_byte(0x80000 | u16(src + i)));
+}
+
+void roland_jd990_state::isp_reset_w(int state)
+{
+	if (state)
+		m_isp_tick->adjust(attotime::never);
+	else
+		m_isp_tick->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
+}
+
+TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
+{
+	address_space &space = m_maincpu->space(AS_PROGRAM);
+
+	m_maincpu->isp_raise(9);
+	if (space.read_byte(0x87e85))
+		m_maincpu->isp_raise(0);
+
+	const u8 column = m_scan_column;
+	m_scan_column = (m_scan_column + 1) & 7;
+	const u8 keys = m_keys[column]->read();
+	if (keys != m_scan_state[column])
+	{
+		m_scan_state[column] = keys;
+		space.write_byte(0x8ff90 + column, keys);
+		m_maincpu->dr_w(0x0a, column);
+		m_maincpu->isp_raise(3);
+	}
+
+	const u8 encoder = m_encoder->read();
+	const s8 delta = s8(encoder - m_encoder_last);
+	m_encoder_last = encoder;
+	if (delta)
+	{
+		m_maincpu->dr_w(0x3e, m_maincpu->dr_r(0x3e) + delta);
+		m_maincpu->isp_raise(10);
+	}
+}
+
+u16 roland_jd990_state::ep_r(offs_t offset, u16 mem_mask)
+{
+	if (offset == 0x0004 / 2)
+	{
+		const u32 addr = (u32(m_ep_wave_addr[1]) << 16 | m_ep_wave_addr[0]) >> 8;
+		if (addr < m_waverom.bytes())
+			return m_wave[addr];
+		return 0;
+	}
+	if (!machine().side_effects_disabled())
+		LOGMASKED(LOG_EP, "%s: EP/TVF read 0E:%04X (mask %04X)\n", machine().describe_context(), offset << 1, mem_mask);
+	return 0;
+}
+
+void roland_jd990_state::ep_w(offs_t offset, u16 data, u16 mem_mask)
+{
+	if (offset == 0x003c / 2 || offset == 0x003e / 2)
+	{
+		m_ep_wave_addr[offset - 0x003c / 2] = data;
+		return;
+	}
+	LOGMASKED(LOG_EP, "%s: EP/TVF write 0E:%04X = %04X (mask %04X)\n", machine().describe_context(), offset << 1, data, mem_mask);
+}
+
+template <int Chip>
+u8 roland_jd990_state::csp_r(offs_t offset)
+{
+	if (!machine().side_effects_disabled())
+		LOGMASKED(LOG_CSP, "%s: CSP%d read %04X\n", machine().describe_context(), Chip + 1, offset);
+	return 0;
+}
+
+template <int Chip>
+void roland_jd990_state::csp_w(offs_t offset, u8 data)
+{
+	LOGMASKED(LOG_CSP, "%s: CSP%d write %04X = %02X\n", machine().describe_context(), Chip + 1, offset, data);
+}
+
+void roland_jd990_state::mem_map(address_map &map)
+{
+	map(0x00000, 0x7ffff).rom().region("progrom", 0);
+	map(0x08000, 0x0ffff).mirror(0x80000).ram().share("nvram_hi");
+	map(0x80000, 0x87fff).ram().share("nvram_lo");
+	map(0xe0000, 0xe7fff).rw(FUNC(roland_jd990_state::ep_r), FUNC(roland_jd990_state::ep_w));
+	map(0xe8000, 0xeffff).ram().share("nvram_hi");
+	map(0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
+	map(0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
+	map(0xfa000, 0xfa000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
+	map(0xfa002, 0xfa002).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
+}
+
+void roland_jd990_state::lcdc_map(address_map &map)
+{
+	map(0x0000, 0x1fff).mirror(0xe000).ram();
+}
+
+void roland_jd990_state::lcd_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t(131, 136, 139));
+	palette.set_pen_color(1, rgb_t(0, 0, 0));
+}
+
+static INPUT_PORTS_START(jd990)
+	PORT_START("KEY0")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rhythm")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/3")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/4")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/6")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/7")
+
+	PORT_START("KEY1")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Undo")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System Setup")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects On/Off")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 1/3")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F4")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F5")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F6")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit")
+
+	PORT_START("KEY2")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("User Int")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("User Card")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset A")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset B")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Utility")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F1")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F2")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F3")
+
+	PORT_START("KEY3")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Switch 1")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Switch 2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Switch 3")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Switch 4")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Dec")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inc")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 3/6")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 3/7")
+
+	PORT_START("KEY4")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 1")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 3")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 4")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 4/5")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("ROM Play")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down")
+
+	PORT_START("KEY5")
+	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("KEY6")
+	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("KEY7")
+	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("ENCODER")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_SENSITIVITY(25) PORT_KEYDELTA(1) PORT_NAME("Value")
+INPUT_PORTS_END
+
+void roland_jd990_state::jd990(machine_config &config)
+{
+	H8570(config, m_maincpu, 20_MHz_XTAL);
+	m_maincpu->set_mode(3);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jd990_state::mem_map);
+	m_maincpu->isp_reset_cb().set(FUNC(roland_jd990_state::isp_reset_w));
+	m_maincpu->isp_dr_write_cb().set(FUNC(roland_jd990_state::isp_dr_w));
+
+	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
+	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
+
+	screen_device &screen(SCREEN(config, "screen"));
+	screen.set_lcd();
+	screen.set_refresh_hz(60);
+	screen.set_screen_update("lcdc", FUNC(sed1330_device::screen_update));
+	screen.set_size(320, 80);
+	screen.set_visarea_full();
+	screen.set_palette("palette");
+
+	PALETTE(config, "palette", FUNC(roland_jd990_state::lcd_palette), 2);
+
+	SED1330(config, m_lcdc, 20_MHz_XTAL / 2);
+	m_lcdc->set_screen("screen");
+	m_lcdc->set_addrmap(0, &roland_jd990_state::lcdc_map);
+
+	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
+	mdin.rxd_handler().set(m_maincpu, FUNC(h8570_device::sci_rx_w<0>));
+
+	midi_port_device &mdout(MIDI_PORT(config, "mdout", midiout_slot, "midiout"));
+	m_maincpu->write_sci_tx<0>().set(mdout, FUNC(midi_port_device::write_txd));
+}
+
+ROM_START(jd990)
+	ROM_REGION16_BE(0x80000, "progrom", 0)
+	ROM_LOAD16_WORD_SWAP("jd990_v1.05.ic31", 0x00000, 0x80000, CRC(2555146f) SHA1(9e74c6e8b22b26e4427830487ca5074bdd2bd352))
+
+	ROM_REGION(0x600000, "waverom", 0)
+	ROM_LOAD("wa_r15209393.bin", 0x000000, 0x200000, CRC(ac55642d) SHA1(ca25811273ebfdb1b02472ccccf1dd040c747d04))
+	ROM_LOAD("wb_r15209394.bin", 0x200000, 0x200000, CRC(63a2f96e) SHA1(14dd6be63718713d515c66bd57813c8766d9e5d7))
+	ROM_LOAD("wc_r15209395.bin", 0x400000, 0x200000, CRC(2b5e790c) SHA1(38749fb6bd074355cc922a061d9c47ad1d69ff6b))
+ROM_END
+
+} // anonymous namespace
+
+
+SYST(1993, jd990, 0, 0, jd990, jd990, roland_jd990_state, empty_init, "Roland", "JD-990", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)

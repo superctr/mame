@@ -40480,6 +40480,9 @@ re3
 @source:roland/roland_jd800.cpp
 jd800
 
+@source:roland/roland_jd990.cpp
+jd990
+
 @source:roland/roland_jv80.cpp
 jv880
 rd500
