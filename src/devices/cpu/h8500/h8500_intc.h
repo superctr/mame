@@ -205,9 +205,37 @@ private:
 	u8 m_pin_ctl;   // SYSCR2 bits 2-0: P6PWME, P9PWME, P9SCI2E (storage only)
 };
 
+// The H8/570 has NMI and IRQ0 only; IRQ0E and NMIEG sit in SYSCR1 with the
+// bus release enable, as on the H8/534.  Its priority registers hold IRQ0
+// and the watchdog, the PWM timer, the sixteen ISP interrupt status flags,
+// the SCI and the A/D converter.
+class h8570_intc_device : public h8500_intc_device
+{
+public:
+	h8570_intc_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
+
+	template <typename T>
+	h8570_intc_device(const machine_config &mconfig, const char *tag, device_t *owner, T &&cpu)
+		: h8570_intc_device(mconfig, tag, owner)
+	{
+		m_cpu.set_tag(std::forward<T>(cpu));
+	}
+
+	u8   syscr1_r();
+	void syscr1_w(u8 data);
+
+protected:
+	virtual void device_start() override ATTR_COLD;
+	virtual void device_reset() override ATTR_COLD;
+
+private:
+	u8 m_brle;
+};
+
 DECLARE_DEVICE_TYPE(H8500_INTC, h8500_intc_device)
 DECLARE_DEVICE_TYPE(H8520_INTC, h8520_intc_device)
 DECLARE_DEVICE_TYPE(H8532_INTC, h8532_intc_device)
 DECLARE_DEVICE_TYPE(H8534_INTC, h8534_intc_device)
+DECLARE_DEVICE_TYPE(H8570_INTC, h8570_intc_device)
 
 #endif // MAME_CPU_H8500_H8500_INTC_H

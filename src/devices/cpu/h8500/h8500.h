@@ -204,6 +204,9 @@ protected:
 		PORT_7,
 		PORT_8,
 		PORT_9,
+		PORT_10,
+		PORT_11,
+		PORT_12,
 		PORT_COUNT
 	};
 

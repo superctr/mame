@@ -28,12 +28,14 @@ DEFINE_DEVICE_TYPE(H8500_INTC, h8500_intc_device, "h8500_intc", "H8/500 interrup
 DEFINE_DEVICE_TYPE(H8520_INTC, h8520_intc_device, "h8520_intc", "H8/520 interrupt controller")
 DEFINE_DEVICE_TYPE(H8532_INTC, h8532_intc_device, "h8532_intc", "H8/532 interrupt controller")
 DEFINE_DEVICE_TYPE(H8534_INTC, h8534_intc_device, "h8534_intc", "H8/534 interrupt controller")
+DEFINE_DEVICE_TYPE(H8570_INTC, h8570_intc_device, "h8570_intc", "H8/570 interrupt controller")
 
 // External IRQ vectors for each chip type
 static const int h8510_irq_vectors[4] = { 32, 36, 37, 38 };
 static const int h8520_irq_vectors[8] = { 32, 33, 34, 35, 36, 37, 38, 39 };
 static const int h8532_irq_vectors[2] = { 32, 33 };
 static const int h8534_irq_vectors[6] = { 32, 36, 40, 41, 44, 45 };
+static const int h8570_irq_vectors[1] = { 32 };
 
 // Vector to IPR mapping table.  Even slots are bits 6-4 of an IPR,
 // odd slots are bits 2-0, and -1 means no programmable priority.
@@ -91,6 +93,20 @@ static const int h8534_vector_to_slot[80] =
 	 6,  6,  6,  6,  7,  7,  7, -1, // FRT3 same, 8-bit timer CMIA/CMIB/OVI
 	 8,  8,  8, -1,  9,  9,  9, -1, // SCI1 ERI/RXI/TXI, SCI2 ERI/RXI/TXI
 	10, -1, -1, -1, -1, -1, -1, -1  // A/D ADI
+};
+
+static const int h8570_vector_to_slot[80] =
+{
+	-1, -1, -1, -1, -1, -1, -1, -1, // 0-7: reset, CPU exceptions
+	-1, -1, -1, -1, -1, -1, -1, -1, // 8-15: NMI at 11 (fixed level 8)
+	-1, -1, -1, -1, -1, -1, -1, -1, // 16-31: TRAPA
+	-1, -1, -1, -1, -1, -1, -1, -1,
+	 0, -1,  0, -1,  1,  1,  1, -1, // IRQ0, (reserved), WDT, (reserved), PWM OCF0-OCF2
+	 3,  3,  3,  3,  2,  2,  2,  2, // ISF0-ISF3, ISF4-ISF7
+	 5,  5,  5,  5,  4,  4,  4,  4, // ISF8-ISF11, ISF12-ISF15
+	 6,  6,  6, -1,  7, -1, -1, -1, // SCI ERI/RXI/TXI, A/D ADI
+	-1, -1, -1, -1, -1, -1, -1, -1, // 64-79: unused
+	-1, -1, -1, -1, -1, -1, -1, -1
 };
 
 
@@ -482,6 +498,50 @@ void h8534_intc_device::syscr2_w(u8 data)
 {
 	m_irqcr = (m_irqcr & 0x03) | ((data >> 1) & 0x3c);
 	m_pin_ctl = data & 0x07;
+
+	check_external_irqs();
+	update_irq_state();
+}
+
+
+//**************************************************************************
+//  H8/570
+//**************************************************************************
+
+h8570_intc_device::h8570_intc_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: h8500_intc_device(mconfig, H8570_INTC, tag, owner, clock)
+	, m_brle(0)
+{
+	m_irq_vectors = h8570_irq_vectors;
+	m_irq_pin_count = 1;
+	m_vector_to_slot = h8570_vector_to_slot;
+	m_irqcr_bits = 0x01;
+}
+
+void h8570_intc_device::device_start()
+{
+	h8500_intc_device::device_start();
+
+	save_item(NAME(m_brle));
+}
+
+void h8570_intc_device::device_reset()
+{
+	h8500_intc_device::device_reset();
+
+	m_brle = 0;
+}
+
+u8 h8570_intc_device::syscr1_r()
+{
+	return 0x87 | ((m_irqcr & 0x01) << 5) | (m_nmicr << 4) | (m_brle << 3);
+}
+
+void h8570_intc_device::syscr1_w(u8 data)
+{
+	m_nmicr = BIT(data, 4);
+	m_irqcr = BIT(data, 5);
+	m_brle = BIT(data, 3);
 
 	check_external_irqs();
 	update_irq_state();
