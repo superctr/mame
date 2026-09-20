@@ -93,7 +93,7 @@
 #define LOG_CSP (1U << 2)
 #define LOG_ISP (1U << 3)
 
-#define VERBOSE (LOG_EP | LOG_CSP)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
