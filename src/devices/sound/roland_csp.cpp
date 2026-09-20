@@ -184,18 +184,22 @@ void roland_csp_device::eram_clock(u32 word)
 {
 	const int assembling = int(m_pc) - m_eram_start[0];
 	const int pending = int(m_pc) - m_eram_start[1];
-	if (BIT(word, 19))
+	if (m_eram_active[1] && pending == 7)
+		m_eram_data = m_eram_write;
+	if (m_eram_active[1] && pending == 10)
 	{
-		m_eram_active[0] = true;
-		m_eram_start[0] = m_pc;
-		m_eram_command[0] = word >> 20;
-		m_eram_address[0] = 0;
+		const u32 address = m_eram_address[1] & m_eram_mask;
+		if (m_eram_command[1] == 4)
+			m_eram[address] = narrow(m_eram_data);
+		else
+			m_eram_read = m_eram[address];
+		m_eram_active[1] = false;
 	}
-	else if (m_eram_active[0] && assembling >= 1 && assembling <= 5)
+	if (m_eram_active[0] && assembling >= 1 && assembling <= 5)
 		m_eram_address[0] += (word >> 20) << ((assembling - 1) * 4);
 	if (m_eram_active[0] && assembling == 5)
 	{
-		u32 address = m_eram_address[0];
+		u32 address = m_eram_address[0] & 0x3ffff;
 		if (m_eram_command[0] == 8 || m_eram_command[0] == 12)
 			address = (address & 1) + ((u32(m_tap) & 0xffffc00) >> 10);
 		if (m_eram_command[0] != 8)
@@ -207,16 +211,12 @@ void roland_csp_device::eram_clock(u32 word)
 		m_eram_active[1] = true;
 		m_eram_active[0] = false;
 	}
-	if (m_eram_active[1] && pending == 7)
-		m_eram_data = m_eram_write;
-	if (m_eram_active[1] && pending == 10)
+	if (BIT(word, 19))
 	{
-		const u32 address = m_eram_address[1] & m_eram_mask;
-		if (m_eram_command[1] == 4)
-			m_eram[address] = narrow(m_eram_data);
-		else
-			m_eram_read = m_eram[address];
-		m_eram_active[1] = false;
+		m_eram_active[0] = true;
+		m_eram_start[0] = m_pc;
+		m_eram_command[0] = (word >> 20) & 12;
+		m_eram_address[0] = 0;
 	}
 }
 
