@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "sh2.h"
+#include "sh_mcu.h"
 #include "sh_intc.h"
 #include "sh_adc.h"
 #include "sh_bsc.h"
@@ -19,7 +19,7 @@
 #include "sh_sci.h"
 #include "sh_wdt.h"
 
-class sh7042_device : public sh2_device
+class sh7042_device : public sh_mcu_device
 {
 public:
 	sh7042_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
@@ -49,19 +49,14 @@ public:
 	template<int Ch> void dreq_w(int state) { dreq_w(Ch, state); }
 	void dreq_w(int ch, int state);
 
-	void internal_update();
-	u16 do_read_adc(int port) { return m_read_adc[port](); }
-	u16 do_read_port16(int port) { return m_read_port16[port](); }
-	void do_write_port16(int port, u16 data, u16 ddr) { m_write_port16[port](0, data, ddr); }
-	u32 do_read_port32(int port) { return m_read_port32[port](); }
-	void do_write_port32(int port, u32 data, u32 ddr) { m_write_port32[port](0, data, ddr); }
+	virtual u16 do_read_adc(int port) override { return m_read_adc[port](); }
+	virtual u16 do_read_port16(int port) override { return m_read_port16[port](); }
+	virtual void do_write_port16(int port, u16 data, u16 ddr) override { m_write_port16[port](0, data, ddr); }
+	virtual u32 do_read_port32(int port) override { return m_read_port32[port](); }
+	virtual void do_write_port32(int port, u32 data, u32 ddr) override { m_write_port32[port](0, data, ddr); }
 
-	u64 current_cycles() { return machine().time().as_ticks(clock()); }
-
-	void set_internal_interrupt(int level, u32 vector);
-
-	void do_sci_tx(int sci, int state) { m_sci_tx[sci](state); }
-	void do_sci_clk(int sci, int state) { m_sci_clk[sci](state); }
+	virtual void do_sci_tx(int sci, int state) override { m_sci_tx[sci](state); }
+	virtual void do_sci_clk(int sci, int state) override { m_sci_clk[sci](state); }
 
 protected:
 	const char *m_port16_names;
@@ -126,8 +121,6 @@ private:
 	devcb_read32::array<2> m_read_port32;
 	devcb_write32::array<2> m_write_port32;
 
-	emu_timer *m_event_timer;
-
 	u16 m_pcf_ah;
 	u32 m_pcf_al;
 	u32 m_pcf_b;
@@ -145,10 +138,7 @@ private:
 	u32 port32_default_r(int port);
 	void port32_default_w(int port, u32 data);
 
-	void add_event(u64 &event_time, u64 new_event);
-	void recompute_timer(u64 event_time);
-	TIMER_CALLBACK_MEMBER(event_timer_tick);
-	void internal_update(u64 current_time);
+	virtual void internal_update(u64 current_time) override;
 
 	u16 pcf_ah_r();
 	void pcf_ah_w(offs_t, u16 data, u16 mem_mask);

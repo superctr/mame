@@ -10,8 +10,10 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "sh7042.h"
+#include "sh_cmt.h"
+
 #include "sh_intc.h"
+#include "sh_mcu.h"
 
 DEFINE_DEVICE_TYPE(SH_CMT, sh_cmt_device, "sh_cmt", "SH2/704x CMT")
 

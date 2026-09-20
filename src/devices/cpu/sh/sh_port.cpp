@@ -9,9 +9,9 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "sh_intc.h"
+#include "sh_port.h"
 
-#include "sh7042.h"
+#include "sh_mcu.h"
 
 DEFINE_DEVICE_TYPE(SH_PORT16, sh_port16_device, "sh_port16", "SH 16-bits port")
 DEFINE_DEVICE_TYPE(SH_PORT32, sh_port32_device, "sh_port32", "SH 32-bits port")

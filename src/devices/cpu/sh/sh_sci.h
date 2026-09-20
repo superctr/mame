@@ -14,7 +14,7 @@
 
 #pragma once
 
-class sh7042_device;
+class sh_mcu_device;
 class sh_intc_device;
 
 class sh_sci_device : public device_t {
@@ -104,7 +104,7 @@ protected:
 		SSR_MPBT = 0x01
 	};
 
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	attotime m_external_clock_period;
 	double m_external_to_internal_ratio, m_internal_to_external_ratio;

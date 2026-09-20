@@ -13,7 +13,7 @@
 
 #pragma once
 
-class sh7042_device;
+class sh_mcu_device;
 
 class sh_port16_device : public device_t {
 public:
@@ -33,7 +33,7 @@ public:
 	void io_w(offs_t, u16 data, u16 mem_mask);
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	int m_index;
 	u16 m_default_io, m_mask;
 	u16 m_dr, m_io;
@@ -60,7 +60,7 @@ public:
 	void io_w(offs_t, u32 data, u32 mem_mask);
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	int m_index;
 	u32 m_default_io, m_mask;
 	u32 m_dr, m_io;

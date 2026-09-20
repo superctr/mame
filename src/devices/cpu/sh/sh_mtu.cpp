@@ -10,7 +10,9 @@
 
 #include "emu.h"
 #include "sh_mtu.h"
-#include "sh7042.h"
+
+#include "sh_intc.h"
+#include "sh_mcu.h"
 
 #define V 1
 

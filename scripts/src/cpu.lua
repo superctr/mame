@@ -959,6 +959,8 @@ if CPUS["SH"] then
 		MAME_DIR .. "src/devices/cpu/sh/sh_wdt.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_intc.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_intc.h",
+		MAME_DIR .. "src/devices/cpu/sh/sh_mcu.cpp",
+		MAME_DIR .. "src/devices/cpu/sh/sh_mcu.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_mtu.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_mtu.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_port.cpp",

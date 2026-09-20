@@ -14,7 +14,7 @@
 #pragma once
 
 // To generalize eventually
-class sh7042_device;
+class sh_mcu_device;
 class sh_intc_device;
 
 class sh_mtu_channel_device : public device_t {
@@ -107,7 +107,7 @@ public:
 	u64 internal_update(u64 current_time);
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	optional_device<sh_mtu_channel_device> m_chained_timer;
 	int m_interrupt[6];
@@ -164,7 +164,7 @@ public:
 	void tcbr_w(offs_t, u16 data, u16 mem_mask);
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device_array<sh_mtu_channel_device, 5> m_timer_channel;
 
 	int m_timer_count;
