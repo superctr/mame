@@ -40,8 +40,18 @@
     loops of its service loop, deferring while the CPU holds the bus.
     The loop period is a guess at 100 us; the manual's "small values
     metallic, large values gritty" fits a modulator from 5 kHz down to
-    360 Hz. The TVF channels feed two CSPs in series, followed by the
-    IFCS output demultiplexer. Bus alignment and output levels are provisional.
+    360 Hz.
+
+    The tones' LFOs are the ISP's as well: the CPU keeps a 15-bit phase
+    and a rate word per voice and LFO in work RAM (08:FBC0 and 08:FBF0,
+    the rates 0x1E0 above), writes 0x8000 there to trigger, reads the
+    phase in its 10 ms walk and clears bit 15, and the ISP adds the rate
+    every 10 ms, flagging a wrap in bit 15; Jade's vibrato at two rates
+    gives 0.00306 Hz per rate unit, which is that period.
+
+    The TVF channels feed CSP1's SC bus four reads later than voice
+    order, CSP1 feeds CSP2 over the TR bus, and the IFCS demultiplexes
+    CSP2's eight output slots; the levels are calibrated against Jade.
 
     The panel is 32 switches on five columns of the ISP's scan plus the
     VALUE knob's push switch; the names come from pressing each position
@@ -193,6 +203,7 @@ private:
 	bool m_sense_counting = false;
 	u8 m_fxm_count[FXM_VOICES] = {};
 	u8 m_fxm_phase[FXM_VOICES] = {};
+	u8 m_lfo_tick = 0;
 	std::unique_ptr<u8[]> m_wave;
 };
 
@@ -230,6 +241,7 @@ void roland_jd990_state::machine_start()
 	save_item(NAME(m_sense_counting));
 	save_item(NAME(m_fxm_count));
 	save_item(NAME(m_fxm_phase));
+	save_item(NAME(m_lfo_tick));
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
@@ -294,6 +306,18 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	m_maincpu->isp_raise(9);
 	if (space.read_byte(0x87e85))
 		m_maincpu->isp_raise(0);
+
+	if (++m_lfo_tick == 10)
+	{
+		m_lfo_tick = 0;
+		for (int v = 0; v < FXM_VOICES; v++)
+			for (offs_t lfo : { 0x8fbc0, 0x8fbf0 })
+			{
+				const u16 phase = space.read_word(lfo + 2 * v);
+				const u32 sum = (phase & 0x7fff) + space.read_word(lfo + 0x1e0 + 2 * v);
+				space.write_word(lfo + 2 * v, (sum & 0x7fff) | (phase & 0x8000) | (sum >= 0x8000 ? 0x8000 : 0));
+			}
+	}
 
 	const u8 column = m_scan_column;
 	m_scan_column = (m_scan_column + 1) & 7;
