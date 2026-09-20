@@ -17,6 +17,7 @@
 #include "cpu/sh/sh7034.h"
 #include "m60205.h"
 #include "machine/nvram.h"
+#include "srjv80.h"
 #include "sound/roland_xp.h"
 #include "video/hd44780.h"
 
@@ -24,6 +25,7 @@
 #include "bus/midi/midioutport.h"
 #include "emupal.h"
 #include "screen.h"
+#include "softlist_dev.h"
 #include "speaker.h"
 
 
@@ -38,6 +40,7 @@ public:
 		, m_xp(*this, "xp")
 		, m_ga(*this, "ga")
 		, m_lcd(*this, "lcd")
+		, m_exp(*this, "exp%u", 1U)
 		, m_leds(*this, "led%u", 0U)
 	{
 	}
@@ -50,6 +53,7 @@ private:
 	void xp_rom_map(address_map &map) ATTR_COLD;
 
 	void led_w(offs_t offset, u8 data);
+	u16 sense_r();
 
 	void jv_palette(palette_device &palette) const ATTR_COLD;
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
@@ -58,8 +62,22 @@ private:
 	required_device<roland_xp_device> m_xp;
 	required_device<m60205_device> m_ga;
 	required_device<hd44780_device> m_lcd;
+	required_device_array<srjv80_slot_device, 4> m_exp;
 	output_finder<24> m_leds;
 };
+
+
+// SENS0-SENS4 on PB1-PB5, high while a board is fitted; 0a01a99e polls them
+// as one five-bit field thirty times a second.  SENS0 is the PCM card's, and
+// no card slot is emulated, so it reads empty
+u16 roland_jv1080_state::sense_r()
+{
+	u16 data = 0xffff & ~(1 << 1);
+	for (int slot = 0; slot < 4; slot++)
+		if (!m_exp[slot]->sense_r())
+			data &= ~(1 << (2 + slot));
+	return data;
+}
 
 
 void roland_jv1080_state::led_w(offs_t offset, u8 data)
@@ -196,7 +214,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_maincpu->read_adc<7>().set_constant(0);
 	m_maincpu->read_porta().set_constant(0xffff);
 	m_maincpu->write_porta().set_nop();
-	m_maincpu->read_portb().set_constant(0xffff);
+	m_maincpu->read_portb().set(FUNC(roland_jv1080_state::sense_r));
 	m_maincpu->write_portb().set_nop();
 	m_maincpu->read_portc().set_constant(0xffff);
 
@@ -211,6 +229,14 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_ga->read_scan<3>().set_ioport("SW3");
 	m_ga->read_port().set_ioport("PORT");
 	m_ga->read_encoder().set_ioport("DIAL");
+
+	// EXP-A to EXP-D, CN501-CN504, one 8 MB board at the foot of each of the
+	// XP's chip selects 2 to 5; select 1 is the PCM card's
+	SRJV80_SLOT(config, m_exp[0], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x2000000);
+	SRJV80_SLOT(config, m_exp[1], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x3000000);
+	SRJV80_SLOT(config, m_exp[2], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x4000000);
+	SRJV80_SLOT(config, m_exp[3], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x5000000);
+	SOFTWARE_LIST(config, "exp_list").set_original("srjv80");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
