@@ -14,7 +14,7 @@
 #pragma once
 
 // To generalize eventually
-class sh7042_device;
+class sh_mcu_device;
 class sh_intc_device;
 
 class sh_dmac_device : public device_t {
@@ -36,7 +36,7 @@ public:
 	bool transfer_allowed() const { return (m_dmaor & 7) == 1; }
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 
 	u16 m_dmaor;
 
@@ -92,7 +92,7 @@ protected:
 		CHCR_DS = 0x00040
 	};
 
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	required_device<sh_dmac_device> m_dmac;
 

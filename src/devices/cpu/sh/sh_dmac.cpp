@@ -15,8 +15,9 @@
 
 #include "emu.h"
 #include "sh_dmac.h"
-#include "sh7042.h"
+
 #include "sh_intc.h"
+#include "sh_mcu.h"
 
 #define LOG_REGS (1U << 1)
 #define LOG_XFER (1U << 2)

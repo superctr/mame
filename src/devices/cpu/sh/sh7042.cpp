@@ -36,7 +36,7 @@ sh7043a_device::sh7043a_device(const machine_config &mconfig, const char *tag, d
 }
 
 sh7042_device::sh7042_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
-	sh2_device(mconfig, type, tag, owner, clock, CPU_TYPE_SH2, address_map_constructor(FUNC(sh7042_device::map), this), 32, 0xffffffff),
+	sh_mcu_device(mconfig, type, tag, owner, clock, CPU_TYPE_SH2, address_map_constructor(FUNC(sh7042_device::map), this), 32, 0xffffffff),
 	m_intc(*this, "intc"),
 	m_adc0(*this, "adc0"),
 	m_adc1(*this, "adc1"),
@@ -116,9 +116,7 @@ u16 sh7042_device::adc_default(int adc)
 
 void sh7042_device::device_start()
 {
-	sh2_device::device_start();
-
-	m_event_timer = timer_alloc(FUNC(sh7042_device::event_timer_tick), this);
+	sh_mcu_device::device_start();
 
 	save_item(NAME(m_pcf_ah));
 	save_item(NAME(m_pcf_al));
@@ -370,34 +368,6 @@ void sh7042_device::device_add_mconfig(machine_config &config)
 
 }
 
-void sh7042_device::internal_update()
-{
-	internal_update(current_cycles());
-}
-
-void sh7042_device::add_event(u64 &event_time, u64 new_event)
-{
-	if(!new_event)
-		return;
-	if(!event_time || event_time > new_event)
-		event_time = new_event;
-}
-
-void sh7042_device::recompute_timer(u64 event_time)
-{
-	if(!event_time) {
-		m_event_timer->adjust(attotime::never);
-		return;
-	}
-
-	m_event_timer->adjust(attotime::from_ticks(2*event_time + 1, 2*clock()) - machine().time());
-}
-
-TIMER_CALLBACK_MEMBER(sh7042_device::event_timer_tick)
-{
-	internal_update();
-}
-
 void sh7042_device::internal_update(u64 current_time)
 {
 	u64 event_time = 0;
@@ -503,13 +473,6 @@ void sh7042_device::pcf_if_w(offs_t, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_pcf_if);
 	logerror("pcf if = %04x\n", m_pcf_if);
-}
-
-void sh7042_device::set_internal_interrupt(int level, u32 vector)
-{
-	m_sh2_state->internal_irq_level = level;
-	m_internal_irq_vector = vector;
-	m_test_irq = 1;
 }
 
 void sh7042_device::sh2_exception_internal(const char *message, int irqline, int vector)

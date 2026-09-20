@@ -14,7 +14,7 @@
 
 #pragma once
 
-class sh7042_device;
+class sh_mcu_device;
 class sh_intc_device;
 
 class sh_adc_device : public device_t {
@@ -32,7 +32,7 @@ public:
 protected:
 	sh_adc_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
 
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	int m_port_base, m_port_mask, m_port_shift;
 	int m_intc_vector;

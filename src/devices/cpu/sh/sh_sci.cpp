@@ -3,7 +3,7 @@
 
 #include "emu.h"
 #include "sh_sci.h"
-#include "sh7042.h"
+#include "sh_mcu.h"
 #include "sh_intc.h"
 
 #define LOG_REGS  (1 << 1U)  // Register writes

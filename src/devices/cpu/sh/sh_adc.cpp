@@ -3,7 +3,7 @@
 
 #include "emu.h"
 #include "sh_adc.h"
-#include "sh7042.h"
+#include "sh_mcu.h"
 #include "sh_intc.h"
 
 // Verbosity level

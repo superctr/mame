@@ -14,7 +14,7 @@
 
 #pragma once
 
-class sh7042_device;
+class sh_mcu_device;
 class sh_intc_device;
 
 class sh_cmt_device : public device_t {
@@ -49,7 +49,7 @@ public:
 	void cmcor1_w(offs_t, u16 data, u16 mem_mask);
 
 protected:
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	std::array<u64, 2> m_next_event;
 	std::array<int, 2> m_intc_vector;

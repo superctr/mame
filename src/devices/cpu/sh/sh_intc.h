@@ -13,7 +13,7 @@
 
 #pragma once
 
-class sh7042_device;
+class sh_mcu_device;
 
 class sh_intc_device : public device_t {
 public:
@@ -23,6 +23,9 @@ public:
 	{
 		m_cpu.set_tag(std::forward<T>(cpu));
 	}
+
+	// ICR bit value that selects low-level sensing; the SH-1 and SH-2 families disagree
+	void set_level_sense_bit(bool value) { m_level_sense_bit = value; }
 
 	void interrupt_taken(int irqline, int vector);
 	void internal_interrupt(int vector);
@@ -44,8 +47,9 @@ protected:
 	u16 m_isr, m_icr;
 
 	u8 m_lines;
+	bool m_level_sense_bit = true;
 
-	required_device<sh7042_device> m_cpu;
+	required_device<sh_mcu_device> m_cpu;
 
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;

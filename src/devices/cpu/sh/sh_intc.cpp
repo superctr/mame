@@ -11,7 +11,7 @@
 #include "emu.h"
 #include "sh_intc.h"
 
-#include "sh7042.h"
+#include "sh_mcu.h"
 
 DEFINE_DEVICE_TYPE(SH_INTC, sh_intc_device, "sh_intc", "SH interrupt controller")
 
@@ -47,6 +47,7 @@ void sh_intc_device::device_start()
 	save_item(NAME(m_isr));
 	save_item(NAME(m_pending));
 	save_item(NAME(m_lines));
+	save_item(NAME(m_level_sense_bit));
 
 	std::fill(m_ipr.begin(), m_ipr.end(), 0);
 	m_isr = 0;
@@ -62,7 +63,7 @@ void sh_intc_device::device_reset()
 void sh_intc_device::interrupt_taken(int irqline, int vector)
 {
 	// Don't clear an external interrupt which is level and still active
-	if(vector < 64 || vector >= 72 || BIT(m_icr, 7-(vector & 7)) || !BIT(m_lines, vector & 7))
+	if(vector < 64 || vector >= 72 || bool(BIT(m_icr, 7-(vector & 7))) != m_level_sense_bit || !BIT(m_lines, vector & 7))
 		m_pending[vector >> 5] &= ~(1 << (vector & 31));
 
 	update_irq();
@@ -102,7 +103,8 @@ void sh_intc_device::set_input(int inputnum, int state)
 {
 	if(BIT(m_lines, inputnum) == state)
 		return;
-	if(BIT(m_icr, 7-inputnum)) {
+	m_lines = (m_lines & ~(1 << inputnum)) | (state << inputnum);
+	if(bool(BIT(m_icr, 7-inputnum)) == m_level_sense_bit) {
 		// Level interrupt
 		if(state)
 			m_pending[64 >> 5] |= 1 << inputnum;
