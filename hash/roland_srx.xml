@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+license:CC0-1.0
+
+    Roland SRX wave expansion boards, 32 MB each and word-wide, for the
+    XV-3080, the XV-5080 and their relatives.  The board carries its own
+    label in the clear at offset 0 of the scrambled image, "Roland SRX  "
+    and then the magic 4F B0 58 A7 and the sixteen-byte identity the host
+    compares, and the socket undoes eighteen permuted address lines within
+    each 256 KB block and the eight data lines.
+
+    Each entry is commented with that identity, with the name the machine
+    shows and with the build date the board stamps ten bytes after it, all
+    read from the descrambled image.  The year is that build date.
+
+    Every image here is marked BAD_DUMP because no board has been read.
+    Each is Roland's own wave data as their plugins carry it, where it is
+    already descrambled, put back into board form by the inverse of the
+    socket's permutation; the data is expected to be the board's, but
+    nothing here testifies to that.  The two PG-SRX images carry their own
+    later build dates, and the list takes each entry's year from the date
+    its image stamps.
+
+    Not here: the rest of the SRX boards.
+-->
+
+<softwarelist name="roland_srx" description="Roland SRX wave expansion boards">
+	<!-- SRX-05 SupDance, "SRX-05 SupDance " [SpDnc], 2001-11-15 -->
+	<software name="srx05">
+		<description>Supreme Dance (SRX-05)</description>
+		<year>2001</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20011115"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-05.ic1" size="0x2000000" crc="a8644797" sha1="f337189a2a530e96c45b654f55857d0c3d5c875f" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SRX-08 Pltnm Trx, "Dance" [PlTrx], 2002-07-14 -->
+	<software name="srx08">
+		<description>Platinum Trax (SRX-08)</description>
+		<year>2002</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20020714"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-08.ic1" size="0x2000000" crc="59261000" sha1="7a8224b78e192880002dee0182c1fe69fd693202" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX Orchestra, "Orchestra" [Orche], 2017-11-06 -->
+	<software name="pgsrxorc">
+		<description>Orchestra (PG-SRX)</description>
+		<year>2017</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20171106"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="pg-srx_orchestra.bin" size="0x2000000" crc="7f068d7a" sha1="543d6e55ef81855c8028c99c7aa192874cf5351f" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX Keyboards, "Keyboards" [Keys], 2018-02-20 -->
+	<software name="pgsrxkbd">
+		<description>Keyboards (PG-SRX)</description>
+		<year>2018</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20180220"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="pg-srx_keyboards.bin" size="0x2000000" crc="4906dcf4" sha1="507c94d282729a8d6f1fd8b1a4ff67d0ac0afc08" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+</softwarelist>

@@ -11,15 +11,17 @@
 class roland_wavecard_device : public device_t, public device_cartrom_image_interface
 {
 public:
-	// the ROM, a byte a cell, zero where nothing answers
+	// the ROM, a byte a cell on a byte-wide bus and a word a cell on a
+	// word-wide one, zero where nothing answers
 	u8 read(offs_t offset) { return (m_rom && offset < m_size) ? m_rom[offset] : 0; }
+	u16 read16(offs_t offset) { return (m_rom && (offset << 1) < m_size) ? (m_rom[offset << 1] | (m_rom[(offset << 1) | 1] << 8)) : 0; }
 
 	// high while a card is fitted; the host decides which pin reads it and in which sense
 	int sense_r() const { return m_rom ? 1 : 0; }
 
 protected:
 	roland_wavecard_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock,
-			u32 min_size, u32 max_size, const char *size_error);
+			u32 min_size, u32 max_size, const char *size_error, const u8 *address_lines, int lines);
 
 	virtual void device_start() override ATTR_COLD;
 
@@ -34,6 +36,8 @@ private:
 
 	const u32 m_min_size, m_max_size;
 	const char *const m_size_error;
+	const u8 *const m_address_lines;
+	const int m_lines;
 	u32 m_size;
 	std::unique_ptr<u8 []> m_rom;
 };
@@ -49,6 +53,18 @@ protected:
 };
 
 
+class srx_slot_device : public roland_wavecard_device
+{
+public:
+	srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
+
+protected:
+	virtual const char *image_interface() const noexcept override { return "srx"; }
+	virtual const char *image_type_name() const noexcept override { return "srxboard"; }
+	virtual const char *image_brief_type_name() const noexcept override { return "srx"; }
+};
+
+
 class sopcm1_slot_device : public roland_wavecard_device
 {
 public:
@@ -61,6 +77,7 @@ protected:
 };
 
 DECLARE_DEVICE_TYPE(SRJV80_SLOT, srjv80_slot_device)
+DECLARE_DEVICE_TYPE(SRX_SLOT, srx_slot_device)
 DECLARE_DEVICE_TYPE(SOPCM1_SLOT, sopcm1_slot_device)
 
 #endif // MAME_ROLAND_WAVECARD_H

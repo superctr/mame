@@ -11,8 +11,9 @@
     which pin reads the sense line.
 
     SR-JV80 wave expansion boards are 8 MB and go in the JV-1080, the
-    JD-990, the XV-3080 and the XV-5080.  SO-PCM1 and SO-JD80 PCM cards
-    are 1 or 2 MB and go in the JD-800 and the JD-990.
+    JD-990, the XV-3080 and the XV-5080.  SRX boards are 32 MB and word
+    wide, and go in the XV-3080 and the XV-5080.  SO-PCM1 and SO-JD80 PCM
+    cards are 1 or 2 MB and go in the JD-800 and the JD-990.
 
 ****************************************************************************/
 
@@ -21,15 +22,18 @@
 
 
 DEFINE_DEVICE_TYPE(SRJV80_SLOT, srjv80_slot_device, "srjv80_slot", "Roland SR-JV80 expansion board socket")
+DEFINE_DEVICE_TYPE(SRX_SLOT, srx_slot_device, "srx_slot", "Roland SRX expansion board socket")
 DEFINE_DEVICE_TYPE(SOPCM1_SLOT, sopcm1_slot_device, "sopcm1_slot", "Roland PCM card slot")
 
 roland_wavecard_device::roland_wavecard_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock,
-		u32 min_size, u32 max_size, const char *size_error)
+		u32 min_size, u32 max_size, const char *size_error, const u8 *address_lines, int lines)
 	: device_t(mconfig, type, tag, owner, clock)
 	, device_cartrom_image_interface(mconfig, *this)
 	, m_min_size(min_size)
 	, m_max_size(max_size)
 	, m_size_error(size_error)
+	, m_address_lines(address_lines)
+	, m_lines(lines)
 	, m_size(0)
 {
 }
@@ -39,21 +43,20 @@ void roland_wavecard_device::device_start()
 }
 
 
-// nineteen address lines permuted within each 512 KB block and the eight data
-// lines; the data table is the one Roland's own wave ROMs use and the address
-// table is the card's own
+// the address lines permuted within a block of their own size and the eight
+// data lines; the data table is the one Roland's own wave ROMs use and the
+// address table is the board's or the card's own
 void roland_wavecard_device::descramble()
 {
-	static const u8 address_lines[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14 };
 	static const u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
 
 	const std::vector<u8> scrambled(m_rom.get(), m_rom.get() + m_size);
 	for (u32 i = 0; i < m_size; i++)
 	{
-		u32 address = i & ~0x7ffff;
-		for (int bit = 0; bit < 19; bit++)
+		u32 address = i & ~((1U << m_lines) - 1);
+		for (int bit = 0; bit < m_lines; bit++)
 			if (BIT(i, bit))
-				address |= 1 << address_lines[bit];
+				address |= 1 << m_address_lines[bit];
 
 		const u8 source = scrambled[address];
 		u8 data = 0;
@@ -91,12 +94,22 @@ void roland_wavecard_device::call_unload()
 }
 
 
+// nineteen lines within each 512 KB block on a byte-wide part, eighteen
+// within each 256 KB block on a word-wide one, where A0 is not permuted
+static const u8 srjv80_lines[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14 };
+static const u8 srx_lines[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
+
 srjv80_slot_device::srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SRJV80_SLOT, tag, owner, clock, 0x800000, 0x800000, "Expansion boards are 8 MB")
+	: roland_wavecard_device(mconfig, SRJV80_SLOT, tag, owner, clock, 0x800000, 0x800000, "Expansion boards are 8 MB", srjv80_lines, 19)
+{
+}
+
+srx_slot_device::srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: roland_wavecard_device(mconfig, SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18)
 {
 }
 
 sopcm1_slot_device::sopcm1_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB")
+	: roland_wavecard_device(mconfig, SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB", srjv80_lines, 19)
 {
 }
