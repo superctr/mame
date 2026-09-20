@@ -3,16 +3,21 @@
 <!--
 license:CC0-1.0
 
-    Roland SR-JV80 wave expansion boards, 8 MB each, taken as the mask ROM
-    reads: nineteen address lines permuted within each 512 KB block and the
-    eight data lines permuted, which is what the socket undoes.  The board
-    carries its own label in the clear at offset 0 of the scrambled image,
-    "Roland JV80 O.S." and then the sixteen-byte identity the host compares.
+    Roland SR-JV80 wave expansion boards, 8 MB each and 2 MB on the three
+    Experience demo boards, taken as the mask ROM reads: nineteen address
+    lines permuted within each 512 KB block and the eight data lines
+    permuted, which is what the socket undoes.  The board carries its own
+    label in the clear at offset 0 of the scrambled image, "Roland JV80 O.S."
+    and then the sixteen-byte identity the host compares, once at the head of
+    each of its 1 MB banks.
 
     Each entry is commented with that identity and with the build date the
     board stamps ten bytes after it, both read from the descrambled image.
     The year is that build date, which is what the images testify to rather
     than the date of sale.
+
+    The Experience boards are Roland's own demonstration boards, which carry
+    a demo's worth of waves and no title of their own.
 
     Not dumped: SR-JV80-20 (Ethnic Sound Collection), -21 (Concert Piano)
     and the regional and bundled boards.
@@ -244,6 +249,42 @@ license:CC0-1.0
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-19.ic1" size="0x800000" crc="7fdd8550" sha1="23ce90ce898ef59a6268070644ab18c7b7834509" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- DEM3007, 1998-09-16 -->
+	<software name="srjv8097">
+		<description>Experience III (SR-JV80-97)</description>
+		<year>1998</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19980916"/>
+		<part name="board" interface="srjv80">
+			<dataarea name="rom" size="0x200000">
+				<rom name="sr-jv80-97.ic1" size="0x200000" crc="7cb14281" sha1="07414976f623b211db5e3c151e350ff73255118e" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- DEM2_100, 1996-09-27 -->
+	<software name="srjv8098">
+		<description>Experience II (SR-JV80-98)</description>
+		<year>1996</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19960927"/>
+		<part name="board" interface="srjv80">
+			<dataarea name="rom" size="0x200000">
+				<rom name="sr-jv80-98.ic1" size="0x200000" crc="09c2690e" sha1="f0bddb9f0935b99545acb9f41daeb3bebe4aeb6a" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- DEM101, 1994-09-09 -->
+	<software name="srjv8099">
+		<description>Experience I (SR-JV80-99)</description>
+		<year>1994</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19940909"/>
+		<part name="board" interface="srjv80">
+			<dataarea name="rom" size="0x200000">
+				<rom name="sr-jv80-99.ic1" size="0x200000" crc="1305a769" sha1="20cc49fac27be4c0c25524582fb47e43348327e9" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
