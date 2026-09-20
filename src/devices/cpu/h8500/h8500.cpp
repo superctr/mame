@@ -462,17 +462,17 @@ u16 h8500_device::adc_default(int adc)
 	return 0;
 }
 
-const char h8500_device::port_names[] = "123456789";
+const char *const h8500_device::port_names[PORT_COUNT] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" };
 u8 h8500_device::port_default_r(int port)
 {
 	if (!machine().side_effects_disabled())
-		logerror("read of un-hooked port %c (PC=%X)\n", port_names[port], m_ppc);
+		logerror("read of un-hooked port %s (PC=%X)\n", port_names[port], m_ppc);
 	return 0xff;
 }
 
 void h8500_device::port_default_w(int port, u8 data)
 {
-	logerror("write of un-hooked port %c %02x (PC=%X)\n", port_names[port], data, m_ppc);
+	logerror("write of un-hooked port %s %02x (PC=%X)\n", port_names[port], data, m_ppc);
 }
 
 u16 h8500_device::nz8(u8 val)
