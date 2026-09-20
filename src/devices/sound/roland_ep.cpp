@@ -85,6 +85,7 @@ void roland_ep_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, address));
 	save_item(STRUCT_MEMBER(m_voices, phase));
 	save_item(STRUCT_MEMBER(m_voices, predictor));
+	save_item(STRUCT_MEMBER(m_voices, backward));
 	save_item(STRUCT_MEMBER(m_voices, running));
 }
 
@@ -176,12 +177,28 @@ u32 roland_ep_device::address_of(const voice &v, int high) const
 	return (page << 20) | (u32(v.regs[high + 1]) << 4) | (v.regs[high] >> 12);
 }
 
-u32 roland_ep_device::next(const voice &v, u32 address) const
+void roland_ep_device::advance(const voice &v, u32 &address, bool &backward, wave_cell &c)
 {
-	address = (address + 1) & ADDRESS_MASK;
-	if (address > end_of(v))
-		return loop_of(v);
-	return address;
+	if (backward && address <= loop_of(v))
+		backward = false;
+
+	if (backward)
+	{
+		c = cell_at((address - 1) & ADDRESS_MASK);
+		address = (address - 1) & ADDRESS_MASK;
+	}
+	else
+	{
+		c = cell_at(address);
+		address = (address + 1) & ADDRESS_MASK;
+		if (address > end_of(v))
+		{
+			if (BIT(v.regs[WAVE], 2))
+				backward = true;
+			else
+				address = loop_of(v);
+		}
+	}
 }
 
 roland_ep_device::wave_cell roland_ep_device::cell_at(u32 address)
@@ -204,6 +221,7 @@ void roland_ep_device::launch(int n)
 	v.address = address_of(v, START_HIGH);
 	v.phase = (v.regs[START_HIGH] & 0xfff) << 4;
 	v.predictor = 0;
+	v.backward = false;
 	v.running = true;
 }
 
@@ -214,11 +232,13 @@ s32 roland_ep_device::run_voice(int n)
 		return 0;
 
 	u32 address = v.address;
+	bool backward = v.backward;
+	wave_cell c;
 	s32 sum = 4 * v.predictor;
 	for (int i = 0; i < 3; i++)
 	{
-		sum += tap(interp_weights[i][v.phase >> 9], cell_at(address));
-		address = next(v, address);
+		advance(v, address, backward, c);
+		sum += tap(interp_weights[i][v.phase >> 9], c);
 	}
 	const s32 sample = wrap20(sum >> 2);
 
@@ -226,9 +246,8 @@ s32 roland_ep_device::run_voice(int n)
 	v.phase = accumulated & 0xffff;
 	for (u32 carry = accumulated >> 16; carry; carry--)
 	{
-		const wave_cell c = cell_at(v.address);
+		advance(v, v.address, v.backward, c);
 		v.predictor = wrap20(v.predictor + (c.mantissa << c.exponent));
-		v.address = next(v, v.address);
 	}
 	return sample;
 }
