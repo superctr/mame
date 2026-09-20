@@ -7,9 +7,8 @@
 
     TODO:
     - the filter, the ring modulator and the amplifier run in floating
-      point here, where the chip is fixed point: its state widths, its
-      rounding and where it saturates are all unread
-    - the damping word's scale
+      point here, where the chip is fixed point: the full scale every
+      line saturates at is read, the widths and rounding are not
     - the command register, the four zero pairs, and the readback's layout
 
 ***************************************************************************/
@@ -115,12 +114,12 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	case AMPLITUDE:
 		if (BIT(data, 15))
 		{
-			v.amplitude = (data & 0x7fff) / 4096.0f;
+			v.amplitude = (data & 0x7fff) / 16384.0f;
 			v.amplitude_remaining = 0;
 		}
 		else
 		{
-			v.amplitude_step = (data / 4096.0f - v.amplitude) / RAMP_SAMPLES;
+			v.amplitude_step = (data / 16384.0f - v.amplitude) / RAMP_SAMPLES;
 			v.amplitude_remaining = RAMP_SAMPLES;
 		}
 		break;
@@ -150,10 +149,10 @@ float roland_tvf_device::filter(voice &v, float sample) const
 {
 	const float f = v.cutoff;
 	const float q = v.regs[DAMPING] / 4096.0f;
-	const float low = std::clamp(v.low + f * v.band, -4.0f, 4.0f);
-	const float high = sample - low - q * v.band;
+	const float low = saturate(v.low + f * v.band);
+	const float high = saturate(sample - low - q * v.band);
 	v.low = low;
-	v.band = std::clamp(v.band + f * high, -4.0f, 4.0f);
+	v.band = saturate(v.band + f * high);
 	switch (mode_of(v))
 	{
 	case MODE_HPF: return high;
@@ -201,8 +200,8 @@ void roland_tvf_device::sound_stream_update(sound_stream &stream)
 		for (int n = 0; n < VOICES; n += 2)
 		{
 			const auto [first, second] = pair(n, stream.get(n, i), stream.get(n + 1, i));
-			stream.put(n, i, first * 0.25f);
-			stream.put(n + 1, i, second * 0.25f);
+			stream.put(n, i, first);
+			stream.put(n + 1, i, second);
 		}
 	}
 }
