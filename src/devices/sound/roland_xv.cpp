@@ -61,7 +61,7 @@
 #define LOG_IRQ     (1U << 5)
 #define LOG_DSP     (1U << 6)
 
-#define VERBOSE (LOG_GENERAL | LOG_XFER | LOG_REGS | LOG_IRQ | LOG_OBJECT | LOG_SPACE | LOG_DSP)
+#define VERBOSE (LOG_GENERAL)
 #include "logmacro.h"
 
 namespace {
