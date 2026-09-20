@@ -5,7 +5,6 @@
 #include "sh7032.h"
 
 DEFINE_DEVICE_TYPE(SH7032,  sh7032_device,  "sh7032",  "Hitachi SH-1 (SH7032)")
-DEFINE_DEVICE_TYPE(SH7034,  sh7034_device,  "sh7034",  "Hitachi SH-1 (SH7034)")
 
 
 sh7032_device::sh7032_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
@@ -46,19 +45,4 @@ uint16_t sh7032_device::sh7032_r(offs_t offset)
 void sh7032_device::sh7032_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_sh7032_regs[offset]);
-}
-
-
-sh7034_device::sh7034_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: sh7032_device(mconfig, SH7034, tag, owner, clock, address_map_constructor(FUNC(sh7034_device::sh7034_map), this))
-{
-	m_isdrc = false;
-}
-
-void sh7034_device::sh7034_map(address_map &map)
-{
-	map(0x00000000, 0x0000ffff).rom().region(DEVICE_SELF, 0);
-	map(0x07fff000, 0x07ffffff).ram();
-
-	sh7032_map(map);
 }
