@@ -82,11 +82,11 @@
 #include "bus/midi/midi.h"
 #include "cpu/h8500/h8570.h"
 #include "machine/nvram.h"
-#include "srjv80.h"
 #include "sound/roland_ep.h"
 #include "sound/roland_csp.h"
 #include "sound/roland_tvf.h"
 #include "video/sed1330.h"
+#include "wavecard.h"
 
 #include "emupal.h"
 #include "screen.h"
@@ -538,7 +538,7 @@ void roland_jd990_state::jd990(machine_config &config)
 
 	// CN7, one 8 MB board at bank 8 of the EP's wave space
 	SRJV80_SLOT(config, m_exp, 0).set_wave(m_ep, roland_ep_device::AS_WAVE, 0x800000);
-	SOFTWARE_LIST(config, "exp_list").set_original("srjv80");
+	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(h8570_device::sci_rx_w<0>));

@@ -17,9 +17,9 @@
 #include "cpu/sh/sh7034.h"
 #include "m60205.h"
 #include "machine/nvram.h"
-#include "srjv80.h"
 #include "sound/roland_xp.h"
 #include "video/hd44780.h"
+#include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
@@ -236,7 +236,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	SRJV80_SLOT(config, m_exp[1], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x3000000);
 	SRJV80_SLOT(config, m_exp[2], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x4000000);
 	SRJV80_SLOT(config, m_exp[3], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x5000000);
-	SOFTWARE_LIST(config, "exp_list").set_original("srjv80");
+	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
