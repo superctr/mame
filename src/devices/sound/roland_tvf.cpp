@@ -103,12 +103,12 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	switch (word)
 	{
 	case CUTOFF_INITIAL:
-		v.cutoff = data / 32768.0f;
+		v.cutoff = data / 16384.0f;
 		v.cutoff_remaining = 0;
 		break;
 
 	case CUTOFF:
-		v.cutoff_step = (data / 32768.0f - v.cutoff) / RAMP_SAMPLES;
+		v.cutoff_step = (data / 16384.0f - v.cutoff) / RAMP_SAMPLES;
 		v.cutoff_remaining = RAMP_SAMPLES;
 		break;
 
