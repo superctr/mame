@@ -479,6 +479,9 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jd990_state::mem_map);
 	m_maincpu->isp_reset_cb().set(FUNC(roland_jd990_state::isp_reset_w));
 	m_maincpu->isp_dr_write_cb().set(FUNC(roland_jd990_state::isp_dr_w));
+	// the internal and the DATA card battery, 3.0 V against the 5 V reference
+	m_maincpu->read_adc<0>().set_constant(0x266);
+	m_maincpu->read_adc<1>().set_constant(0x266);
 
 	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
 	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
