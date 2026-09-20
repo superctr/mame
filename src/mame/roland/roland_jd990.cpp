@@ -22,9 +22,11 @@
     controller's cursor, puts a work-RAM source address in DR7 and a byte
     count in DR10 and clears DR6H bit 0, and the ISP streams the bytes
     into the controller; the mailbox byte the ISP answers with ISF0; the
-    panel scan, one column a tick into work RAM with the column number
-    in DR5H and ISF3 on a change; and the encoder, its steps summed into
-    DR31H with ISF10; and the active-sensing timer, which counts in DR4H
+    panel scan, one column a tick into work RAM, the scanned byte and
+    the byte before it in the two tables the firmware's handler
+    compares, with the column number in DR5H and ISF3 on a change; and
+    the encoder, its steps summed into DR31H with ISF10; and the
+    active-sensing timer, which counts in DR4H
     while DR6H bit 4 is clear (the CPU clears it on every active-sensing
     byte) and raises ISF8 when the count runs out.  The tick is 1 ms: the
     tone delay parameter, whose table the owner's manual gives in
@@ -349,6 +351,7 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	const u8 keys = m_keys[column]->read();
 	if (keys != m_scan_state[column])
 	{
+		space.write_byte(0x8ff98 + column, m_scan_state[column]);
 		m_scan_state[column] = keys;
 		space.write_byte(0x8ff90 + column, keys);
 		m_maincpu->dr_w(0x0a, column);
