@@ -15,6 +15,7 @@
 #include "emu.h"
 
 #include "cpu/sh/sh7034.h"
+#include "m60205.h"
 #include "machine/nvram.h"
 #include "sound/roland_xp.h"
 #include "video/hd44780.h"
@@ -35,7 +36,9 @@ public:
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
 		, m_xp(*this, "xp")
+		, m_ga(*this, "ga")
 		, m_lcd(*this, "lcd")
+		, m_leds(*this, "led%u", 0U)
 	{
 	}
 
@@ -46,41 +49,24 @@ private:
 	void jv1080_map(address_map &map) ATTR_COLD;
 	void xp_rom_map(address_map &map) ATTR_COLD;
 
-	u8 ga_r(offs_t offset);
-	void ga_w(offs_t offset, u8 data);
+	void led_w(offs_t offset, u8 data);
 
 	void jv_palette(palette_device &palette) const ATTR_COLD;
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
 
 	required_device<sh7034_device> m_maincpu;
 	required_device<roland_xp_device> m_xp;
+	required_device<m60205_device> m_ga;
 	required_device<hd44780_device> m_lcd;
+	output_finder<24> m_leds;
 };
 
 
-u8 roland_jv1080_state::ga_r(offs_t offset)
+void roland_jv1080_state::led_w(offs_t offset, u8 data)
 {
-	if (!machine().side_effects_disabled())
-		logerror("%s: gate array read %02x\n", machine().describe_context(), offset);
-	return 0;
-}
-
-void roland_jv1080_state::ga_w(offs_t offset, u8 data)
-{
-	switch (offset)
-	{
-	case 0x38:
-		m_lcd->control_w(data);
-		break;
-
-	case 0x39:
-		m_lcd->data_w(data);
-		break;
-
-	default:
-		logerror("%s: gate array write %02x = %02x\n", machine().describe_context(), offset, data);
-		break;
-	}
+	if (offset < 3)
+		for (int bit = 0; bit < 8; bit++)
+			m_leds[offset * 8 + bit] = BIT(data, bit);
 }
 
 
@@ -90,7 +76,7 @@ void roland_jv1080_state::jv1080_map(address_map &map)
 	map(0x02000000, 0x020fffff).rom().region("progrom", 0);
 	map(0x02380000, 0x0238ffff).ram().share("nvram");
 	map(0x04000000, 0x04003fff).rw(m_xp, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
-	map(0x04380000, 0x0438003f).rw(FUNC(roland_jv1080_state::ga_r), FUNC(roland_jv1080_state::ga_w));
+	map(0x04380000, 0x0438003f).rw(m_ga, FUNC(m60205_device::read), FUNC(m60205_device::write));
 }
 
 void roland_jv1080_state::xp_rom_map(address_map &map)
@@ -142,6 +128,54 @@ HD44780_PIXEL_UPDATE(roland_jv1080_state::lcd_pixel_update)
 
 
 static INPUT_PORTS_START(jv1080)
+	PORT_START("SW0")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON1)  PORT_NAME("1-8/9-16")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON2)  PORT_NAME("F1")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON3)  PORT_NAME("F4")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON4)  PORT_NAME("F7")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_BUTTON5)  PORT_NAME("Utility")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_BUTTON6)  PORT_NAME("Sound B")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_BUTTON7)  PORT_NAME("Performance")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_BUTTON8)  PORT_NAME("User/Card")
+
+	PORT_START("SW1")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON9)  PORT_NAME("SW/Select")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON10) PORT_NAME("F2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON11) PORT_NAME("F5")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON12) PORT_NAME("F8")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_BUTTON13) PORT_NAME("EFX On/Off")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_BUTTON14) PORT_NAME("Sound C")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_BUTTON15) PORT_NAME("Patch")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_BUTTON16) PORT_NAME("Preset")
+
+	PORT_START("SW2")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Palette")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("F3")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("F6")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("System")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Sound A")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Sound D")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Rhythm")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Exp")
+
+	PORT_START("SW3")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN)  PORT_NAME("Cursor Down")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT)  PORT_NAME("Cursor Left")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP)    PORT_NAME("Cursor Up")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT) PORT_NAME("Cursor Right")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Shift")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Exit")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Enter")
+
+	PORT_START("PORT")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Inc")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Dec")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Preview")
+	PORT_BIT(0xf8, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("DIAL")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
 INPUT_PORTS_END
 
 
@@ -150,10 +184,10 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	SH7034(config, m_maincpu, 20_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jv1080_state::jv1080_map);
 	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
-	// What the eight analog inputs and the two ports carry is not established;
-	// port A bit 10 changes with the channel group the firmware scans.
+	// AN2-AN7 are grounded.  AN0 and AN1 are the data card's cell and the
+	// internal one, each through a buffer; 0x1ff-0x2cc of full scale is healthy
 	m_maincpu->read_adc<0>().set_constant(0);
-	m_maincpu->read_adc<1>().set_constant(0);
+	m_maincpu->read_adc<1>().set_constant(620);
 	m_maincpu->read_adc<2>().set_constant(0);
 	m_maincpu->read_adc<3>().set_constant(0);
 	m_maincpu->read_adc<4>().set_constant(0);
@@ -165,6 +199,18 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_maincpu->read_portb().set_constant(0xffff);
 	m_maincpu->write_portb().set_nop();
 	m_maincpu->read_portc().set_constant(0xffff);
+
+	M60205(config, m_ga, 20_MHz_XTAL);
+	m_ga->int_callback().set_inputline(m_maincpu, 5); // IRQ5
+	m_ga->write_lcd_control().set(m_lcd, FUNC(hd44780_device::control_w));
+	m_ga->write_lcd_data().set(m_lcd, FUNC(hd44780_device::data_w));
+	m_ga->write_led().set(FUNC(roland_jv1080_state::led_w));
+	m_ga->read_scan<0>().set_ioport("SW0");
+	m_ga->read_scan<1>().set_ioport("SW1");
+	m_ga->read_scan<2>().set_ioport("SW2");
+	m_ga->read_scan<3>().set_ioport("SW3");
+	m_ga->read_port().set_ioport("PORT");
+	m_ga->read_encoder().set_ioport("DIAL");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
