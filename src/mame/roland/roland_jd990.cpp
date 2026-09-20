@@ -61,8 +61,10 @@
     The wave ROMs are stored with the EP's address and data lines
     permuted, the SC-55's map per 1 MB region (ep/docs/wave_rom_lines.md);
     the driver undoes it at start, and the three chips form one 6 MB
-    module at address 0 of the EP's wave space; the card and expansion
-    slots sit at 0x600000 and above and are empty here.
+    module at address 0 of the EP's wave space.  Above them the firmware
+    probes three more banks: the PCM card at 0x600000 and 0x700000, which
+    is empty here, and CN7 at 0x800000, the machine's one SR-JV80
+    expansion board socket.
 
     The 1 MB map as the firmware uses it: the program ROM in pages 0-7,
     except that the upper half of page 0 is RAM (the image is blank there
@@ -80,6 +82,7 @@
 #include "bus/midi/midi.h"
 #include "cpu/h8500/h8570.h"
 #include "machine/nvram.h"
+#include "srjv80.h"
 #include "sound/roland_ep.h"
 #include "sound/roland_csp.h"
 #include "sound/roland_tvf.h"
@@ -87,6 +90,7 @@
 
 #include "emupal.h"
 #include "screen.h"
+#include "softlist_dev.h"
 #include "speaker.h"
 
 #define LOG_EP  (1U << 1)
@@ -154,6 +158,7 @@ public:
 		, m_tvf(*this, "tvf")
 		, m_csp(*this, "csp%u", 1U)
 		, m_ifcs(*this, "ifcs")
+		, m_exp(*this, "exp")
 		, m_waverom(*this, "waverom")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
@@ -166,6 +171,8 @@ protected:
 	virtual void machine_start() override ATTR_COLD;
 
 private:
+	u8 port11_r();
+
 	void isp_reset_w(int state);
 	void isp_dr_w(offs_t offset, u8 data);
 	TIMER_CALLBACK_MEMBER(isp_tick);
@@ -186,6 +193,7 @@ private:
 	required_device<roland_tvf_device> m_tvf;
 	required_device_array<roland_csp_device, 2> m_csp;
 	required_device<jd990_ifcs_device> m_ifcs;
+	required_device<srjv80_slot_device> m_exp;
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
@@ -242,6 +250,13 @@ void roland_jd990_state::machine_start()
 	save_item(NAME(m_fxm_count));
 	save_item(NAME(m_fxm_phase));
 	save_item(NAME(m_lfo_tick));
+}
+
+// CTRL4, CN7's SENS, high while a board is fitted; the service loop samples it
+// and the boot scan reads bank 8's header only behind it
+u8 roland_jd990_state::port11_r()
+{
+	return m_exp->sense_r() ? 0xff : 0x7f;
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
@@ -484,7 +499,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->read_adc<1>().set_constant(0x266);
 	// the card and board sense lines in bit 7, low with an empty slot
 	m_maincpu->read_port<h8570_device::PORT_9>().set_constant(0x7f);
-	m_maincpu->read_port<h8570_device::PORT_11>().set_constant(0x7f);
+	m_maincpu->read_port<h8570_device::PORT_11>().set(FUNC(roland_jd990_state::port11_r));
 
 	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
 	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
@@ -520,6 +535,10 @@ void roland_jd990_state::jd990(machine_config &config)
 		m_ifcs->add_route(pair * 2, "speaker", 1.0, 0);
 		m_ifcs->add_route(pair * 2 + 1, "speaker", 1.0, 1);
 	}
+
+	// CN7, one 8 MB board at bank 8 of the EP's wave space
+	SRJV80_SLOT(config, m_exp, 0).set_wave(m_ep, roland_ep_device::AS_WAVE, 0x800000);
+	SOFTWARE_LIST(config, "exp_list").set_original("srjv80");
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(h8570_device::sci_rx_w<0>));
