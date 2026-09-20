@@ -111,7 +111,7 @@ const s32 mute_fade[16] = {
 
 } // anonymous namespace
 
-DEFINE_DEVICE_TYPE(ROLAND_XV, roland_xv_device, "roland_xv", "Roland XV tone generator")
+DEFINE_DEVICE_TYPE(ROLAND_XV, roland_xv_device, "roland_xv", "Roland XV")
 
 roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: device_t(mconfig, ROLAND_XV, tag, owner, clock)
