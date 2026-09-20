@@ -12,21 +12,62 @@ license:CC0-1.0
 
     Each entry is commented with that identity, with the name the machine
     shows and with the build date the board stamps ten bytes after it, all
-    read from the descrambled image.  The year is that build date.
+    read from the descrambled image.  The year is that build date, which
+    for the PG-SRX boards and for SRX-03 is the date of a rebuild and not
+    of the product.
 
     Every image here is marked BAD_DUMP because no board has been read.
     Each is Roland's own wave data as their plugins carry it, where it is
     already descrambled, put back into board form by the inverse of the
     socket's permutation; the data is expected to be the board's, but
-    nothing here testifies to that.  The two PG-SRX images carry their own
-    later build dates, and the list takes each entry's year from the date
-    its image stamps.
+    nothing here testifies to that.
 
-    Not here: the rest of the SRX boards.
+    A board's directory says what it brings.  SRX-02, SRX-10 and SRX-11
+    carry patch banks as well as their wave and sample lists, and a host
+    takes those patches; the rest of the images declare a wave list and a
+    sample list and nothing more, so a host plays their waves and finds no
+    patches on them.  Those three are also the three whose identity word is
+    their own board number, where every image without patches has one from
+    0x1f up, with the Roland Cloud re-issues.  That is a property of the
+    plugin data these are made from, and a dump of a board may well not
+    share it.
+
+    The five PG-SRX images are Roland Cloud re-issues of boards whose
+    numbers they do not carry.  Three are settled by their waves: PG-SRX
+    Orchestra is SRX-06, whose waves are SR-JV80-02, -13 and -16; PG-SRX
+    Keyboards is SRX-07, from SR-JV80-04, -08 and -10; PG-SRX World is
+    SRX-09, from SR-JV80-05, -14 and -18.  Each one's wave names are found
+    in those boards' images.  PG-SRX Strings and PG-SRX Classic EP have no
+    SR-JV80 ancestor to match against; by their content they are likely
+    SRX-04 and SRX-12.
 -->
 
 <softwarelist name="roland_srx" description="Roland SRX wave expansion boards">
-	<!-- SRX-05 SupDance, "SRX-05 SupDance " [SpDnc], 2001-11-15 -->
+	<!-- SRX-02ConcertPno, "PianoExp Ver1.00" [C Pno], 1999-12-16; patches -->
+	<software name="srx02">
+		<description>Concert Piano (SRX-02)</description>
+		<year>1999</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19991216"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-02.ic1" size="0x2000000" crc="4c02d5f1" sha1="4a7c002bca1bbf36ad26b79434ac64d506ce159e" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SRX-03 StudioSRX, "MIKYG Ver.1.02" [Stdio], 2018-08-20; no patches -->
+	<software name="srx03">
+		<description>Studio SRX (SRX-03)</description>
+		<year>2018</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20180820"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-03.ic1" size="0x2000000" crc="fd074282" sha1="a612e4f310c63ac0c76afe45f84716bf6b18c25b" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SRX-05 SupDance, "SRX-05 SupDance " [SpDnc], 2001-11-15; no patches -->
 	<software name="srx05">
 		<description>Supreme Dance (SRX-05)</description>
 		<year>2001</year>
@@ -38,7 +79,7 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- SRX-08 Pltnm Trx, "Dance" [PlTrx], 2002-07-14 -->
+	<!-- SRX-08 Pltnm Trx, "Dance" [PlTrx], 2002-07-14; no patches -->
 	<software name="srx08">
 		<description>Platinum Trax (SRX-08)</description>
 		<year>2002</year>
@@ -50,7 +91,31 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- PG-SRX Orchestra, "Orchestra" [Orche], 2017-11-06 -->
+	<!-- SRX-10 BgBrsEns, "SRX-10 BgBrsEns " [Brass], 2004-01-29; patches -->
+	<software name="srx10">
+		<description>Big Brass Ensemble (SRX-10)</description>
+		<year>2004</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20040129"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-10.ic1" size="0x2000000" crc="341efd0b" sha1="3eec680ac416ac206f5168531552afa294cacad7" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SRX-11 CompltPno, "SRX-11 CompltPno" [CmPno], 2004-11-04; patches -->
+	<software name="srx11">
+		<description>Complete Piano (SRX-11)</description>
+		<year>2004</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20041104"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="srx-11.ic1" size="0x2000000" crc="9f4536b2" sha1="fe786e42943a96753604711691a2f4153f6ed2e1" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX Orchestra, "Orchestra" [Orche], 2017-11-06; SRX-06, no patches -->
 	<software name="pgsrxorc">
 		<description>Orchestra (PG-SRX)</description>
 		<year>2017</year>
@@ -62,7 +127,7 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- PG-SRX Keyboards, "Keyboards" [Keys], 2018-02-20 -->
+	<!-- PG-SRX Keyboards, "Keyboards" [Keys], 2018-02-20; SRX-07, no patches -->
 	<software name="pgsrxkbd">
 		<description>Keyboards (PG-SRX)</description>
 		<year>2018</year>
@@ -71,6 +136,42 @@ license:CC0-1.0
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="pg-srx_keyboards.bin" size="0x2000000" crc="4906dcf4" sha1="507c94d282729a8d6f1fd8b1a4ff67d0ac0afc08" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX World, "World" [World], 2018-08-25; SRX-09, no patches -->
+	<software name="pgsrxwld">
+		<description>World (PG-SRX)</description>
+		<year>2018</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20180825"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="pg-srx_world.bin" size="0x2000000" crc="3162c716" sha1="1c9b0413a288f28a8ee9fdad30db19a268f5f585" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX Strings, "Strings" [Strng], 2018-09-07; SRX-04?, no patches -->
+	<software name="pgsrxstr">
+		<description>Strings (PG-SRX)</description>
+		<year>2018</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20180907"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="pg-srx_strings.bin" size="0x2000000" crc="9f0e29e8" sha1="3d3e80be23dfbe6b9fae64769f4a64f5e36d751c" status="baddump" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- PG-SRX ClassicEP, "Classic EP" [Cl_EP], 2018-09-12; SRX-12?, no patches -->
+	<software name="pgsrxcep">
+		<description>Classic EP (PG-SRX)</description>
+		<year>2018</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="20180912"/>
+		<part name="board" interface="srx">
+			<dataarea name="rom" size="0x2000000">
+				<rom name="pg-srx_classic_ep.bin" size="0x2000000" crc="f8258c57" sha1="af1ddd47373e18db835339cb4b7704cb3ccaacaf" status="baddump" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
