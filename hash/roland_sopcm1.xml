@@ -1,0 +1,203 @@
+<?xml version="1.0"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+license:CC0-1.0
+
+    Roland PCM cards for the JD-800 and the JD-990, taken as the mask ROM
+    reads.  Both series go in the same slot and wear the same line swap as
+    the SR-JV80 boards, which the slot undoes; the SO-PCM1 cards carry the
+    JV-80 header the boards do, the SO-JD80 cards the JD-800 one.  The two
+    2 MB cards fill the bank above their own as well.
+
+    Each entry is commented with the card's own label and with the build
+    date stamped after it, both read from the descrambled image; the year
+    is that build date rather than the date of sale.  The descriptions are
+    the sixteen-character names the JV-1080 firmware keeps for the cards it
+    knows, and the cards it does not know are listed by part number alone
+    rather than guessed at.
+
+    Not dumped: SO-PCM1-05 (Accordion).
+-->
+
+<softwarelist name="roland_sopcm1" description="Roland PCM cards (JD-800, JD-990)">
+	<!-- CARD_1, 1991-03-06 -->
+	<software name="sojd8001">
+		<description>SO-JD80-01</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19910306"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-01.ic1" size="0x100000" crc="ef2d8ee0" sha1="6366a92e9c709537871043a83dca618bd4274204" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CARD_2, 1991-03-11 -->
+	<software name="sojd8002">
+		<description>SO-JD80-02</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19910311"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-02.ic1" size="0x100000" crc="94f24080" sha1="ac2dc2a5487e2bd8213bfe168afcde4c9bfbbbb0" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CARD_3, 1991-03-08 -->
+	<software name="sojd8003">
+		<description>SO-JD80-03</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19910308"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-03.ic1" size="0x100000" crc="bd0e9ca9" sha1="f129d97c0c6ac6ef8115384575dec32a30647382" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- JDC_STRA, 1991-07-12 -->
+	<software name="sojd8004">
+		<description>SO-JD80-04 Strings</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19910712"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-04.ic1" size="0x100000" crc="f75225a0" sha1="470022322eea4d4f55d720398dd2b9c7a9420f62" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SOJD8005, 1991-12-04 -->
+	<software name="sojd8005">
+		<description>SO-JD80-05 Brass</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19911204"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-05.ic1" size="0x100000" crc="37846755" sha1="e6d2e458ad44448f56a4b0c0944cd562bced7d4e" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- SOJD8006, 1992-02-20 -->
+	<software name="sojd8006">
+		<description>SO-JD80-06 Grand</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19920220"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-06.ic1" size="0x100000" crc="d47b1d1c" sha1="705fde1b2c4183add2ea637a507a8b02d5a60711" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- JDGTR3, 1992-06-18 -->
+	<software name="sojd8007">
+		<description>SO-JD80-07 Guitar</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19920618"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-07.ic1" size="0x100000" crc="bf7df2f3" sha1="d351da0c7742c1d21cb854e5655c389c2bdddce4" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD05100, 1992-11-10 -->
+	<software name="sojd8008">
+		<description>SO-JD80-08</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19921110"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-jd80-08.ic1" size="0x100000" crc="b68d39ad" sha1="3ef3a4bb31bab2e9f8ce0ec91f8f5081443ffec7" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD01010, 1991-11-12 -->
+	<software name="sopcm101">
+		<description>SO-PCM1-01 Piano</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19911112"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-01.ic1" size="0x100000" crc="30e5a372" sha1="085c652ea08ccb01a65392eee8ce103caf54ae9f" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD02008, 1991-11-13 -->
+	<software name="sopcm102">
+		<description>SO-PCM1-02 Guitar</description>
+		<year>1991</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19911113"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-02.ic1" size="0x100000" crc="2f836e3e" sha1="1cf4c2578955ab2cd83f07c71f719ba2b1a6b7e9" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD05100, 1992-03-26 -->
+	<software name="sopcm103">
+		<description>SO-PCM1-03 Rock</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19920326"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-03.ic1" size="0x100000" crc="ba289ce1" sha1="5c30bd171c12b4d149f645cb448e015a4a7a58b8" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD04100, 1992-04-16 -->
+	<software name="sopcm104">
+		<description>SO-PCM1-04 Grand</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19920416"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-04.ic1" size="0x100000" crc="c86fb282" sha1="cb07857e8acea7afa4d2329202a07285a58f8ce0" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD06100, 1992-12-29 -->
+	<software name="sopcm106">
+		<description>SO-PCM1-06 Baroque</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19921229"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-06.ic1" size="0x100000" crc="df8b314b" sha1="034a6f4a3125c3768a9340cbbdb190ac63ab25b6" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- OFX100, 1993-04-09 -->
+	<software name="sopcm107">
+		<description>SO-PCM1-07</description>
+		<year>1993</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19930409"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x200000">
+				<rom name="so-pcm1-07.ic1" size="0x200000" crc="c52313db" sha1="da3aa71ff5820f2312093f6b6efd076bcba5b861" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CTR100, 1993-05-19 -->
+	<software name="sopcm108">
+		<description>SO-PCM1-08</description>
+		<year>1993</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19930519"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x200000">
+				<rom name="so-pcm1-08.ic1" size="0x200000" crc="2c2198fb" sha1="24bd15773f33cdc1d48dc3711289592d6b77cf24" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+</softwarelist>

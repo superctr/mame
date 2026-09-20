@@ -4,200 +4,243 @@
 license:CC0-1.0
 
     Roland SR-JV80 wave expansion boards, 8 MB each, taken as the mask ROM
-    reads: eighteen address lines permuted within each 256 KB block and the
+    reads: nineteen address lines permuted within each 512 KB block and the
     eight data lines permuted, which is what the socket undoes.  The board
     carries its own label in the clear at offset 0 of the scrambled image,
     "Roland JV80 O.S." and then the sixteen-byte identity the host compares.
+
+    Each entry is commented with that identity and with the build date the
+    board stamps ten bytes after it, both read from the descrambled image.
+    The year is that build date, which is what the images testify to rather
+    than the date of sale.
 
     Not dumped: SR-JV80-20 (Ethnic Sound Collection), -21 (Concert Piano)
     and the regional and bundled boards.
 -->
 
-<softwarelist name="srjv80" description="Roland SR-JV80 wave expansion boards">
+<softwarelist name="roland_srjv80" description="Roland SR-JV80 wave expansion boards">
+	<!-- POP100, 1992-02-16 -->
 	<software name="srjv8001">
 		<description>Pop (SR-JV80-01)</description>
-		<year>1994</year>
+		<year>1992</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19920216"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-01.ic1" size="0x800000" crc="4676670a" sha1="aeb02a1af5031194c723030b133fda6bfb5463f6" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- ORC100, 1992-11-11 -->
 	<software name="srjv8002">
 		<description>Orchestral (SR-JV80-02)</description>
-		<year>1994</year>
+		<year>1992</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19921111"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-02.ic1" size="0x800000" crc="a21b8cf7" sha1="6f8e3113e7f53b0df1f7f0bd9a0627cc655a6a1c" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- PNO100, 1992-11-04 -->
 	<software name="srjv8003">
 		<description>Piano (SR-JV80-03)</description>
-		<year>1994</year>
+		<year>1992</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19921104"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-03.ic1" size="0x800000" crc="ff72c14c" sha1="899b68001674b92d82ad86dfb69c62365e368284" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- SYN100, 1993-10-03 -->
 	<software name="srjv8004">
 		<description>Vintage Synth (SR-JV80-04)</description>
-		<year>1994</year>
+		<year>1993</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19931003"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-04.ic1" size="0x800000" crc="337af682" sha1="29fe6c1dde042ff2147c73f1c9d5fcf58092879a" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- ETH100, 1994-04-21 -->
 	<software name="srjv8005">
 		<description>World (SR-JV80-05)</description>
 		<year>1994</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19940421"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-05.ic1" size="0x800000" crc="04ac657e" sha1="c0a64d6ab04fac96ceba09becd4be888304c72a6" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- DNC102, 1995-02-08 -->
 	<software name="srjv8006">
 		<description>Dance (SR-JV80-06)</description>
 		<year>1995</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19950208"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-06.ic1" size="0x800000" crc="3647db0d" sha1="e2bed925027ed2f73e15aba3c46bf951c93a0716" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- CAR015, 1995-04-03 -->
 	<software name="srjv8007">
 		<description>Super Sound Set (SR-JV80-07)</description>
 		<year>1995</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19950403"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-07.ic1" size="0x800000" crc="75ffbc00" sha1="be45e76154cee6571e7bacb5633b21945b055843" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- GTO023, 1995-07-24 -->
 	<software name="srjv8008">
 		<description>Keyboards of the 60s and 70s (SR-JV80-08)</description>
 		<year>1995</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19950724"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-08.ic1" size="0x800000" crc="4ece1033" sha1="9652aa26ed091c11d3a89449e8feba5ab73b4bc7" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- COL100, 1996-01-29 -->
 	<software name="srjv8009">
 		<description>Session (SR-JV80-09)</description>
-		<year>1995</year>
+		<year>1996</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19960129"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-09.ic1" size="0x800000" crc="9afb0405" sha1="50e67516a0c996b9813dfdac6c1d08709057e405" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- BSD015, 1996-09-15 -->
 	<software name="srjv8010">
 		<description>Bass &amp; Drum (SR-JV80-10)</description>
-		<year>1995</year>
+		<year>1996</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19960915"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-10.ic1" size="0x800000" crc="8b0ddc6c" sha1="0719e32f001d012769cc92b5dc1ea75882fa0656" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- DC2040, 1997-07-20 -->
 	<software name="srjv8011">
 		<description>Techno (SR-JV80-11)</description>
-		<year>1996</year>
+		<year>1997</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19970720"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-11.ic1" size="0x800000" crc="f10cb497" sha1="880d032b9b2ae97869358161b427c6c8d529f2f8" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- HHP100, 1998-02-15 -->
 	<software name="srjv8012">
 		<description>HipHop (SR-JV80-12)</description>
-		<year>1996</year>
+		<year>1998</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19980215"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-12.ic1" size="0x800000" crc="cdc9c69b" sha1="d3d4ff39659bbe993cf6582c145d0db1f1e79b26" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- CHR104, 1998-06-22 -->
 	<software name="srjv8013">
 		<description>Vocal (SR-JV80-13)</description>
-		<year>1996</year>
+		<year>1998</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19980622"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-13.ic1" size="0x800000" crc="aac453e2" sha1="6fd05df901127291e0b74304038ccea79c9a8812" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- ASI100, 1998-08-15 -->
 	<software name="srjv8014">
 		<description>Asia (SR-JV80-14)</description>
-		<year>1996</year>
+		<year>1998</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19980815"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-14.ic1" size="0x800000" crc="c05c3137" sha1="4127864976393052f74fddf9e0a3bbe27f9324df" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- SFX100, 1999-02-15 -->
 	<software name="srjv8015">
 		<description>Special FX (SR-JV80-15)</description>
-		<year>1996</year>
+		<year>1999</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19990215"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-15.ic1" size="0x800000" crc="0778bdb4" sha1="54b898f76e698e7bafbf093d616ad2df4df6dc82" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- FLM101, 1999-02-14 -->
 	<software name="srjv8016">
 		<description>Orchestral II (SR-JV80-16)</description>
-		<year>1997</year>
+		<year>1999</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19990214"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-16.ic1" size="0x800000" crc="00e29565" sha1="216cde7393d5fd57cabe4c2d4bbc5f65f0c07e90" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- CTR101, 1999-08-14 -->
 	<software name="srjv8017">
 		<description>Country (SR-JV80-17)</description>
-		<year>1997</year>
+		<year>1999</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="19990814"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-17.ic1" size="0x800000" crc="d4522a6b" sha1="07eaf0a7f822d8369c33b77a9fe2f2a3ea2f7713" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- LTN100, 2000-03-09 -->
 	<software name="srjv8018">
 		<description>Latin (SR-JV80-18)</description>
-		<year>1997</year>
+		<year>2000</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="20000309"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-18.ic1" size="0x800000" crc="b7a02072" sha1="bb177db61f6f32d7bcc693e4c23d162a3ade3801" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
+	<!-- House104, 2000-08-11 -->
 	<software name="srjv8019">
 		<description>House (SR-JV80-19)</description>
-		<year>1998</year>
+		<year>2000</year>
 		<publisher>Roland</publisher>
+		<info name="release" value="20000811"/>
 		<part name="board" interface="srjv80">
 			<dataarea name="rom" size="0x800000">
 				<rom name="sr-jv80-19.ic1" size="0x800000" crc="7fdd8550" sha1="23ce90ce898ef59a6268070644ab18c7b7834509" offset="0"/>
