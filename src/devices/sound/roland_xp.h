@@ -206,7 +206,7 @@ protected:
 
 	void write_run_mask(int word, u16 data);
 	void commit_run_mask();
-	void load_latch(offs_t address);
+	void load_latch(offs_t address, offs_t lane);
 	void update_int();
 	bool offer_irq(int voice, int reason);
 	void marker_reached(int voice);

@@ -433,7 +433,7 @@ void roland_xp_device::set_page(int voice, int index, u32 value)
 	m_regs[word | 1] = u16(value);
 }
 
-void roland_xp_device::load_latch(offs_t address)
+void roland_xp_device::load_latch(offs_t address, offs_t lane)
 {
 	if (address < CRAM_BASE)
 	{
@@ -461,8 +461,14 @@ void roland_xp_device::load_latch(offs_t address)
 		m_read_latch = m_regs[address >> 1];
 	else if (address >= ROM_WINDOW)
 	{
-		const u32 byte = (u32(m_regs[ROM_BANK >> 1] & 0x7f) << 20) | (u32(m_regs[ROM_PAGE >> 1] & 0x3ff) << 10) | (address - ROM_WINDOW);
-		m_read_latch = m_wave_cache.read_byte(byte) | (u32(m_wave_cache.read_byte(byte + 1)) << 8);
+		const u32 base = (u32(m_regs[ROM_BANK >> 1] & 0x7f) << 20) | (u32(m_regs[ROM_PAGE >> 1] & 0x3ff) << 10);
+		const unsigned select = base >> 24;
+		const u8 descriptor = m_regs[(ROM_SELECT >> 1) + (select >> 1)] >> (BIT(select, 0) ? 8 : 0);
+		const u32 byte = base | ((address - ROM_WINDOW) + (BIT(descriptor, 0) ? 0 : lane));
+		if (BIT(descriptor, 0))
+			m_read_latch = m_wave_cache.read_byte(byte) | (u32(m_wave_cache.read_byte(byte + 1)) << 8);
+		else
+			m_read_latch = m_wave_cache.read_byte(byte);
 	}
 }
 
@@ -479,7 +485,7 @@ u16 roland_xp_device::read(offs_t offset, u16 mem_mask)
 	if (address < RUN_MASK || address >= SEND_BASE)
 	{
 		if (!machine().side_effects_disabled())
-			load_latch(address);
+			load_latch(address, (mem_mask == 0x00ff) ? 1 : 0);
 	}
 	else
 	{
