@@ -27,11 +27,9 @@ roland_wavecard_device::roland_wavecard_device(const machine_config &mconfig, de
 		u32 min_size, u32 max_size, const char *size_error)
 	: device_t(mconfig, type, tag, owner, clock)
 	, device_cartrom_image_interface(mconfig, *this)
-	, m_wave(*this, finder_base::DUMMY_TAG, -1)
 	, m_min_size(min_size)
 	, m_max_size(max_size)
 	, m_size_error(size_error)
-	, m_base(0)
 	, m_size(0)
 {
 }
@@ -83,13 +81,11 @@ std::pair<std::error_condition, std::string> roland_wavecard_device::call_load()
 	}
 
 	descramble();
-	m_wave->install_rom(m_base, m_base + m_size - 1, m_rom.get());
 	return std::make_pair(std::error_condition(), std::string());
 }
 
 void roland_wavecard_device::call_unload()
 {
-	m_wave->unmap_read(m_base, m_base + m_size - 1);
 	m_rom.reset();
 	m_size = 0;
 }
