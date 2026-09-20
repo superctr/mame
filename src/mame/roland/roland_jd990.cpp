@@ -97,14 +97,14 @@
 #include "logmacro.h"
 
 
-class jd990_sound_device;
-DECLARE_DEVICE_TYPE(JD990_SOUND, jd990_sound_device)
+class jd990_ifcs_device;
+DECLARE_DEVICE_TYPE(JD990_IFCS, jd990_ifcs_device)
 
-class jd990_sound_device : public device_t, public device_sound_interface
+class jd990_ifcs_device : public device_t, public device_sound_interface
 {
 public:
-	jd990_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-		: device_t(mconfig, JD990_SOUND, tag, owner, clock)
+	jd990_ifcs_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+		: device_t(mconfig, JD990_IFCS, tag, owner, clock)
 		, device_sound_interface(mconfig, *this)
 		, m_csp(*this, "^csp%u", 1U)
 	{
@@ -139,7 +139,7 @@ private:
 	sound_stream *m_stream = nullptr;
 };
 
-DEFINE_DEVICE_TYPE(JD990_SOUND, jd990_sound_device, "jd990_sound", "JD-990 audio bus and output interface")
+DEFINE_DEVICE_TYPE(JD990_IFCS, jd990_ifcs_device, "jd990_ifcs", "Roland IFCS")
 
 namespace {
 
@@ -153,7 +153,7 @@ public:
 		, m_ep(*this, "ep")
 		, m_tvf(*this, "tvf")
 		, m_csp(*this, "csp%u", 1U)
-		, m_sound(*this, "ifcs")
+		, m_ifcs(*this, "ifcs")
 		, m_waverom(*this, "waverom")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
@@ -185,7 +185,7 @@ private:
 	required_device<roland_ep_device> m_ep;
 	required_device<roland_tvf_device> m_tvf;
 	required_device_array<roland_csp_device, 2> m_csp;
-	required_device<jd990_sound_device> m_sound;
+	required_device<jd990_ifcs_device> m_ifcs;
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
@@ -368,7 +368,7 @@ u8 roland_jd990_state::csp_r(offs_t offset)
 {
 	if (!machine().side_effects_disabled())
 	{
-		m_sound->update();
+		m_ifcs->update();
 		LOGMASKED(LOG_CSP, "%s: CSP%d read %04X\n", machine().describe_context(), Chip + 1, offset);
 	}
 	return m_csp[Chip]->host_r(offset);
@@ -377,7 +377,7 @@ u8 roland_jd990_state::csp_r(offs_t offset)
 template <int Chip>
 void roland_jd990_state::csp_w(offs_t offset, u8 data)
 {
-	m_sound->update();
+	m_ifcs->update();
 	LOGMASKED(LOG_CSP, "%s: CSP%d write %04X = %02X\n", machine().describe_context(), Chip + 1, offset, data);
 	m_csp[Chip]->host_w(offset, data);
 }
@@ -506,13 +506,13 @@ void roland_jd990_state::jd990(machine_config &config)
 	for (auto &csp : m_csp)
 		ROLAND_CSP(config, csp, 67.7376_MHz_XTAL);
 	m_csp[1]->set_eram_size(0x40000);
-	JD990_SOUND(config, m_sound, 0);
+	JD990_IFCS(config, m_ifcs, 0);
 	for (int n = 0; n < 24; n++)
-		m_tvf->add_route(n, m_sound, 1.0, n);
+		m_tvf->add_route(n, m_ifcs, 1.0, n);
 	for (int pair = 0; pair < 4; pair++)
 	{
-		m_sound->add_route(pair * 2, "speaker", 1.0, 0);
-		m_sound->add_route(pair * 2 + 1, "speaker", 1.0, 1);
+		m_ifcs->add_route(pair * 2, "speaker", 1.0, 0);
+		m_ifcs->add_route(pair * 2 + 1, "speaker", 1.0, 1);
 	}
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
