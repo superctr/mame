@@ -6,10 +6,8 @@
     amplifier, thirty-two channels behind the EP.
 
     TODO:
-    - the filter, the ring modulator and the amplifier run in floating
-      point here, where the chip is fixed point: the full scale every
-      line saturates at is read, the widths and rounding are not
-    - the command register, the four zero pairs, and the readback's layout
+    - the arithmetic widths and rounding are provisional
+    - the other command values, the four zero pairs, and the readback's layout
 
 ***************************************************************************/
 
@@ -36,12 +34,19 @@ void roland_tvf_device::device_start()
 
 	save_item(NAME(m_regs));
 	save_item(STRUCT_MEMBER(m_voices, regs));
-	save_item(STRUCT_MEMBER(m_voices, cutoff));
-	save_item(STRUCT_MEMBER(m_voices, cutoff_step));
-	save_item(STRUCT_MEMBER(m_voices, cutoff_remaining));
-	save_item(STRUCT_MEMBER(m_voices, amplitude));
-	save_item(STRUCT_MEMBER(m_voices, amplitude_step));
-	save_item(STRUCT_MEMBER(m_voices, amplitude_remaining));
+	for (int i = 0; i < VOICES; i++)
+	{
+		save_item(NAME(m_voices[i].cutoff.value), i);
+		save_item(NAME(m_voices[i].cutoff.start), i);
+		save_item(NAME(m_voices[i].cutoff.target), i);
+		save_item(NAME(m_voices[i].cutoff.remaining), i);
+		save_item(NAME(m_voices[i].cutoff.length), i);
+		save_item(NAME(m_voices[i].amplitude.value), i);
+		save_item(NAME(m_voices[i].amplitude.start), i);
+		save_item(NAME(m_voices[i].amplitude.target), i);
+		save_item(NAME(m_voices[i].amplitude.remaining), i);
+		save_item(NAME(m_voices[i].amplitude.length), i);
+	}
 	save_item(STRUCT_MEMBER(m_voices, low));
 	save_item(STRUCT_MEMBER(m_voices, band));
 }
@@ -102,26 +107,18 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	switch (word)
 	{
 	case CUTOFF_INITIAL:
-		v.cutoff = data / 16384.0f;
-		v.cutoff_remaining = 0;
+		v.cutoff.set(data, 0);
 		break;
 
 	case CUTOFF:
-		v.cutoff_step = (data / 16384.0f - v.cutoff) / RAMP_SAMPLES;
-		v.cutoff_remaining = RAMP_SAMPLES;
+		v.cutoff.set(data, RAMP_SAMPLES);
 		break;
 
 	case AMPLITUDE:
 		if (BIT(data, 15) || m_regs[COMMAND] == 0x0008)
-		{
-			v.amplitude = (data & 0x7fff) / 16384.0f;
-			v.amplitude_remaining = 0;
-		}
+			v.amplitude.set(data & 0x7fff, 0);
 		else
-		{
-			v.amplitude_remaining = m_regs[COMMAND] == 0x0007 ? 32 : RAMP_SAMPLES;
-			v.amplitude_step = (data / 16384.0f - v.amplitude) / v.amplitude_remaining;
-		}
+			v.amplitude.set(data, m_regs[COMMAND] == 0x0007 ? 32 : RAMP_SAMPLES);
 		break;
 	}
 }
@@ -131,28 +128,44 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 //  the channels
 //-------------------------------------------------
 
-void roland_tvf_device::service(voice &v)
+void roland_tvf_device::ramp::set(u16 data, int samples)
 {
-	if (v.cutoff_remaining)
+	target = s32(data) << (COEFFICIENT_FRACTION_BITS - 14);
+	start = value;
+	length = samples;
+	remaining = value == target ? 0 : samples;
+	if (!remaining)
+		value = target;
+}
+
+void roland_tvf_device::ramp::advance()
+{
+	if (remaining)
 	{
-		v.cutoff += v.cutoff_step;
-		v.cutoff_remaining--;
-	}
-	if (v.amplitude_remaining)
-	{
-		v.amplitude += v.amplitude_step;
-		v.amplitude_remaining--;
+		--remaining;
+		value = start + s64(target - start) * (length - remaining) / length;
 	}
 }
 
-float roland_tvf_device::filter(voice &v, float sample) const
+void roland_tvf_device::service(voice &v)
 {
-	const float f = v.cutoff;
-	const float q = v.regs[DAMPING] / 4096.0f;
-	const float low = saturate(v.low + f * v.band);
-	const float high = saturate(sample - low - q * v.band);
+	v.cutoff.advance();
+	v.amplitude.advance();
+}
+
+s64 roland_tvf_device::rounded_shift(s64 value, int bits)
+{
+	const s64 half = s64(1) << (bits - 1);
+	return value < 0 ? -((-value + half) >> bits) : (value + half) >> bits;
+}
+
+s32 roland_tvf_device::filter(voice &v, s64 sample) const
+{
+	const s32 f = v.cutoff.value;
+	const s32 low = saturate(v.low + rounded_shift(s64(f) * v.band, COEFFICIENT_FRACTION_BITS));
+	const s32 high = saturate(sample - low - rounded_shift(s64(v.regs[DAMPING]) * v.band, 12));
 	v.low = low;
-	v.band = saturate(v.band + f * high);
+	v.band = saturate(v.band + rounded_shift(s64(f) * high, COEFFICIENT_FRACTION_BITS));
 	switch (mode_of(v))
 	{
 	case MODE_HPF: return high;
@@ -163,7 +176,7 @@ float roland_tvf_device::filter(voice &v, float sample) const
 
 // the pair's two channels through one of the structures; the flags of the
 // first channel say which
-std::pair<float, float> roland_tvf_device::pair(int n, float first, float second)
+std::pair<s32, s32> roland_tvf_device::pair(int n, s32 first, s32 second)
 {
 	voice &a = m_voices[n];
 	voice &b = m_voices[n + 1];
@@ -173,18 +186,18 @@ std::pair<float, float> roland_tvf_device::pair(int n, float first, float second
 	switch (structure_of(a))
 	{
 	case PAIR_SUM_THEN_FILTERS:
-		return { 0, amplify(b, filter(b, filter(a, first + second))) };
+		return { 0, amplify(b, filter(b, filter(a, s64(first) + second))) };
 
 	case PAIR_RING_THEN_FILTERS:
 	{
-		const float ring = 6.0f * amplify(a, first) * second + (mixes_second(a) ? second : 0.0f);
+		const s64 ring = rounded_shift(6 * s64(amplify(a, first)) * second, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? second : 0);
 		return { 0, amplify(b, filter(b, filter(a, ring))) };
 	}
 
 	case PAIR_FILTERS_THEN_RING:
 	{
-		const float filtered = filter(b, second);
-		const float ring = 6.0f * amplify(a, filter(a, first)) * filtered + (mixes_second(a) ? filtered : 0.0f);
+		const s32 filtered = filter(b, second);
+		const s64 ring = rounded_shift(6 * s64(amplify(a, filter(a, first))) * filtered, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? filtered : 0);
 		return { 0, amplify(b, ring) };
 	}
 
@@ -199,9 +212,11 @@ void roland_tvf_device::sound_stream_update(sound_stream &stream)
 	{
 		for (int n = 0; n < VOICES; n += 2)
 		{
-			const auto [first, second] = pair(n, stream.get(n, i), stream.get(n + 1, i));
-			stream.put(n, i, first);
-			stream.put(n + 1, i, second);
+			const s32 input_a = s32(std::clamp(stream.get(n, i), -1.0f, 1.0f) * SAMPLE_ONE);
+			const s32 input_b = s32(std::clamp(stream.get(n + 1, i), -1.0f, 1.0f) * SAMPLE_ONE);
+			const auto [first, second] = pair(n, input_a, input_b);
+			stream.put_int(n, i, first, SAMPLE_ONE);
+			stream.put_int(n + 1, i, second, SAMPLE_ONE);
 		}
 	}
 }
