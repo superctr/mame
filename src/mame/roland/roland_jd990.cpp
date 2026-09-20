@@ -40,8 +40,8 @@
     loops of its service loop, deferring while the CPU holds the bus.
     The loop period is a guess at 100 us; the manual's "small values
     metallic, large values gritty" fits a modulator from 5 kHz down to
-    360 Hz.  The CSPs are still to come: the TVF's output goes
-    straight to the speakers, dry.
+    360 Hz. The TVF channels feed two CSPs in series, followed by the
+    IFCS output demultiplexer. Bus alignment and output levels are provisional.
 
     The panel is 32 switches on five columns of the ISP's scan plus the
     VALUE knob's push switch; the names come from pressing each position
@@ -71,6 +71,7 @@
 #include "cpu/h8500/h8570.h"
 #include "machine/nvram.h"
 #include "sound/roland_ep.h"
+#include "sound/roland_csp.h"
 #include "sound/roland_tvf.h"
 #include "video/sed1330.h"
 
@@ -86,6 +87,50 @@
 #include "logmacro.h"
 
 
+class jd990_sound_device;
+DECLARE_DEVICE_TYPE(JD990_SOUND, jd990_sound_device)
+
+class jd990_sound_device : public device_t, public device_sound_interface
+{
+public:
+	jd990_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+		: device_t(mconfig, JD990_SOUND, tag, owner, clock)
+		, device_sound_interface(mconfig, *this)
+		, m_csp(*this, "^csp%u", 1U)
+	{
+	}
+
+	void update() { m_stream->update(); }
+
+protected:
+	virtual void device_start() override
+	{
+		m_stream = stream_alloc(24, 8, 44100);
+	}
+
+	virtual void sound_stream_update(sound_stream &stream) override
+	{
+		static constexpr unsigned slots[] = { 4, 7, 18, 21, 24, 27, 30, 1 };
+		for (int sample = 0; sample < stream.samples(); sample++)
+		{
+			for (unsigned channel = 0; channel < 24; channel++)
+				m_csp[0]->sc_w(channel, s32(std::clamp(stream.get(channel, sample) * 4194304.0f, -8388608.0f, 8388607.0f)));
+			m_csp[0]->run_once(768);
+			for (unsigned channel = 0; channel < 32; channel++)
+				m_csp[1]->ser_w(channel, m_csp[0]->ser_r(channel));
+			m_csp[1]->run_once(768);
+			for (unsigned channel = 0; channel < 8; channel++)
+				stream.put_int_clamp(channel, sample, m_csp[1]->ser_r(slots[channel]), 4194304);
+		}
+	}
+
+private:
+	required_device_array<roland_csp_device, 2> m_csp;
+	sound_stream *m_stream = nullptr;
+};
+
+DEFINE_DEVICE_TYPE(JD990_SOUND, jd990_sound_device, "jd990_sound", "JD-990 audio bus and output interface")
+
 namespace {
 
 class roland_jd990_state : public driver_device
@@ -97,6 +142,8 @@ public:
 		, m_lcdc(*this, "lcdc")
 		, m_ep(*this, "ep")
 		, m_tvf(*this, "tvf")
+		, m_csp(*this, "csp%u", 1U)
+		, m_sound(*this, "ifcs")
 		, m_waverom(*this, "waverom")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
@@ -127,6 +174,8 @@ private:
 	required_device<sed1330_device> m_lcdc;
 	required_device<roland_ep_device> m_ep;
 	required_device<roland_tvf_device> m_tvf;
+	required_device_array<roland_csp_device, 2> m_csp;
+	required_device<jd990_sound_device> m_sound;
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
@@ -294,14 +343,19 @@ template <int Chip>
 u8 roland_jd990_state::csp_r(offs_t offset)
 {
 	if (!machine().side_effects_disabled())
+	{
+		m_sound->update();
 		LOGMASKED(LOG_CSP, "%s: CSP%d read %04X\n", machine().describe_context(), Chip + 1, offset);
-	return 0;
+	}
+	return m_csp[Chip]->host_r(offset);
 }
 
 template <int Chip>
 void roland_jd990_state::csp_w(offs_t offset, u8 data)
 {
+	m_sound->update();
 	LOGMASKED(LOG_CSP, "%s: CSP%d write %04X = %02X\n", machine().describe_context(), Chip + 1, offset, data);
+	m_csp[Chip]->host_w(offset, data);
 }
 
 void roland_jd990_state::mem_map(address_map &map)
@@ -425,8 +479,16 @@ void roland_jd990_state::jd990(machine_config &config)
 	ROLAND_TVF(config, m_tvf, 44100);
 	for (int n = 0; n < roland_ep_device::VOICES; n++)
 		m_ep->add_route(n, m_tvf, 1.0, n);
-	m_tvf->add_route(0, "speaker", 1.0, 0);
-	m_tvf->add_route(0, "speaker", 1.0, 1);
+	for (auto &csp : m_csp)
+		ROLAND_CSP(config, csp, 67.7376_MHz_XTAL);
+	JD990_SOUND(config, m_sound, 0);
+	for (int n = 0; n < 24; n++)
+		m_tvf->add_route(n, m_sound, 1.0, n);
+	for (int pair = 0; pair < 4; pair++)
+	{
+		m_sound->add_route(pair * 2, "speaker", 1.0, 0);
+		m_sound->add_route(pair * 2 + 1, "speaker", 1.0, 1);
+	}
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(h8570_device::sci_rx_w<0>));
