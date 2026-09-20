@@ -481,6 +481,7 @@ void roland_jd990_state::jd990(machine_config &config)
 		m_ep->add_route(n, m_tvf, 1.0, n);
 	for (auto &csp : m_csp)
 		ROLAND_CSP(config, csp, 67.7376_MHz_XTAL);
+	m_csp[1]->set_eram_size(0x40000);
 	JD990_SOUND(config, m_sound, 0);
 	for (int n = 0; n < 24; n++)
 		m_tvf->add_route(n, m_sound, 1.0, n);
