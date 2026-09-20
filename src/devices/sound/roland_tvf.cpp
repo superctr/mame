@@ -22,7 +22,7 @@
 #define VERBOSE (0)
 #include "logmacro.h"
 
-DEFINE_DEVICE_TYPE(ROLAND_TVF, roland_tvf_device, "roland_tvf", "Roland TVF filter and amplifier")
+DEFINE_DEVICE_TYPE(ROLAND_TVF, roland_tvf_device, "roland_tvf", "Roland TVF")
 
 roland_tvf_device::roland_tvf_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: device_t(mconfig, ROLAND_TVF, tag, owner, clock)
