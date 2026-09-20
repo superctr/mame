@@ -265,4 +265,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", MACHINE_NOT_WORKING) // no expansion board or card slots, and no panel layout
