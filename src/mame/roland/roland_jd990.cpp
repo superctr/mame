@@ -114,13 +114,13 @@ protected:
 		for (int sample = 0; sample < stream.samples(); sample++)
 		{
 			for (unsigned channel = 0; channel < 24; channel++)
-				m_csp[0]->sc_w(channel, s32(std::clamp(stream.get(channel, sample) * 4194304.0f, -8388608.0f, 8388607.0f)));
+				m_csp[0]->sc_w((channel + 4) % 24, s32(std::clamp(stream.get(channel, sample) * 3145728.0f, -8388608.0f, 8388607.0f)));
 			m_csp[0]->run_once(768);
 			for (unsigned channel = 0; channel < 32; channel++)
 				m_csp[1]->ser_w(channel, m_csp[0]->ser_r(channel));
 			m_csp[1]->run_once(768);
 			for (unsigned channel = 0; channel < 8; channel++)
-				stream.put_int_clamp(channel, sample, m_csp[1]->ser_r(slots[channel]), 4194304);
+				stream.put_int_clamp(channel, sample, m_csp[1]->ser_r(slots[channel]), 8388608);
 		}
 	}
 
