@@ -56,8 +56,7 @@
     dispatches its tasks from the watchdog's interval timer interrupt and
     ticks from MTU1 (XV-3080) or MTU2 (XV-5080).  The XV-3080 also bit
     bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
-    selects) to read the expansion boards' ID PROMs; no board is fitted,
-    so nothing answers.
+    selects) to read the expansion boards' ID PROMs; nothing answers it.
 
     The XV-3080 plays MIDI once its battery SRAM holds a factory reset
     (UTILITY, cursor right to UTIL 2, FACTORY RESET, ENTER, DEC to lift the
@@ -83,9 +82,11 @@
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
 #include "video/sed1330.h"
+#include "wavecard.h"
 
 #include "emupal.h"
 #include "screen.h"
+#include "softlist_dev.h"
 #include "speaker.h"
 
 #include <algorithm>
@@ -106,6 +107,7 @@ public:
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
 		, m_xp(*this, "xp%u", 0U)
+		, m_exp(*this, "exp%u", 0U)
 		, m_lcd(*this, "lcd")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_dial(*this, "VALUE")
@@ -146,6 +148,7 @@ protected:
 
 	required_device<sh7042_device> m_maincpu;
 	optional_device_array<roland_xp_device, 2> m_xp;
+	required_device_array<srjv80_slot_device, 4> m_exp;
 	optional_device<hd44780_device> m_lcd;
 	required_ioport_array<8> m_keys;
 	required_ioport m_dial;
@@ -511,6 +514,8 @@ void xv3080_state::ga_w(offs_t offset, u8 data)
 void xv5080_state::xv_wave_map(address_map &map)
 {
 	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
+	for (int slot = 0; slot < 4; slot++)
+		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).r(m_exp[slot], FUNC(srjv80_slot_device::read)).umask16(0x00ff);
 }
 
 
@@ -573,6 +578,8 @@ void xv5080_state::xv5080_map(address_map &map)
 void xv3080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x1ffffff).rom().region("waverom", 0);
+	for (int slot = 0; slot < 4; slot++)
+		map(0x2000000 + slot * 0x800000, 0x27fffff + slot * 0x800000).r(m_exp[slot], FUNC(srjv80_slot_device::read));
 }
 
 void xv5080_state::lcdc_map(address_map &map)
@@ -771,6 +778,12 @@ void xv3080_state::common(machine_config &config)
 	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	// EXP A to EXP D, one 8 MB board each, filling the 1 MB wave regions
+	// 0x20 to 0x3f that the boot scan probes
+	for (auto &exp : m_exp)
+		SRJV80_SLOT(config, exp, 0);
+	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	PALETTE(config, "palette", FUNC(xv3080_state::lcd_palette), 2);
 }
