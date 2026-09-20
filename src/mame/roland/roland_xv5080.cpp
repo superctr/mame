@@ -91,8 +91,9 @@
 #include <algorithm>
 
 #define LOG_GA      (1U << 1)
+#define LOG_PORT    (1U << 2)
 
-#define VERBOSE (LOG_GENERAL | LOG_GA)
+#define VERBOSE (LOG_GENERAL)
 #include "logmacro.h"
 
 
@@ -373,7 +374,7 @@ TIMER_CALLBACK_MEMBER(xv3080_state::ga_sensing)
 
 void xv3080_state::porte_w(offs_t offset, u16 data, u16 ddr)
 {
-	LOG("%s: port E = %04x (ddr %04x)\n", machine().describe_context(), data, ddr);
+	LOGMASKED(LOG_PORT, "%s: port E = %04x (ddr %04x)\n", machine().describe_context(), data, ddr);
 }
 
 // the display's bytes travel by DMA, one for each request the gate array
