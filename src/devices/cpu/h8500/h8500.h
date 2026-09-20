@@ -56,7 +56,27 @@ public:
 	void set_dma_channel(h8_dma_state * /*state*/) override {}
 	void set_current_dtc(h8_dtc_state * /*state*/) override {}
 
+	enum
+	{
+		// digital I/O ports
+		PORT_1,
+		PORT_2,
+		PORT_3,
+		PORT_4,
+		PORT_5,
+		PORT_6,
+		PORT_7,
+		PORT_8,
+		PORT_9,
+		PORT_10,
+		PORT_11,
+		PORT_12,
+		PORT_COUNT
+	};
+
 	template<int Port> auto read_adc() { return m_read_adc[Port].bind(); }
+	template<int Port> auto read_port() { return m_read_port[Port].bind(); }
+	template<int Port> auto write_port() { return m_write_port[Port].bind(); }
 	template<int Sci> auto write_sci_tx() { return m_sci_tx[Sci].bind(); }
 	template<int Sci> auto write_sci_clk() { return m_sci_clk[Sci].bind(); }
 
@@ -192,25 +212,7 @@ protected:
 	virtual void do_exec_full();
 	virtual void do_exec_partial();
 
-	enum
-	{
-		// digital I/O ports
-		PORT_1,
-		PORT_2,
-		PORT_3,
-		PORT_4,
-		PORT_5,
-		PORT_6,
-		PORT_7,
-		PORT_8,
-		PORT_9,
-		PORT_10,
-		PORT_11,
-		PORT_12,
-		PORT_COUNT
-	};
-
-	static const char port_names[];
+	static const char *const port_names[PORT_COUNT];
 	u16 m_pc;       // Current program counter - may not be the start of the executing instruction due to prefetch
 	u16 m_ppc;      // Previous program counter, the start of the currently executing instruction
 	u16 m_sr;       // Status register (low 8 bits are CCR)
