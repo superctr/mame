@@ -58,7 +58,7 @@ const s16 interp_weights[3][128] = {
 
 } // anonymous namespace
 
-DEFINE_DEVICE_TYPE(ROLAND_EP, roland_ep_device, "roland_ep", "Roland EP PCM sample player")
+DEFINE_DEVICE_TYPE(ROLAND_EP, roland_ep_device, "roland_ep", "Roland EP")
 
 roland_ep_device::roland_ep_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: device_t(mconfig, ROLAND_EP, tag, owner, clock)
