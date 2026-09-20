@@ -100,6 +100,8 @@ void roland_jv1080_state::jv1080_map(address_map &map)
 void roland_jv1080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x07fffff).rom().region("waverom", 0);
+	for (int slot = 0; slot < 4; slot++)
+		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(srjv80_slot_device::read));
 }
 
 
@@ -232,10 +234,8 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	// EXP-A to EXP-D, CN501-CN504, one 8 MB board at the foot of each of the
 	// XP's chip selects 2 to 5; select 1 is the PCM card's
-	SRJV80_SLOT(config, m_exp[0], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x2000000);
-	SRJV80_SLOT(config, m_exp[1], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x3000000);
-	SRJV80_SLOT(config, m_exp[2], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x4000000);
-	SRJV80_SLOT(config, m_exp[3], 0).set_wave(m_xp, roland_xp_device::AS_WAVE, 0x5000000);
+	for (auto &exp : m_exp)
+		SRJV80_SLOT(config, exp, 0);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);

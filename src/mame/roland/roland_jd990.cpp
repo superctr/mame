@@ -182,6 +182,7 @@ private:
 	TIMER_CALLBACK_MEMBER(isp_fxm);
 
 	void mem_map(address_map &map) ATTR_COLD;
+	void wave_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
@@ -421,6 +422,14 @@ void roland_jd990_state::mem_map(address_map &map)
 	map(0xfa002, 0xfa002).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
 }
 
+// the internal set is installed once descrambled; the PCM card's two banks
+// and CN7's eight are the two sockets'
+void roland_jd990_state::wave_map(address_map &map)
+{
+	map(0x600000, 0x7fffff).r(m_card, FUNC(sopcm1_slot_device::read));
+	map(0x800000, 0xffffff).r(m_exp, FUNC(srjv80_slot_device::read));
+}
+
 void roland_jd990_state::lcdc_map(address_map &map)
 {
 	map(0x0000, 0x1fff).mirror(0xe000).ram();
@@ -530,6 +539,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	SPEAKER(config, "speaker", 2).front();
 
 	ROLAND_EP(config, m_ep, 44100);
+	m_ep->set_addrmap(roland_ep_device::AS_WAVE, &roland_jd990_state::wave_map);
 	ROLAND_TVF(config, m_tvf, 44100);
 	for (int n = 0; n < roland_ep_device::VOICES; n++)
 		m_ep->add_route(n, m_tvf, 1.0, n);
@@ -546,11 +556,11 @@ void roland_jd990_state::jd990(machine_config &config)
 	}
 
 	// CN7, one 8 MB board at bank 8 of the EP's wave space
-	SRJV80_SLOT(config, m_exp, 0).set_wave(m_ep, roland_ep_device::AS_WAVE, 0x800000);
+	SRJV80_SLOT(config, m_exp, 0);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	// the PCM card, one or two 1 MB banks from 6 up
-	SOPCM1_SLOT(config, m_card, 0).set_wave(m_ep, roland_ep_device::AS_WAVE, 0x600000);
+	SOPCM1_SLOT(config, m_card, 0);
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));

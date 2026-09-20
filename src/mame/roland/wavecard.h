@@ -11,12 +11,8 @@
 class roland_wavecard_device : public device_t, public device_cartrom_image_interface
 {
 public:
-	// the wave space the socket answers in, and where
-	template <typename T> void set_wave(T &&tag, int spacenum, offs_t base)
-	{
-		m_wave.set_tag(std::forward<T>(tag), spacenum);
-		m_base = base;
-	}
+	// the ROM, a byte a cell, zero where nothing answers
+	u8 read(offs_t offset) { return (m_rom && offset < m_size) ? m_rom[offset] : 0; }
 
 	// high while a card is fitted; the host decides which pin reads it and in which sense
 	int sense_r() const { return m_rom ? 1 : 0; }
@@ -36,10 +32,8 @@ protected:
 private:
 	void descramble() ATTR_COLD;
 
-	required_address_space m_wave;
 	const u32 m_min_size, m_max_size;
 	const char *const m_size_error;
-	offs_t m_base;
 	u32 m_size;
 	std::unique_ptr<u8 []> m_rom;
 };
