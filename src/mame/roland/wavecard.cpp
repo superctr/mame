@@ -10,10 +10,26 @@
     the ROM wears; each host decides only where its sockets answer and
     which pin reads the sense line.
 
-    SR-JV80 wave expansion boards are 8 MB and go in the JV-1080, the
-    JD-990, the XV-3080 and the XV-5080.  SRX boards are 32 MB and word
-    wide, and go in the XV-3080 and the XV-5080.  SO-PCM1 and SO-JD80 PCM
-    cards are 1 or 2 MB and go in the JD-800 and the JD-990.
+    SR-JV80 wave expansion boards are 8 MB; SRX boards are 32 MB and word
+    wide.  Roland's own compatibility guide names every machine that takes
+    one and how many sockets of each kind it has:
+
+        SR-JV80  SRX  machines
+           1       -  JV-80, JV-90, JV-1000, JV-880, JD-990, JV-1010
+           2       -  XP-30
+           4       -  XP-50, XP-60, XP-80, JV-1080
+           8       -  JV-2080
+           1       2  Fantom FA76
+           2       2  XV-88
+           4       2  XV-3080
+           4       4  XV-5080
+           -       1  Juno G, G-70, MC-909
+           -       2  RD-700, RD-700SX, E-80, XV-5050, XV-2020
+           -       4  Fantom S/S88, Fantom X/6/7/8/Xa
+           -       6  Fantom XR
+
+    SO-PCM1 and SO-JD80 PCM cards are 1 or 2 MB and go in the JD-800 and
+    the JD-990.
 
 ****************************************************************************/
 
