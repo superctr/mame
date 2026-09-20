@@ -58,6 +58,7 @@ private:
 		u32 address = 0;
 		u16 phase = 0;
 		s32 predictor = 0;
+		bool backward = false;
 		bool running = false;
 	};
 
@@ -70,8 +71,8 @@ private:
 	u32 address_of(const voice &v, int high) const;
 	u32 loop_of(const voice &v) const { return address_of(v, LOOP_HIGH); }
 	u32 end_of(const voice &v) const { return address_of(v, END_HIGH); }
-	u32 next(const voice &v, u32 address) const;
 	wave_cell cell_at(u32 address);
+	void advance(const voice &v, u32 &address, bool &backward, wave_cell &c);
 	static s32 tap(s32 weight, wave_cell c);
 	void key_w(int word, u16 data);
 	void launch(int n);
