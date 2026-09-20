@@ -63,7 +63,7 @@ private:
 	int mode_of(const voice &v) const { return (v.regs[FLAGS] >> 9) & 3; }
 	int structure_of(const voice &v) const { return (v.regs[FLAGS] >> 11) & 3; }
 	bool mixes_second(const voice &v) const { return BIT(v.regs[FLAGS], 8); }
-	float pair(int n, float first, float second);
+	std::pair<float, float> pair(int n, float first, float second);
 
 	sound_stream *m_stream;
 

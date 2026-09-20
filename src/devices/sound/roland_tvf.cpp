@@ -33,7 +33,7 @@ roland_tvf_device::roland_tvf_device(const machine_config &mconfig, const char *
 
 void roland_tvf_device::device_start()
 {
-	m_stream = stream_alloc(VOICES, 1, SAMPLE_RATE);
+	m_stream = stream_alloc(VOICES, VOICES, SAMPLE_RATE);
 
 	save_item(NAME(m_regs));
 	save_item(STRUCT_MEMBER(m_voices, regs));
@@ -164,7 +164,7 @@ float roland_tvf_device::filter(voice &v, float sample) const
 
 // the pair's two channels through one of the structures; the flags of the
 // first channel say which
-float roland_tvf_device::pair(int n, float first, float second)
+std::pair<float, float> roland_tvf_device::pair(int n, float first, float second)
 {
 	voice &a = m_voices[n];
 	voice &b = m_voices[n + 1];
@@ -174,23 +174,23 @@ float roland_tvf_device::pair(int n, float first, float second)
 	switch (structure_of(a))
 	{
 	case PAIR_SUM_THEN_FILTERS:
-		return amplify(b, filter(b, filter(a, first + second)));
+		return { 0, amplify(b, filter(b, filter(a, first + second))) };
 
 	case PAIR_RING_THEN_FILTERS:
 	{
 		const float ring = amplify(a, first) * second + (mixes_second(a) ? second : 0.0f);
-		return amplify(b, filter(b, filter(a, ring)));
+		return { 0, amplify(b, filter(b, filter(a, ring))) };
 	}
 
 	case PAIR_FILTERS_THEN_RING:
 	{
 		const float filtered = filter(b, second);
 		const float ring = amplify(a, filter(a, first)) * filtered + (mixes_second(a) ? filtered : 0.0f);
-		return amplify(b, ring);
+		return { 0, amplify(b, ring) };
 	}
 
 	default:
-		return amplify(a, filter(a, first)) + amplify(b, filter(b, second));
+		return { amplify(a, filter(a, first)), amplify(b, filter(b, second)) };
 	}
 }
 
@@ -198,9 +198,11 @@ void roland_tvf_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
-		float sum = 0;
 		for (int n = 0; n < VOICES; n += 2)
-			sum += pair(n, stream.get(n, i), stream.get(n + 1, i));
-		stream.put_clamp(0, i, sum * 0.25f);
+		{
+			const auto [first, second] = pair(n, stream.get(n, i), stream.get(n + 1, i));
+			stream.put(n, i, first * 0.25f);
+			stream.put(n + 1, i, second * 0.25f);
+		}
 	}
 }
