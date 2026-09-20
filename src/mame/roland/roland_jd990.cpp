@@ -482,6 +482,9 @@ void roland_jd990_state::jd990(machine_config &config)
 	// the internal and the DATA card battery, 3.0 V against the 5 V reference
 	m_maincpu->read_adc<0>().set_constant(0x266);
 	m_maincpu->read_adc<1>().set_constant(0x266);
+	// the card and board sense lines in bit 7, low with an empty slot
+	m_maincpu->read_port<h8570_device::PORT_9>().set_constant(0x7f);
+	m_maincpu->read_port<h8570_device::PORT_11>().set_constant(0x7f);
 
 	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
 	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
