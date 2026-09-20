@@ -10,9 +10,10 @@
     the ROM wears; each host decides only where its sockets answer and
     which pin reads the sense line.
 
-    SR-JV80 wave expansion boards are 8 MB; SRX boards are 32 MB and word
-    wide.  Roland's own compatibility guide names every machine that takes
-    one and how many sockets of each kind it has:
+    SR-JV80 wave expansion boards are 8 MB, bar the Experience demo boards
+    at 2 MB; SRX boards are 32 MB and word wide.  Roland's own compatibility
+    guide names every machine that takes one and how many sockets of each
+    kind it has:
 
         SR-JV80  SRX  machines
            1       -  JV-80, JV-90, JV-1000, JV-880, JD-990, JV-1010
@@ -116,7 +117,7 @@ static const u8 srjv80_lines[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11
 static const u8 srx_lines[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
 
 srjv80_slot_device::srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SRJV80_SLOT, tag, owner, clock, 0x800000, 0x800000, "Expansion boards are 8 MB", srjv80_lines, 19)
+	: roland_wavecard_device(mconfig, SRJV80_SLOT, tag, owner, clock, 0x200000, 0x800000, "Expansion boards are 2 or 8 MB", srjv80_lines, 19)
 {
 }
 
