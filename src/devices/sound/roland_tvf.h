@@ -13,6 +13,7 @@ public:
 	static constexpr int VOICES = 32;
 	static constexpr u32 SAMPLE_RATE = 44100;
 	static constexpr int RAMP_SAMPLES = 441;
+	static constexpr float FULL_SCALE = 1.3355f;
 
 	// the 64 words of the window
 	enum register_word
@@ -59,7 +60,8 @@ private:
 	void voice_w(int n, int word, u16 data);
 	void service(voice &v);
 	float filter(voice &v, float sample) const;
-	float amplify(const voice &v, float sample) const { return sample * v.amplitude; }
+	static float saturate(float x) { return std::clamp(x, -FULL_SCALE, FULL_SCALE); }
+	float amplify(const voice &v, float sample) const { return saturate(sample * v.amplitude); }
 	int mode_of(const voice &v) const { return (v.regs[FLAGS] >> 9) & 3; }
 	int structure_of(const voice &v) const { return (v.regs[FLAGS] >> 11) & 3; }
 	bool mixes_second(const voice &v) const { return BIT(v.regs[FLAGS], 8); }
