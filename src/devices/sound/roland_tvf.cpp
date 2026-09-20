@@ -112,15 +112,15 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 		break;
 
 	case AMPLITUDE:
-		if (BIT(data, 15))
+		if (BIT(data, 15) || m_regs[COMMAND] == 0x0008)
 		{
 			v.amplitude = (data & 0x7fff) / 16384.0f;
 			v.amplitude_remaining = 0;
 		}
 		else
 		{
-			v.amplitude_step = (data / 16384.0f - v.amplitude) / RAMP_SAMPLES;
-			v.amplitude_remaining = RAMP_SAMPLES;
+			v.amplitude_remaining = m_regs[COMMAND] == 0x0007 ? 32 : RAMP_SAMPLES;
+			v.amplitude_step = (data / 16384.0f - v.amplitude) / v.amplitude_remaining;
 		}
 		break;
 	}

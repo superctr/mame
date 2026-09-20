@@ -12,7 +12,7 @@ public:
 
 	static constexpr int VOICES = 32;
 	static constexpr u32 SAMPLE_RATE = 44100;
-	static constexpr int RAMP_SAMPLES = 441;
+	static constexpr int RAMP_SAMPLES = 315;
 	static constexpr float FULL_SCALE = 1.3355f;
 
 	// the 64 words of the window
