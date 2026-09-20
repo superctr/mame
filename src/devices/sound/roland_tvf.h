@@ -13,7 +13,10 @@ public:
 	static constexpr int VOICES = 32;
 	static constexpr u32 SAMPLE_RATE = 44100;
 	static constexpr int RAMP_SAMPLES = 315;
-	static constexpr float FULL_SCALE = 1.3355f;
+	static constexpr int SAMPLE_FRACTION_BITS = 28;
+	static constexpr s32 SAMPLE_ONE = 1 << SAMPLE_FRACTION_BITS;
+	static constexpr s32 FULL_SCALE = (s64(13355) * SAMPLE_ONE + 5000) / 10000;
+	static constexpr int COEFFICIENT_FRACTION_BITS = 28;
 
 	// the 64 words of the window
 	enum register_word
@@ -44,28 +47,37 @@ protected:
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
+	struct ramp
+	{
+		s32 value = 0;
+		s32 start = 0;
+		s32 target = 0;
+		int remaining = 0;
+		int length = 0;
+
+		void set(u16 data, int samples);
+		void advance();
+	};
+
 	struct voice
 	{
 		u16 regs[WORDS] = { 0 };
-		float cutoff = 0;
-		float cutoff_step = 0;
-		int cutoff_remaining = 0;
-		float amplitude = 0;
-		float amplitude_step = 0;
-		int amplitude_remaining = 0;
-		float low = 0;
-		float band = 0;
+		ramp cutoff;
+		ramp amplitude;
+		s32 low = 0;
+		s32 band = 0;
 	};
 
 	void voice_w(int n, int word, u16 data);
 	void service(voice &v);
-	float filter(voice &v, float sample) const;
-	static float saturate(float x) { return std::clamp(x, -FULL_SCALE, FULL_SCALE); }
-	float amplify(const voice &v, float sample) const { return saturate(sample * v.amplitude); }
+	static s64 rounded_shift(s64 value, int bits);
+	static s32 saturate(s64 value) { return s32(std::clamp(value, -s64(FULL_SCALE), s64(FULL_SCALE))); }
+	s32 filter(voice &v, s64 sample) const;
+	s32 amplify(const voice &v, s64 sample) const { return saturate(rounded_shift(sample * v.amplitude.value, COEFFICIENT_FRACTION_BITS)); }
 	int mode_of(const voice &v) const { return (v.regs[FLAGS] >> 9) & 3; }
 	int structure_of(const voice &v) const { return (v.regs[FLAGS] >> 11) & 3; }
 	bool mixes_second(const voice &v) const { return BIT(v.regs[FLAGS], 8); }
-	std::pair<float, float> pair(int n, float first, float second);
+	std::pair<s32, s32> pair(int n, s32 first, s32 second);
 
 	sound_stream *m_stream;
 
