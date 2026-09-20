@@ -177,14 +177,14 @@ std::pair<float, float> roland_tvf_device::pair(int n, float first, float second
 
 	case PAIR_RING_THEN_FILTERS:
 	{
-		const float ring = amplify(a, first) * second + (mixes_second(a) ? second : 0.0f);
+		const float ring = 6.0f * amplify(a, first) * second + (mixes_second(a) ? second : 0.0f);
 		return { 0, amplify(b, filter(b, filter(a, ring))) };
 	}
 
 	case PAIR_FILTERS_THEN_RING:
 	{
 		const float filtered = filter(b, second);
-		const float ring = amplify(a, filter(a, first)) * filtered + (mixes_second(a) ? filtered : 0.0f);
+		const float ring = 6.0f * amplify(a, filter(a, first)) * filtered + (mixes_second(a) ? filtered : 0.0f);
 		return { 0, amplify(b, ring) };
 	}
 
