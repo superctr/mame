@@ -186,7 +186,7 @@ void roland_csp_device::eram_clock(u32 word)
 	const int pending = int(m_pc) - m_eram_start[1];
 	if (m_eram_active[1] && pending == 7)
 		m_eram_data = m_eram_write;
-	if (m_eram_active[1] && pending == 10)
+	if (m_eram_active[1] && pending == 9)
 	{
 		const u32 address = m_eram_address[1] & m_eram_mask;
 		if (m_eram_command[1] == 4)
