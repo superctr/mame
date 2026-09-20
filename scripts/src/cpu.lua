@@ -3719,6 +3719,23 @@ if opt_tool(CPUS, "ROLANDXP") then
 end
 
 --------------------------------------------------
+-- Roland CSP (Toshiba TC6088AF)
+--@src/devices/sound/roland_csp.h,CPUS["ROLANDCSP"] = true
+--------------------------------------------------
+
+if CPUS["ROLANDCSP"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_csp.cpp",
+		MAME_DIR .. "src/devices/sound/roland_csp.h",
+	}
+end
+
+if opt_tool(CPUS, "ROLANDCSP") then
+	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.cpp")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.h")
+end
+
+--------------------------------------------------
 -- Roland LSP (Fujitsu MB87837)
 --@src/devices/sound/roland_lsp.h,CPUS["ROLANDLSP"] = true
 --------------------------------------------------
