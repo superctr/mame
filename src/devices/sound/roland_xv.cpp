@@ -1423,7 +1423,11 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 	else
 		product = false;
 	if (product)
-		m_product = s32((operand * coefficient) / (s64(1) << (DSP_FRACTION_BITS - row.shift)));
+	{
+		const s64 full = operand * coefficient;
+		const int shift = DSP_FRACTION_BITS - row.shift;
+		m_product = s32((full + ((full >> 63) & ((s64(1) << shift) - 1))) >> shift);
+	}
 
 	const s32 destination = row.to_b ? b : a;
 	s64 result = destination;
