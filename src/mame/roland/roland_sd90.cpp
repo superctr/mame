@@ -55,7 +55,9 @@
     because the wave mask ROMs are undumped.  The SCI's MIDI port is the
     core's to implement, and the answer its USB controller gives at
     power-on is a stub of two bytes.  The SD-90 boots its loader out of the
-    flash into the SDRAM at 0x883de000, inflates its program and enters it,
+    flash into the SDRAM at 0x883de000, gets past the word its loader polls
+    after each of the commands it sends the tone generator, inflates its
+    program and enters it,
     and stops in the driver for its own area 6 device, polling +8 for the
     1 that would say a command had been taken.
 
