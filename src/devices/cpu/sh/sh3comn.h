@@ -21,5 +21,6 @@
 #define SH3_PORT_J (0x18*8)
 #define SH3_PORT_K (0x19*8)
 #define SH3_PORT_L (0x1a*8)
+#define SH3_PORT_SC (0x1b*8)
 
 #endif // MAME_CPU_SH_SH3COMN_H
