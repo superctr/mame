@@ -122,6 +122,7 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	, m_int_callback(*this)
 	, m_switch_callback(*this, 0)
 	, m_led_callback(*this)
+	, m_lcd_callback(*this)
 	, m_stream(nullptr)
 	, m_scan_timer(nullptr)
 	, m_master(nullptr)
@@ -465,7 +466,16 @@ void roland_xv_device::word_w(int word, u16 data)
 		break;
 
 	case COMMAND_STROBE:
+		// bit 15 issues the command and reads back set until it is taken; the
+		// host clears it by writing the word back, which is not a second one
+		if (!BIT(data, 15))
+			break;
 		LOGMASKED(LOG_XFER, "%s: command %04x (strobe %04x)\n", machine().describe_context(), m_fifo[0], data);
+		// under mode 0 the word is a byte for the display on the chip's own
+		// LCD pins, its bit 8 the RS line; the modes the transfer engine and
+		// the streams set take it elsewhere
+		if ((m_regs[MODE] & 0xffc0) == 0)
+			m_lcd_callback(BIT(m_fifo[0], 8), m_fifo[0] & 0xff);
 		fifo_rewind();
 		break;
 
