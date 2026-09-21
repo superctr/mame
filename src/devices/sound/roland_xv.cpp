@@ -369,7 +369,7 @@ u16 roland_xv_device::word_peek(int word)
 	case IRQ_MASK:
 		return m_irq_pending;
 
-	case 0x24:      // the SD-90's boot loader wants to read bit 13 here
+	case 0x24:      // the SD-90's boot loader reads bit 13 here after every display byte
 		return 0xffff;
 
 	case SWITCH_INDEX:
