@@ -9,6 +9,9 @@
 #include "sh4tmu.h"
 #include "sh4dmac.h"
 
+#include <algorithm>
+#include <cmath>
+
 // CCN
 uint32_t sh3_base_device::pteh_r(offs_t offset, uint32_t mem_mask)
 {
@@ -326,31 +329,81 @@ void sh3_base_device::stbcr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 	logerror("'%s' (%08x): CPG unmapped internal write %02x & %02x (STBCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
+// the watchdog: an 8-bit counter on the peripheral clock, overflowing into
+// the ITI interrupt in interval mode and into a reset in watchdog mode
+static const int sh3_wdt_div[8] = { 2, 64, 128, 256, 512, 1024, 4096, 8192 };
+
+void sh3_base_device::sh3_wdt_update()
+{
+	if (m_wtcsr & 0x80)
+	{
+		const attotime period = attotime::from_hz(m_pm_clock) * sh3_wdt_div[m_wtcsr & 7];
+		m_wdt_timer->adjust(period * (256 - m_wtcnt));
+	}
+	else
+	{
+		m_wtcnt = sh3_wdt_count();
+		m_wdt_timer->adjust(attotime::never);
+	}
+}
+
+uint8_t sh3_base_device::sh3_wdt_count()
+{
+	if ((m_wtcsr & 0x80) && m_wdt_timer->enabled())
+	{
+		const attotime period = attotime::from_hz(m_pm_clock) * sh3_wdt_div[m_wtcsr & 7];
+		const int remaining = int(std::ceil(m_wdt_timer->remaining().as_double() / period.as_double()));
+		return 256 - std::clamp(remaining, 1, 256);
+	}
+	return m_wtcnt;
+}
+
+TIMER_CALLBACK_MEMBER(sh3_base_device::sh3_wdt_overflow)
+{
+	m_wtcnt = 0;
+	if (m_wtcsr & 0x40)
+	{
+		m_wtcsr |= 0x10;
+		logerror("watchdog overflow\n");
+		m_wtcsr &= ~0x80;
+	}
+	else
+	{
+		m_wtcsr |= 0x08;
+		sh4_exception_request(SH4_INTC_ITI);
+		sh3_wdt_update();
+	}
+}
+
 uint8_t sh3_base_device::wtcnt_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): CPG unmapped internal read mask %02x (WTCNT) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_stbcr);
-	return m_wtcnt;
+	return sh3_wdt_count();
 }
 
 void sh3_base_device::wtcnt_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if ((data & 0xff00) == 0x5a00)
-		COMBINE_DATA(&m_wtcnt);
-
-	logerror("'%s' (%08x): CPG unmapped internal write %04x & %04x (WTCNT)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	{
+		m_wtcnt = data & 0xff;
+		sh3_wdt_update();
+	}
 }
 
 uint8_t sh3_base_device::wtcsr_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): CPG unmapped internal read mask %02x (WTCSR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_wtcsr);
 	return m_wtcsr;
 }
 
 void sh3_base_device::wtcsr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if ((data & 0xff00) == 0xa500)
-		COMBINE_DATA(&m_wtcsr);
-	logerror("'%s' (%08x): CPG unmapped internal write %04x & %04x (WTCSR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	{
+		m_wtcnt = sh3_wdt_count();
+		m_wtcsr = (data & 0xe7) | (m_wtcsr & data & 0x18);
+		if (!(m_wtcsr & 0x08))
+			sh4_exception_unrequest(SH4_INTC_ITI);
+		sh3_wdt_update();
+	}
 }
 
 // CPG 7709
@@ -854,7 +907,10 @@ uint16_t sh3_base_device::iprb_r(offs_t offset, uint16_t mem_mask)
 void sh3_base_device::iprb_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_iprb);
-	logerror("'%s' (%08x): INTC unmapped internal write %04x & %04x (IPRB)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	m_exception_priority[SH4_INTC_ITI] = INTPRI((m_iprb & 0xf000) >> 12, SH4_INTC_ITI);
+	m_exception_priority[SH4_INTC_RCMI] = INTPRI((m_iprb & 0x0f00) >> 8, SH4_INTC_RCMI);
+	m_exception_priority[SH4_INTC_ROVI] = INTPRI((m_iprb & 0x0f00) >> 8, SH4_INTC_ROVI);
+	sh4_exception_recompute();
 }
 
 // INTC 7709

@@ -958,6 +958,7 @@ bool sh34_base_device::memory_translate(int spacenum, int intention, offs_t& add
 
 sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness)
 	: sh34_base_device(mconfig, type, tag, owner, clock, endianness, address_map_constructor(FUNC(sh3_base_device::sh3_internal_map), this))
+	, m_wdt_timer(nullptr)
 {
 	m_cpu_type = CPU_TYPE_SH3;
 	m_am = SH34_AM;
@@ -2723,6 +2724,8 @@ void sh3_base_device::device_reset()
 {
 	sh34_base_device::device_reset();
 
+	m_wdt_timer->adjust(attotime::never);
+
 	// INTC
 	m_icr0 &= 0x8000;
 	m_iprb = 0;
@@ -3126,6 +3129,8 @@ void sh34_base_device::execute_run()
 void sh3_base_device::device_start()
 {
 	sh34_base_device::device_start();
+
+	m_wdt_timer = timer_alloc(FUNC(sh3_base_device::sh3_wdt_overflow), this);
 
 	// UBC
 	m_bara = 0;

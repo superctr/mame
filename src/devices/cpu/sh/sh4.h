@@ -646,6 +646,12 @@ protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 
+
+	void sh3_wdt_update();
+	uint8_t sh3_wdt_count();
+	TIMER_CALLBACK_MEMBER(sh3_wdt_overflow);
+	emu_timer *m_wdt_timer;
+
 	static uint8_t port_direction(uint16_t cr);
 	uint8_t port_read(int port, uint8_t dr, uint16_t cr);
 	void port_write(int port, uint8_t dr, uint16_t cr);
