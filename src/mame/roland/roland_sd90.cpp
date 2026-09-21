@@ -57,7 +57,7 @@
     power-on is a stub of two bytes.  The SD-90 boots its loader out of the
     flash into the SDRAM at 0x883de000, gets past the word its loader polls
     after each of the commands it sends the tone generator, paints the
-    figure that loader draws on its graphic panel, inflates its program and
+    =EDIROL= logo of its own on its graphic panel, inflates its program and
     enters it, and stops in the driver for its own area 6 device, polling
     +8 for the 1 that would say a command had been taken.
 
@@ -407,7 +407,7 @@ void sd90_state::sd90(machine_config &config)
 
 	// a graphic panel on the same LCD pins the SD-80 drives its character
 	// module from; its columns run from SEG131 down, which is what the boot
-	// loader's ADC reverse is for, and its contrast is the CPU's D/A again
+	// loader's ADC reverse is for, and its contrast is a command, not a D/A
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
 	screen.set_refresh_hz(60);
