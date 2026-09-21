@@ -156,6 +156,23 @@ int sh34_base_device::sh4_dma_transfer(int channel, int timermode, uint32_t chcr
 
 		}
 		break;
+	case 16:
+		src &= ~15;
+		dst &= ~15;
+		for (;count > 0; count --)
+		{
+			if (incs == 2)
+				src -= 16;
+			if (incd == 2)
+				dst -= 16;
+			m_program->write_qword(dst & SH34_AM, m_program->read_qword(src & SH34_AM));
+			m_program->write_qword((dst + 8) & SH34_AM, m_program->read_qword((src + 8) & SH34_AM));
+			if (incs == 1)
+				src += 16;
+			if (incd == 1)
+				dst += 16;
+		}
+		break;
 	case 32:
 		src &= ~31;
 		dst &= ~31;
@@ -231,6 +248,13 @@ int sh34_base_device::sh4_dma_transfer_device(int channel, uint32_t chcr, uint32
 	return 1;
 }
 
+void sh34_base_device::sh4_dreq_w(int channel, int state)
+{
+	m_dreq[channel] = state;
+	if (state)
+		sh4_dmac_check(channel);
+}
+
 void sh34_base_device::sh4_dmac_check(int channel)
 {
 	uint32_t dmatcr, chcr, sar, dar;
@@ -266,11 +290,14 @@ void sh34_base_device::sh4_dmac_check(int channel)
 	}
 	if (chcr & m_dmaor & DMAOR_DME)
 	{
-		if ((((chcr & CHCR_RS) >> 8) < 2) || (((chcr & CHCR_RS) >> 8) > 6))
+		const int rs = (chcr & CHCR_RS) >> 8;
+		if (rs > 6)
+			return;
+		if (rs < 2 && !m_dreq[channel])
 			return;
 		if (!m_dma_timer_active[channel] && !(chcr & CHCR_TE) && !(m_dmaor & (DMAOR_AE | DMAOR_NMIF)))
 		{
-			if (((chcr & CHCR_RS) >> 8) > 3)
+			if (rs > 3 || rs < 2)
 				sh4_dma_transfer(channel, 1, chcr, &sar, &dar, &dmatcr);
 			else if ((m_dmaor & DMAOR_DDT) == 0)
 				sh4_dma_transfer_device(channel, chcr, &sar, &dar, &dmatcr); // tell device we are ready to transfer
