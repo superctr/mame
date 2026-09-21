@@ -3115,8 +3115,6 @@ void sh3_base_device::device_start()
 {
 	sh34_base_device::device_start();
 
-	m_irda->set_unscaled_clock(m_pm_clock);
-	m_scif->set_unscaled_clock(m_pm_clock);
 	m_wdt_timer = timer_alloc(FUNC(sh3_base_device::sh3_wdt_overflow), this);
 
 	// UBC
@@ -3137,6 +3135,7 @@ void sh3_base_device::device_start()
 
 	// CPG
 	m_frqcr = 0x0102;
+	sh3_cpg_update();
 	m_wtcnt = 0;
 	m_wtcsr = 0;
 	m_stbcr = 0;

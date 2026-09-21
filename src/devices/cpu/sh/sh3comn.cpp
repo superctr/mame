@@ -6,6 +6,7 @@
 #include "sh4.h"
 #include "sh4comn.h"
 #include "sh3comn.h"
+#include "sh3_scif.h"
 #include "sh4tmu.h"
 #include "sh4dmac.h"
 
@@ -305,16 +306,34 @@ void sh3_base_device::brdr_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 }
 
 // CPG
+static int sh3_cpg_ratio(int code)
+{
+	static const int ratio[8] = { 1, 2, 4, 1, 3, 6, 1, 1 };
+	return ratio[code];
+}
+
+void sh3_base_device::sh3_cpg_update()
+{
+	const int stc = sh3_cpg_ratio((BIT(m_frqcr, 15) << 2) | ((m_frqcr >> 4) & 3));
+	const int ifc = sh3_cpg_ratio((BIT(m_frqcr, 14) << 2) | ((m_frqcr >> 2) & 3));
+	const int pfc = sh3_cpg_ratio((BIT(m_frqcr, 13) << 2) | (m_frqcr & 3));
+	m_cpu_clock = clock();
+	const int pll = m_cpu_clock * ifc;
+	m_bus_clock = pll / stc;
+	m_pm_clock = pll / pfc;
+	m_irda->set_unscaled_clock(m_pm_clock);
+	m_scif->set_unscaled_clock(m_pm_clock);
+}
+
 uint16_t sh3_base_device::frqcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): CPG unmapped internal read mask %04x (FRQCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_frqcr);
 	return m_frqcr;
 }
 
 void sh3_base_device::frqcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_frqcr);
-	logerror("'%s' (%08x): CPG unmapped internal write %04x & %04x (FRQCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	sh3_cpg_update();
 }
 
 uint8_t sh3_base_device::stbcr_r(offs_t offset, uint8_t mem_mask)

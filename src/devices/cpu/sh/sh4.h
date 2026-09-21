@@ -653,6 +653,7 @@ protected:
 	required_device<sh3_scif_device> m_irda;
 	required_device<sh3_scif_device> m_scif;
 
+	void sh3_cpg_update();
 	void sh3_wdt_update();
 	uint8_t sh3_wdt_count();
 	TIMER_CALLBACK_MEMBER(sh3_wdt_overflow);
