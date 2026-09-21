@@ -93,15 +93,16 @@
     sample records rule out -- and both are undumped, so there is nothing for
     the tone generators to play.
 
-    State: a skeleton, and each machine stops at the first thing it is owed.
-    The SD-80 runs its boot block, inflates the program into the SDRAM at
-    0x08001000, enters it and then waits for UIPC(1) to hand it a byte, as
-    the SC-8850 waits for its controller to announce itself; nothing here
-    answers, because the M37641's own program is undumped and what it says
-    at power-on has not been read out of the SH-3 side either.  The SD-90's
-    boot block copies its loader to the top of the SDRAM and waits there for
-    bit 13 of the tone generator's word 0x24 -- a word the XV-5080's firmware
-    only ever writes -- before it will inflate anything.
+    State: **the SD-80 boots, shows its display and takes MIDI.**  It runs
+    its boot block, inflates the program into the SDRAM at 0x08001000,
+    enters it and reaches its play screen, and a note on the SCIF's MIDI in
+    drives the voice engine; there is nothing to hear, because the wave mask
+    ROMs are undumped.  Its panel is not wired, the SCI's MIDI port is the
+    core's to implement, and the answer its USB controller gives at power-on
+    is a stub of two bytes.  The SD-90 is still a skeleton: its boot block
+    copies its loader to the top of the SDRAM and waits there for bit 13 of
+    the tone generator's word 0x24 -- a word the XV-5080's firmware only ever
+    writes -- before it will inflate anything.
 
 ****************************************************************************/
 
@@ -112,7 +113,10 @@
 #include "cpu/sh/sh3_scif.h"
 #include "cpu/sh/sh4.h"
 #include "sound/roland_xv.h"
+#include "video/hd44780.h"
 
+#include "emupal.h"
+#include "screen.h"
 #include "speaker.h"
 
 #define LOG_UIPC    (1U << 1)
@@ -130,6 +134,7 @@ public:
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
 		, m_xv(*this, "xv%u", 0U)
+		, m_lcd(*this, "lcd")
 	{
 	}
 
@@ -137,6 +142,9 @@ public:
 	void sd90(machine_config &config) ATTR_COLD;
 
 protected:
+	virtual void machine_start() override ATTR_COLD { save_item(NAME(m_uipc_step)); }
+	virtual void machine_reset() override ATTR_COLD { m_uipc_step = 0; }
+
 	void common(machine_config &config) ATTR_COLD;
 
 	void sd80_map(address_map &map) ATTR_COLD;
@@ -148,24 +156,66 @@ protected:
 	template <int Device> u8 sd90_area6_r(offs_t offset);
 	template <int Device> void sd90_area6_w(offs_t offset, u8 data);
 
+	void lcd_palette(palette_device &palette) const ATTR_COLD;
+
+	u32 m_uipc_step = 0;
+
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
+	optional_device<hd44780_device> m_lcd;
 };
+
+
+//-------------------------------------------------
+//  the display, an RCM2072M-B of 20 characters by two lines on the LCD
+//  board, blue backlit
+//-------------------------------------------------
+
+void sd90_state::lcd_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t(0x20, 0x50, 0xd0));  // backlight
+	palette.set_pen_color(1, rgb_t(0xe8, 0xf0, 0xff));  // dot on
+}
 
 
 //-------------------------------------------------
 //  the USB controller's mailboxes: data at +0, status at +2, bit 1 of
 //  UIPC(0) set while the byte just written is still there and bit 0 of
-//  UIPC(1) set while one waits.  Logged and nothing else, so the machine
-//  reads an empty channel.
+//  UIPC(1) set while one waits, with bits 4-7 of the status the byte's
+//  tag -- the same channels, bits and tags as the SC-8850's.
+//
+//  At power-on the firmware waits for an untagged 0xaa from the
+//  controller, reads one byte after it, and then pushes two blocks of its
+//  own across the channel.  Nothing here emulates the M37641M8, whose
+//  program is a mask ROM of its own and undumped, so this answers that
+//  announcement and then goes quiet, which is what gets the machine past
+//  its power-on wait.
 //-------------------------------------------------
 
 template <int Channel>
 u8 sd90_state::uipc_r(offs_t offset)
 {
-	if (!machine().side_effects_disabled())
-		LOGMASKED(LOG_UIPC, "%s: uipc(%d) read %x\n", machine().describe_context(), Channel, offset);
-	return 0;
+	// the outbound channel always takes the byte at once
+	if (Channel == 0)
+		return 0;
+
+	static const u8 boot[][2] = { { 0x01, 0xaa }, { 0x01, 0x00 } };
+
+	if (m_uipc_step >= std::size(boot))
+		return 0;
+
+	if (offset == 0)
+	{
+		const u8 data = boot[m_uipc_step][1];
+		if (!machine().side_effects_disabled())
+		{
+			LOGMASKED(LOG_UIPC, "%s: uipc announcement byte %02x\n", machine().describe_context(), data);
+			m_uipc_step++;
+		}
+		return data;
+	}
+
+	return boot[m_uipc_step][0];
 }
 
 template <int Channel>
@@ -264,12 +314,28 @@ void sd90_state::sd80(machine_config &config)
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
 
-	// MIDI 1 is the SCI at 0xfffffe80, which this core does not carry as a
-	// serial device; MIDI 2 is the SCIF
-	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
-	mdin2.rxd_handler().set(m_maincpu->scif(), FUNC(sh3_scif_device::rxd_w));
-	MIDI_PORT(config, "mdout2", midiout_slot, "midiout");
-	m_maincpu->scif().txd_handler().set("mdout2", FUNC(midi_port_device::write_txd));
+	// the display is on IC19's own LCD pins, LP0-LP7 with RS and LE, and
+	// the CPU's D/A channel 1 sets its contrast, which is not modelled
+	screen_device &screen(SCREEN(config, "screen"));
+	screen.set_lcd();
+	screen.set_refresh_hz(60);
+	screen.set_screen_update("lcd", FUNC(hd44780_device::screen_update));
+	screen.set_size(6 * 20, 9 * 2);
+	screen.set_visarea_full();
+	screen.set_palette("palette");
+	PALETTE(config, "palette", FUNC(sd90_state::lcd_palette), 2);
+
+	HD44780(config, m_lcd, 270'000);
+	m_lcd->set_lcd_size(2, 20);
+	m_xv[0]->lcd_callback().set(m_lcd, FUNC(hd44780_device::write));
+
+	// the SCIF is one of the two MIDI ports and takes and sends notes;
+	// which jack it is has not been read, and the other is the SCI at
+	// 0xfffffe80, which this core carries as registers only
+	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
+	mdin.rxd_handler().set(m_maincpu->scif(), FUNC(sh3_scif_device::rxd_w));
+	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+	m_maincpu->scif().txd_handler().set("mdout", FUNC(midi_port_device::write_txd));
 }
 
 void sd90_state::sd90(machine_config &config)
