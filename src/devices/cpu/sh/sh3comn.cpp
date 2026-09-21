@@ -1041,6 +1041,8 @@ uint16_t sh3_base_device::ipre_r(offs_t offset, uint16_t mem_mask)
 void sh3_base_device::ipre_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_ipre);
+	for (int a = SH4_INTC_DMTE0; a <= SH4_INTC_DMTE3; a++)
+		m_exception_priority[a] = INTPRI((m_ipre & 0xf000) >> 12, a);
 	for (int a = SH4_INTC_IRDAERI; a <= SH4_INTC_IRDATXI; a++)
 		m_exception_priority[a] = INTPRI((m_ipre & 0x0f00) >> 8, a);
 	for (int a = SH4_INTC_SCIFERI; a <= SH4_INTC_SCIFTXI; a++)

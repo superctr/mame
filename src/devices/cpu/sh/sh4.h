@@ -162,6 +162,7 @@ typedef void (*sh4_ftcsr_callback)(uint32_t);
 class sh34_base_device : public sh_common_execution
 {
 public:
+	template <unsigned Channel> void dreq_w(int state) { sh4_dreq_w(Channel, state); }
 
 	void set_md(int bit, int md) { m_md[bit] = md; }
 	void set_sh4_clock(int clock) { m_clock = clock; }
@@ -315,6 +316,7 @@ protected:
 	emu_timer *m_dma_timer[4];
 	emu_timer *m_timer[3];
 	int     m_dma_timer_active[4];
+	int     m_dreq[4];
 	uint32_t  m_dma_source[4];
 	uint32_t  m_dma_destination[4];
 	uint32_t  m_dma_count[4];
@@ -408,6 +410,7 @@ protected:
 	int sh4_dma_transfer(int channel, int timermode, uint32_t chcr, uint32_t *sar, uint32_t *dar, uint32_t *dmatcr);
 	int sh4_dma_transfer_device(int channel, uint32_t chcr, uint32_t *sar, uint32_t *dar, uint32_t *dmatcr);
 	void sh4_dmac_check(int channel);
+	void sh4_dreq_w(int channel, int state);
 	uint32_t sar0_r(offs_t offset, uint32_t mem_mask);
 	void sar0_w(offs_t offset, uint32_t data, uint32_t mem_mask);
 	uint32_t dar0_r(offs_t offset, uint32_t mem_mask);

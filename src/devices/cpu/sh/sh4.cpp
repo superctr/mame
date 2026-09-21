@@ -3889,6 +3889,8 @@ void sh34_base_device::device_start()
 	save_item(NAME(m_internal_irq_level));
 	save_item(NAME(m_internal_irq_vector));
 	save_item(NAME(m_dma_timer_active));
+	std::fill(std::begin(m_dreq), std::end(m_dreq), 0);
+	save_item(NAME(m_dreq));
 	save_item(NAME(m_dma_source));
 	save_item(NAME(m_dma_destination));
 	save_item(NAME(m_dma_count));
