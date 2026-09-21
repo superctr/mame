@@ -135,6 +135,10 @@ static const int exception_codes[] =
 	0x720, /* SH4_INTC_SCIFRXI */
 	0x740, /* SH4_INTC_SCIFBRI */
 	0x760, /* SH4_INTC_SCIFTXI */
+	-1, /* SH4_INTC_IRDAERI */
+	-1, /* SH4_INTC_IRDARXI */
+	-1, /* SH4_INTC_IRDABRI */
+	-1, /* SH4_INTC_IRDATXI */
 	0x560, /* SH4_INTC_ITI */
 	0x580, /* SH4_INTC_RCMI */
 	0x5A0 /* SH4_INTC_ROVI */
@@ -223,10 +227,14 @@ static const int sh3_intevt2_exception_codes[] =
 	-1, /* SH4_INTC_SCI1TXI */
 	-1, /* SH4_INTC_SCI1TEI */
 
-	-1, /* SH4_INTC_SCIFERI */
-	-1, /* SH4_INTC_SCIFRXI */
-	-1, /* SH4_INTC_SCIFBRI */
-	-1, /* SH4_INTC_SCIFTXI */
+	0x900, /* SH4_INTC_SCIFERI */
+	0x920, /* SH4_INTC_SCIFRXI */
+	0x940, /* SH4_INTC_SCIFBRI */
+	0x960, /* SH4_INTC_SCIFTXI */
+	0x880, /* SH4_INTC_IRDAERI */
+	0x8A0, /* SH4_INTC_IRDARXI */
+	0x8C0, /* SH4_INTC_IRDABRI */
+	0x8E0, /* SH4_INTC_IRDATXI */
 	-1, /* SH4_INTC_ITI */
 	-1, /* SH4_INTC_RCMI */
 	-1 /* SH4_INTC_ROVI */

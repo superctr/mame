@@ -89,6 +89,10 @@ enum
 	SH4_INTC_SCIFRXI,
 	SH4_INTC_SCIFBRI,
 	SH4_INTC_SCIFTXI,
+	SH4_INTC_IRDAERI,
+	SH4_INTC_IRDARXI,
+	SH4_INTC_IRDABRI,
+	SH4_INTC_IRDATXI,
 	SH4_INTC_ITI,
 	SH4_INTC_RCMI,
 	SH4_INTC_ROVI
@@ -625,17 +629,26 @@ protected:
 };
 
 
+class sh3_scif_device;
+
 class sh3_base_device : public sh34_base_device
 {
 public:
 	virtual ~sh3_base_device();
 
+	sh3_scif_device &irda();
+	sh3_scif_device &scif();
+
 protected:
 	// construction/destruction
 	sh3_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness);
 
+	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+
+	required_device<sh3_scif_device> m_irda;
+	required_device<sh3_scif_device> m_scif;
 
 	static uint8_t port_direction(uint16_t cr);
 	uint8_t port_read(int port, uint8_t dr, uint16_t cr);
@@ -963,42 +976,6 @@ protected:
 	uint8_t scpdr_r(offs_t offset, uint8_t mem_mask);
 	void scpdr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
 
-	// IRDA 7709
-	uint8_t scsmr1_r(offs_t offset, uint8_t mem_mask);
-	void scsmr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scbrr1_r(offs_t offset, uint8_t mem_mask);
-	void scbrr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scscr1_r(offs_t offset, uint8_t mem_mask);
-	void scscr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scftdr1_r(offs_t offset, uint8_t mem_mask);
-	void scftdr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint16_t scssr1_r(offs_t offset, uint16_t mem_mask);
-	void scssr1_w(offs_t offset, uint16_t data, uint16_t mem_mask);
-	uint8_t scfrdr1_r(offs_t offset, uint8_t mem_mask);
-	void scfrdr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scfcr1_r(offs_t offset, uint8_t mem_mask);
-	void scfcr1_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint16_t scfdr1_r(offs_t offset, uint16_t mem_mask);
-	void scfdr1_w(offs_t offset, uint16_t data, uint16_t mem_mask);
-
-	// SCIF 7709
-	uint8_t scsmr2_r(offs_t offset, uint8_t mem_mask);
-	void scsmr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scbrr2_r(offs_t offset, uint8_t mem_mask);
-	void scbrr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scscr2_r(offs_t offset, uint8_t mem_mask);
-	void scscr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scftdr2_r(offs_t offset, uint8_t mem_mask);
-	void scftdr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint16_t scssr2_r(offs_t offset, uint16_t mem_mask);
-	void scssr2_w(offs_t offset, uint16_t data, uint16_t mem_mask);
-	uint8_t scfrdr2_r(offs_t offset, uint8_t mem_mask);
-	void scfrdr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scfcr2_r(offs_t offset, uint8_t mem_mask);
-	void scfcr2_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint16_t scfdr2_r(offs_t offset, uint16_t mem_mask);
-	void scfdr2_w(offs_t offset, uint16_t data, uint16_t mem_mask);
-
 	// UDI 7709S
 	uint16_t sdir_r(offs_t offset, uint16_t mem_mask);
 	void sdir_w(offs_t offset, uint16_t data, uint16_t mem_mask);
@@ -1154,26 +1131,6 @@ protected:
 	uint8_t m_pkdr;
 	uint8_t m_pldr;
 	uint8_t m_scpdr;
-
-	// IRDA 7709
-	uint8_t m_scsmr1;
-	uint8_t m_scbrr1;
-	uint8_t m_scscr1;
-	uint8_t m_scftdr1;
-	uint16_t m_scssr1;
-	uint8_t m_scfrdr1;
-	uint8_t m_scfcr1;
-	uint16_t m_scfdr1;
-
-	// SCIF 7709
-	uint8_t m_scsmr2;
-	uint8_t m_scbrr2;
-	uint8_t m_scscr2;
-	uint8_t m_scftdr2;
-	uint16_t m_scssr2;
-	uint16_t m_scfrdr2;
-	uint8_t m_scfcr2;
-	uint8_t m_scfdr2;
 
 	// UDI 7709S
 	uint16_t m_sdir;
