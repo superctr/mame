@@ -56,6 +56,8 @@ enum
 	SH4_INTC_IRL1,
 	SH4_INTC_IRL2,
 	SH4_INTC_IRL3,
+	SH4_INTC_IRL4,
+	SH4_INTC_IRL5,
 
 	SH4_INTC_HUDI,
 	SH4_INTC_GPOI,
@@ -648,6 +650,7 @@ protected:
 
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
+	virtual void execute_set_input(int irqline, int state) override;
 	virtual void device_reset() override ATTR_COLD;
 
 	required_device<sh3_scif_device> m_irda;

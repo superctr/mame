@@ -945,6 +945,20 @@ void sh3_base_device::intevt2_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 	logerror("'%s' (%08x): INTC unmapped internal write %08x & %08x (INTEVT2)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
+//  IRQ0-IRQ5 are edge sensed, and a request stands in IRR0 until the
+//  handler writes its bit back as zero
+void sh3_base_device::execute_set_input(int irqline, int state)
+{
+	if (irqline != INPUT_LINE_NMI && irqline < 8)
+	{
+		if (state == CLEAR_LINE)
+			m_irr0 &= ~(1 << irqline);
+		else
+			m_irr0 |= 1 << irqline;
+	}
+	sh34_base_device::execute_set_input(irqline, state);
+}
+
 uint8_t sh3_base_device::irr0_r(offs_t offset, uint8_t mem_mask)
 {
 	logerror("'%s' (%08x): INTC unmapped internal read mask %02x (IRR0) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_irr0);
@@ -960,6 +974,8 @@ void sh3_base_device::irr0_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 	if (!(data & 0x02)) execute_set_input(1, CLEAR_LINE);
 	if (!(data & 0x04)) execute_set_input(2, CLEAR_LINE);
 	if (!(data & 0x08)) execute_set_input(3, CLEAR_LINE);
+	if (!(data & 0x10)) execute_set_input(4, CLEAR_LINE);
+	if (!(data & 0x20)) execute_set_input(5, CLEAR_LINE);
 }
 
 uint8_t sh3_base_device::irr1_r(offs_t offset, uint8_t mem_mask)
@@ -1049,6 +1065,9 @@ void sh3_base_device::iprd_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_iprd);
 	logerror("'%s' (%08x): INTC internal write %04x & %04x (IPRD)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	m_exception_priority[SH4_INTC_IRL4] = INTPRI((m_iprd & 0x000f) >> 0, SH4_INTC_IRL4);
+	m_exception_priority[SH4_INTC_IRL5] = INTPRI((m_iprd & 0x00f0) >> 4, SH4_INTC_IRL5);
+	sh4_exception_recompute();
 }
 
 uint16_t sh3_base_device::ipre_r(offs_t offset, uint16_t mem_mask)
@@ -1528,6 +1547,7 @@ uint16_t sh3_base_device::scpcr_r(offs_t offset, uint16_t mem_mask)
 void sh3_base_device::scpcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_scpcr);
+	port_write(SH3_PORT_SC, m_scpdr, m_scpcr);
 	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (SCPCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
@@ -1654,14 +1674,13 @@ void sh3_base_device::pldr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 
 uint8_t sh3_base_device::scpdr_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %02x (SCPDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scpdr);
-	return m_scpdr;
+	return port_read(SH3_PORT_SC, m_scpdr, m_scpcr);
 }
 
 void sh3_base_device::scpdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_scpdr);
-	logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (SCPDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_SC, m_scpdr, m_scpcr);
 }
 
 // UDI 7709S

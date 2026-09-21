@@ -102,6 +102,8 @@ static const int exception_codes[] =
 	0x2A0, /* SH4_INTC_IRL1 */
 	0x300, /* SH4_INTC_IRL2 */
 	0x360, /* SH4_INTC_IRL3 */
+	0x000, /* SH4_INTC_IRL4, the SH-3's own IRQ4 */
+	0x000, /* SH4_INTC_IRL5, and its IRQ5 */
 
 	0x600, /* HUDI */
 	0x620, /* SH4_INTC_GPOI */
@@ -197,7 +199,8 @@ static const int sh3_intevt2_exception_codes[] =
 	0x620, /* SH4_INTC_IRL1 */
 	0x640, /* SH4_INTC_IRL2 */
 	0x660, /* SH4_INTC_IRL3 */
-	/* todo: SH3 should have lines 4+5 too? */
+	0x680, /* SH4_INTC_IRL4 */
+	0x6A0, /* SH4_INTC_IRL5 */
 
 	-1, /* HUDI */
 	-1, /* SH4_INTC_GPOI */
@@ -303,6 +306,8 @@ void sh34_base_device::sh4_default_exception_priorities() // setup default prior
 	m_exception_priority[SH4_INTC_IRL1] = INTPRI(10, SH4_INTC_IRL1);
 	m_exception_priority[SH4_INTC_IRL2] = INTPRI(7, SH4_INTC_IRL2);
 	m_exception_priority[SH4_INTC_IRL3] = INTPRI(4, SH4_INTC_IRL3);
+	m_exception_priority[SH4_INTC_IRL4] = INTPRI(0, SH4_INTC_IRL4);
+	m_exception_priority[SH4_INTC_IRL5] = INTPRI(0, SH4_INTC_IRL5);
 	for (int a = SH4_INTC_HUDI; a <= SH4_INTC_ROVI; a++)
 		m_exception_priority[a] = INTPRI(0, a);
 }
@@ -446,7 +451,7 @@ void sh34_base_device::sh4_exception(const char *message, int exception) // hand
 
 			vector = 0x600;
 
-			if (exception >= SH4_INTC_IRL0 && exception <= SH4_INTC_IRL3)
+			if (exception >= SH4_INTC_IRL0 && exception <= SH4_INTC_IRL5)
 				standard_irq_callback((exception - SH4_INTC_IRL0) + SH4_IRL0, m_sh2_state->pc);
 			else
 				standard_irq_callback(SH4_IRL3 + 1, m_sh2_state->pc);
