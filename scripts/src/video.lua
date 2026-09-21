@@ -1561,6 +1561,18 @@ end
 
 --------------------------------------------------
 --
+--@src/devices/video/st7565.h,VIDEOS["ST7565"] = true
+--------------------------------------------------
+
+if VIDEOS["ST7565"] then
+	files {
+		MAME_DIR .. "src/devices/video/st7565.cpp",
+		MAME_DIR .. "src/devices/video/st7565.h",
+	}
+end
+
+--------------------------------------------------
+--
 --@src/devices/video/st7626.h,VIDEOS["ST7626"] = true
 --------------------------------------------------
 
