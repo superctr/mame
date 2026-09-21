@@ -122,6 +122,11 @@ public:
 	auto switch_callback() { return m_switch_callback.bind(); }
 	auto led_callback() { return m_led_callback.bind(); }
 
+	// the character display the chip drives on its own LCD pins: a one-word
+	// command under mode 0 is a byte for it, bit 8 of the word the RS line,
+	// so the offset is RS and hd44780_device::write takes it as it stands
+	auto lcd_callback() { return m_lcd_callback.bind(); }
+
 	// the chip whose transport block this one's is linked to; the linked chip is run from this one's stream
 	template <typename T> void set_link(T &&tag) { m_link.set_tag(std::forward<T>(tag)); }
 
@@ -298,6 +303,7 @@ private:
 	devcb_write_line m_int_callback;
 	devcb_read32 m_switch_callback;
 	devcb_write8 m_led_callback;
+	devcb_write8 m_lcd_callback;
 	sound_stream *m_stream;
 	emu_timer *m_scan_timer;
 
