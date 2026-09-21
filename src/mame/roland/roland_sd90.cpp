@@ -67,6 +67,12 @@
     20 x 2 LCD hangs off the first tone generator's own pins, LP0-LP7 with
     RS and LE (IC19 pins 48-55, 44 and 43), beside the panel scanner's
     SCAN, XSW and LED lines, so the chip carries the front panel whole.
+    A display byte is a one-word command to that chip under mode 0 -- word
+    0x09 = 0x0200, word 0x08 = (RS << 8) | byte, word 0x36 = 0x8100 -- and
+    both the boot block and the program drive an ordinary HD44780 sequence
+    through it, timing every byte themselves.  The splash is painted before
+    the machine stalls; sound/roland_xv does not present the port yet, so
+    there is nothing here to show it on.
 
     The interrupts, read out of the firmware's own dispatch table -- it
     indexes on INTEVT2 and every entry here has a handler of its own:
