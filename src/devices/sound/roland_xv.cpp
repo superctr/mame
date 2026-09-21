@@ -120,7 +120,10 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	, m_link(*this, finder_base::DUMMY_TAG)
 	, m_wave_config("wave", ENDIANNESS_LITTLE, 16, 32, -1)
 	, m_int_callback(*this)
+	, m_switch_callback(*this, 0)
+	, m_led_callback(*this)
 	, m_stream(nullptr)
+	, m_scan_timer(nullptr)
 	, m_master(nullptr)
 {
 }
@@ -151,6 +154,16 @@ void roland_xv_device::device_start()
 	save_item(NAME(m_irq_pending));
 	save_item(NAME(m_irq_voice));
 	save_item(NAME(m_irq_waiting));
+	save_item(NAME(m_scan_select));
+	save_item(NAME(m_scan_read));
+	save_item(NAME(m_scan_write));
+	save_item(NAME(m_led_select));
+	save_item(NAME(m_led));
+	save_item(NAME(m_scan));
+	save_item(NAME(m_switch_state));
+	save_item(NAME(m_switch_changed));
+	save_item(NAME(m_switch_index));
+	m_scan_timer = timer_alloc(FUNC(roland_xv_device::scan_switches), this);
 	save_item(NAME(m_int_state));
 	save_item(NAME(m_run_mask));
 	save_item(STRUCT_MEMBER(m_voices, address));
@@ -216,6 +229,16 @@ void roland_xv_device::device_reset()
 	std::fill(std::begin(m_irq_waiting), std::end(m_irq_waiting), 0);
 	m_int_state = false;
 	m_int_callback(0);
+	m_scan_select = -1;
+	m_scan_read = 0;
+	m_scan_write = 0;
+	m_led_select = -1;
+	std::fill(std::begin(m_scan), std::end(m_scan), 0x1111);
+	std::fill(std::begin(m_led), std::end(m_led), 0);
+	m_switch_state = 0;
+	m_switch_changed = 0;
+	m_switch_index = 0;
+	m_scan_timer->adjust(attotime::from_msec(4), 0, attotime::from_msec(4));
 	m_run_mask = 0;
 	for (auto &v : m_voices)
 		v = voice();
@@ -336,10 +359,17 @@ u16 roland_xv_device::word_peek(int word)
 		return m_space[m_address] & 0xffff;
 
 	case FIFO:
+		if (m_scan_select >= 0)
+			return m_scan[(m_scan_select + m_scan_read) & 7];
+		if (m_led_select >= 0)
+			return m_led[(m_led_select + m_scan_read) & 15];
 		return m_fifo[m_fifo_read];
 
 	case IRQ_MASK:
 		return m_irq_pending;
+
+	case SWITCH_INDEX:
+		return m_switch_index;
 
 	case STATUS:
 		return 0;
@@ -365,7 +395,10 @@ void roland_xv_device::word_taken(int word)
 		break;
 
 	case FIFO:
-		m_fifo_read = (m_fifo_read + 1) % FIFO_DEPTH;
+		if (m_scan_select >= 0 || m_led_select >= 0)
+			m_scan_read++;
+		else
+			m_fifo_read = (m_fifo_read + 1) % FIFO_DEPTH;
 		break;
 	}
 }
@@ -395,11 +428,40 @@ void roland_xv_device::word_w(int word, u16 data)
 		break;
 
 	case FIFO:
-		fifo_push(data);
+		if (m_scan_select >= 0)
+		{
+			const int w = (m_scan_select + m_scan_write) & 7;
+			m_scan[w] = (m_scan[w] & 0x1111) | (data & 0xeeee);
+			m_scan_write++;
+		}
+		else if (m_led_select >= 0)
+		{
+			const int w = (m_led_select + m_scan_write) & 15;
+			m_scan_write++;
+			if (m_led[w] != data)
+			{
+				const u16 changed = m_led[w] ^ data;
+				m_led[w] = data;
+				for (int k = 0; k < 4; k++)
+					if ((changed >> (k * 4)) & 15)
+						m_led_callback((w >> 1) * 8 + (w & 1) * 4 + k, (data >> (k * 4)) & 15);
+			}
+		}
+		else
+			fifo_push(data);
 		break;
 
 	case FIFO_CONTROL:
-		fifo_rewind();
+		m_scan_select = -1;
+		m_led_select = -1;
+		m_scan_read = 0;
+		m_scan_write = 0;
+		if ((data & 0xfff8) == 0x0240)
+			m_scan_select = data & 7;
+		else if ((data & 0xfff0) == 0x0260)
+			m_led_select = data & 15;
+		else
+			fifo_rewind();
 		break;
 
 	case COMMAND_STROBE:
@@ -441,6 +503,7 @@ void roland_xv_device::word_w(int word, u16 data)
 				m_irq_voice[reason] = voice;
 				m_irq_pending |= 1 << reason;
 			}
+		present_switch();
 		update_irq();
 		break;
 
@@ -677,6 +740,48 @@ void roland_xv_device::raise_irq(int reason, int voice)
 	m_irq_voice[reason] = voice;
 	m_irq_pending |= 1 << reason;
 	update_irq();
+}
+
+
+//-------------------------------------------------
+//  the panel scanner: eight strobes against eight switch lines and eight
+//  LED lines.  The switches are nibbles of the words the host reaches
+//  through the FIFO after selecting 0x240+n in word 0x09, two words a
+//  strobe: bit 0 is the level, high while the switch is open, bits 1 and
+//  2 are set by a press and a release and cleared by the host writing the
+//  word back.  A change raises reason 14 with the switch's number, strobe
+//  times eight plus line, in word 0x1c, one switch per interrupt.  The
+//  LEDs are the words behind 0x260+n, again two a strobe, a brightness
+//  nibble per line.  Only four strobes are modelled here.
+//-------------------------------------------------
+
+TIMER_CALLBACK_MEMBER(roland_xv_device::scan_switches)
+{
+	const u32 now = m_switch_callback();
+	const u32 changed = now ^ m_switch_state;
+	if (!changed)
+		return;
+	for (int n = 0; n < 32; n++)
+		if (BIT(changed, n))
+		{
+			const int shift = (n & 3) * 4;
+			u16 &w = m_scan[n >> 2];
+			w = (w & ~(1 << shift)) | ((BIT(now, n) ^ 1) << shift) | ((BIT(now, n) ? 2 : 4) << shift);
+			m_switch_changed |= 1 << n;
+		}
+	m_switch_state = now;
+	present_switch();
+	update_irq();
+}
+
+void roland_xv_device::present_switch()
+{
+	if (BIT(m_irq_pending, IRQ_SWITCH) || !m_switch_changed)
+		return;
+	const int n = std::countr_zero(m_switch_changed);
+	m_switch_changed &= ~(1 << n);
+	m_switch_index = n;
+	m_irq_pending |= 1 << IRQ_SWITCH;
 }
 
 

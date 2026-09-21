@@ -41,7 +41,7 @@ public:
 	enum register_word
 	{
 		MODE = 0x02, DATA_HIGH = 0x04, DATA_LOW = 0x05, ADDRESS = 0x06, FIFO = 0x08, FIFO_CONTROL = 0x09,
-		RUN_MASK = 0x0a, RUN_COMMIT = 0x0e, IRQ_MASK = 0x0f, IRQ_ACK = 0x10, IRQ_VOICE = 0x10, STATUS = 0x1b,
+		RUN_MASK = 0x0a, RUN_COMMIT = 0x0e, IRQ_MASK = 0x0f, IRQ_ACK = 0x10, IRQ_VOICE = 0x10, STATUS = 0x1b, SWITCH_INDEX = 0x1c,
 		XFER_COMMAND = 0x25, WRITE_ADDRESS = 0x26, WRITE_LENGTH = 0x2a, READ_GO = 0x2d, READ_ADDRESS = 0x2e,
 		READ_LENGTH = 0x32, COMMAND_STROBE = 0x36,
 		OBJECT_BASE = 0x60, OBJECT_END = 0x100
@@ -64,7 +64,7 @@ public:
 	enum irq_reason
 	{
 		IRQ_FINISHED = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_RESONANCE_LANDED = 3,
-		IRQ_AMPLITUDE_LANDED = 4, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8
+		IRQ_AMPLITUDE_LANDED = 4, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8, IRQ_SWITCH = 14
 	};
 
 	enum ramp_kind { RAMP_CUTOFF, RAMP_RESONANCE, RAMP_AMPLITUDE, RAMP_PITCH, RAMP_SEND_A, RAMP_SEND_B, RAMPS };
@@ -115,6 +115,12 @@ public:
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_callback.bind(); }
+
+	// the panel the chip scans itself: 32 switches read as one word, bit n
+	// the switch the chip numbers n (strobe times eight plus line), and an
+	// LED brightness, 0 to 15, written with the LED's number the same way
+	auto switch_callback() { return m_switch_callback.bind(); }
+	auto led_callback() { return m_led_callback.bind(); }
 
 	// the chip whose transport block this one's is linked to; the linked chip is run from this one's stream
 	template <typename T> void set_link(T &&tag) { m_link.set_tag(std::forward<T>(tag)); }
@@ -242,6 +248,8 @@ private:
 	void transfer_write();
 	void update_irq();
 	void raise_irq(int reason, int voice);
+	TIMER_CALLBACK_MEMBER(scan_switches);
+	void present_switch();
 	void run_mask_w(int word, u16 data);
 
 	void start_ramp(int voice, int kind, u32 value);
@@ -288,7 +296,10 @@ private:
 	address_space_config m_wave_config;
 	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
 	devcb_write_line m_int_callback;
+	devcb_read32 m_switch_callback;
+	devcb_write8 m_led_callback;
 	sound_stream *m_stream;
+	emu_timer *m_scan_timer;
 
 	u16 m_regs[0x100];
 	u16 m_object_regs[OBJECTS][OBJECT_END - OBJECT_BASE];
@@ -297,6 +308,15 @@ private:
 	u16 m_fifo[FIFO_DEPTH];
 	int m_fifo_write;
 	int m_fifo_read;
+	int m_scan_select;
+	int m_scan_read;
+	int m_scan_write;
+	int m_led_select;
+	u16 m_led[16];
+	u16 m_scan[8];
+	u32 m_switch_state;
+	u32 m_switch_changed;
+	u8 m_switch_index;
 	u16 m_irq_enable;
 	u16 m_irq_pending;
 	u8 m_irq_voice[IRQ_REASONS];
