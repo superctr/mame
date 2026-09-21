@@ -1389,7 +1389,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 		{
 		case MEM_NONE:
 			if (address && m_tap_count < TAPS)
-				m_taps[m_tap_count++] = tap_request{ u16(address | 0x100), a };
+				m_taps[m_tap_count++] = tap_request{ u16(address | 0x100), BIT(address, 8) ? b : a };
 			break;
 		case MEM_STORE_P: cell_w(address, clamp24(p)); break;
 		case MEM_STORE_A: cell_w(address, clamp24(a)); break;
