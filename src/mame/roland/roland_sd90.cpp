@@ -39,23 +39,44 @@
     The bus, as the boot block declares it and the program's own literals
     reach it: area 0 the flash, areas 2 and 3 synchronous DRAM with the 4 MB
     on area 2, area 5 sixteen bits wide with one XV at 0x14000000 and the
-    other at 0x15000000, and area 6 eight bits wide, carrying a byte channel
-    the firmware polls for a status at offset 2 and moves bytes through at
-    offset 0.  The SD-80 gives that channel two windows, 0x18000000 and
-    0x19000000, and the SD-90 one at 0x18000000 and a second device at
-    0x18800000; what they are is unread, and the USB block is the candidate.
-    Nothing reaches area 4.  Areas 5 and 6 are declared PCMCIA space, which
-    is how the boards' chip selects are wired rather than a card anywhere.
+    other at 0x15000000, and area 6 eight bits wide.  Nothing reaches area 4.
+    Areas 5 and 6 are declared PCMCIA space, which is how the boards' chip
+    selects are wired rather than a card anywhere.
+
+    Area 6 is the USB block, and the SD-80's schematic names it: the chip
+    select is XCSIPC, IC13A (a TC74VHCT139A) decodes it into XS0 and XS1,
+    and those are the S0 and S1 pins of IC17's bus interface unit, with the
+    CPU's A1 at its A0, XRD and XWR at its R and W, and D0-D7 at its DQ0-DQ7
+    through the level converters.  So the two windows are the controller's
+    two mailboxes -- UIPC(0) outbound at 0x18000000, UIPC(1) inbound at
+    0x19000000 -- each with its data at +0 and its status at +2, and the
+    controller's IBF and OBF come back as IRQ2 and IRQ3.  The firmware waits
+    for UIPC(0)'s bit 1 to fall before it writes and for UIPC(1)'s bit 0 to
+    rise before it reads, and a message is four bytes, the first to +2 and
+    the other three to +0: the same part, the same registers, the same bits
+    and the same interrupt numbering as the SC-8850's and SC-8820's UIPC.
+
+    The SD-90's area 6 is not the same.  Its 0x18000000 answers code the
+    SD-80's firmware does not carry at all -- a 32-bit address at +0, a
+    16-bit command at +4, a busy flag at +30 -- which is the MR3, the one
+    chip that machine has and the SD-80 has not, and its 0x18800000 is a
+    mailbox on IRQ2 that takes a count at +13 and the message from +16.
+    Without that machine's service notes both are readings, not facts.
+
+    Neither the display nor the panel is on the CPU's bus: the SD-80's
+    20 x 2 LCD hangs off the first tone generator's own pins, LP0-LP7 with
+    RS and LE (IC19 pins 48-55, 44 and 43), beside the panel scanner's
+    SCAN, XSW and LED lines, so the chip carries the front panel whole.
 
     The interrupts, read out of the firmware's own dispatch table -- it
     indexes on INTEVT2 and every entry here has a handler of its own:
 
         SD-80   TMU0, TMU1, TMU2, the watchdog's interval timer, IRQ0 the
-                XV at 0x14000000, IRQ1 the XV at 0x15000000, IRQ2 and IRQ3
-                the byte channel's two windows, IRQ5 a pin read back on
+                XV at 0x14000000, IRQ1 the XV at 0x15000000, IRQ2 the USB
+                controller's IBF and IRQ3 its OBF, IRQ5 a pin read back on
                 SCPDR, the SCI and the SCIF
         SD-90   TMU0, TMU1, the watchdog, IRQ0 and IRQ1 the two XVs, IRQ2
-                the byte channel, PINT0-7, the IrDA channel and the SCIF
+                its 0x18800000 mailbox, PINT0-7, the IrDA channel and the SCIF
 
     So both machines' MIDI is two channels of the CPU's own: the SD-80 puts
     one on the SCI at 0xfffffe80, which this core carries as registers only,
@@ -68,11 +89,13 @@
 
     State: a skeleton, and each machine stops at the first thing it is owed.
     The SD-80 runs its boot block, inflates the program into the SDRAM at
-    0x08001000, enters it and then waits for the byte channel's read window
-    to present a byte.  The SD-90's boot block copies its loader to the top
-    of the SDRAM and waits there for bit 13 of the tone generator's word 0x24
-    -- a word the XV-5080's firmware only ever writes -- before it will
-    inflate anything.
+    0x08001000, enters it and then waits for UIPC(1) to hand it a byte, as
+    the SC-8850 waits for its controller to announce itself; nothing here
+    answers, because the M37641's own program is undumped and what it says
+    at power-on has not been read out of the SH-3 side either.  The SD-90's
+    boot block copies its loader to the top of the SDRAM and waits there for
+    bit 13 of the tone generator's word 0x24 -- a word the XV-5080's firmware
+    only ever writes -- before it will inflate anything.
 
 ****************************************************************************/
 
@@ -86,7 +109,7 @@
 
 #include "speaker.h"
 
-#define LOG_LINK    (1U << 1)
+#define LOG_UIPC    (1U << 1)
 
 #define VERBOSE (LOG_GENERAL)
 #include "logmacro.h"
@@ -114,8 +137,10 @@ protected:
 	void sd90_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
 
-	template <int Window> u8 link_r(offs_t offset);
-	template <int Window> void link_w(offs_t offset, u8 data);
+	template <int Channel> u8 uipc_r(offs_t offset);
+	template <int Channel> void uipc_w(offs_t offset, u8 data);
+	template <int Device> u8 sd90_area6_r(offs_t offset);
+	template <int Device> void sd90_area6_w(offs_t offset, u8 data);
 
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
@@ -123,29 +148,50 @@ protected:
 
 
 //-------------------------------------------------
-//  the byte channel on area 6: a status at offset 2, whose bit 1 the
-//  firmware waits to see clear before it writes, and the bytes themselves
-//  at offset 0.  Logged and nothing else.
+//  the USB controller's mailboxes: data at +0, status at +2, bit 1 of
+//  UIPC(0) set while the byte just written is still there and bit 0 of
+//  UIPC(1) set while one waits.  Logged and nothing else, so the machine
+//  reads an empty channel.
 //-------------------------------------------------
 
-template <int Window>
-u8 sd90_state::link_r(offs_t offset)
+template <int Channel>
+u8 sd90_state::uipc_r(offs_t offset)
 {
 	if (!machine().side_effects_disabled())
-		LOGMASKED(LOG_LINK, "%s: link %d read %x\n", machine().describe_context(), Window, offset);
+		LOGMASKED(LOG_UIPC, "%s: uipc(%d) read %x\n", machine().describe_context(), Channel, offset);
 	return 0;
 }
 
-template <int Window>
-void sd90_state::link_w(offs_t offset, u8 data)
+template <int Channel>
+void sd90_state::uipc_w(offs_t offset, u8 data)
 {
-	LOGMASKED(LOG_LINK, "%s: link %d write %x = %02x\n", machine().describe_context(), Window, offset, data);
+	LOGMASKED(LOG_UIPC, "%s: uipc(%d) write %x = %02x\n", machine().describe_context(), Channel, offset, data);
+}
+
+
+//-------------------------------------------------
+//  what the SD-90 has there instead: the MR3 by its driver's shape, and a
+//  mailbox that takes a count at +13 and its message from +16
+//-------------------------------------------------
+
+template <int Device>
+u8 sd90_state::sd90_area6_r(offs_t offset)
+{
+	if (!machine().side_effects_disabled())
+		LOGMASKED(LOG_UIPC, "%s: %s read %x\n", machine().describe_context(), Device ? "mailbox" : "mr3", offset);
+	return 0;
+}
+
+template <int Device>
+void sd90_state::sd90_area6_w(offs_t offset, u8 data)
+{
+	LOGMASKED(LOG_UIPC, "%s: %s write %x = %02x\n", machine().describe_context(), Device ? "mailbox" : "mr3", offset, data);
 }
 
 
 //-------------------------------------------------
 //  the CPU's own bus, by area: the flash, the SDRAM, the two tone
-//  generators and the byte channel
+//  generators and what area 6 carries
 //-------------------------------------------------
 
 void sd90_state::sd80_map(address_map &map)
@@ -154,8 +200,8 @@ void sd90_state::sd80_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::link_r<0>), FUNC(sd90_state::link_w<0>));
-	map(0x19000000, 0x19000003).rw(FUNC(sd90_state::link_r<1>), FUNC(sd90_state::link_w<1>));
+	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::uipc_r<0>), FUNC(sd90_state::uipc_w<0>));   // XS0
+	map(0x19000000, 0x19000003).rw(FUNC(sd90_state::uipc_r<1>), FUNC(sd90_state::uipc_w<1>));   // XS1
 }
 
 void sd90_state::sd90_map(address_map &map)
@@ -164,8 +210,8 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::link_r<0>), FUNC(sd90_state::link_w<0>));
-	map(0x18800000, 0x18800003).rw(FUNC(sd90_state::link_r<1>), FUNC(sd90_state::link_w<1>));
+	map(0x18000000, 0x1800003f).rw(FUNC(sd90_state::sd90_area6_r<0>), FUNC(sd90_state::sd90_area6_w<0>));
+	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));
 }
 
 
