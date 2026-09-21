@@ -53,8 +53,24 @@
     bit 2 the time stamp wrapped since the last event.  The firmware takes
     the velocity from the time between the two contacts, in eighths, with
     767 the slowest stroke it distinguishes.  The unit of that time is not
-    known; 100 us is assumed here.  How the panel buttons come through the
-    same chip is not known yet, so the panel has no inputs.
+    known; 100 us is assumed here.
+
+    The panel buttons are scanned by the XV itself: its SWD0-7 inputs and
+    two strobe outputs, decoded by IC75 into SLS0-3, and its LEDD0-7 pins,
+    three of which drive the panel's LEDs.  The firmware reads the 32
+    switches as eight nibble words behind the chip's FIFO, takes a
+    changed switch's number from word 0x1c on interrupt reason 14, and
+    writes the LEDs as brightness nibbles behind the same FIFO, one word
+    pair a strobe from 0x260.  The chip numbers a switch as its
+    strobe times eight plus its data line, and the service notes' panel
+    schematics give the matrix: SS3..SS0 on SD2/SD1/SD0 are D BEAM,
+    ARPEGGIO, RHYTHM, REC / RESET, BWD, FWD, STOP-PLAY / REALTIME CONTROL
+    1-4, and on SD3..SD7 MODE, MENU, LIST and the favourites 1 and 5 (SS0),
+    DEC, LEFT, SHIFT, 2 and 6 (SS1), UP, DOWN, JUMP, 3 and 7 (SS2), INC,
+    RIGHT, EXIT, 4 and 8 (SS3); the cursor keys were placed by pressing
+    them.  The LEDs sit on the same strobes: line 0 carries the two colours
+    of BEAT (LS0, LS1) and REC (LS2), line 1 the REALTIME CONTROL LEDs 2,
+    3, 4, 1 (LS0-LS3) and line 2 ARPEGGIO, RHYTHM, PLAY and D BEAM.
 
     The firmware composes every screen after the splash in SDRAM and moves
     it to the LCD controller's VRAM on DMA channel 1, with the controller's
@@ -63,9 +79,10 @@
     the firmware identifies the chip by manufacturer code before it will
     program it.
 
-    State: boots to the PERFORMANCE PLAY screen, takes MIDI and plays.  The
-    panel buttons, the value encoder and the analogue inputs have no
-    inputs, and the floppy controller's DMA request is not connected.
+    State: boots to the PERFORMANCE PLAY screen, takes MIDI and plays, and
+    the keyboard and panel buttons work.  The value encoder and the
+    analogue inputs have no inputs, and the floppy controller's DMA
+    request is not connected.
 
 ****************************************************************************/
 
@@ -281,6 +298,7 @@ public:
 		, m_eeprom(*this, "eeprom")
 		, m_keyscan(*this, "keyscan")
 		, m_velocity(*this, "VELOCITY")
+		, m_leds(*this, "led_%u", 0U)
 	{
 	}
 
@@ -299,6 +317,7 @@ private:
 
 	u64 portc_r();
 	void portc_w(u64 data);
+	void led_w(offs_t offset, u8 data);
 
 	u8 vram_r(offs_t offset) { return m_vram[offset]; }
 	void vram_w(offs_t offset, u8 data) { m_vram[offset] = data; }
@@ -316,6 +335,8 @@ private:
 	required_device<i2c_24c08_device> m_eeprom;
 	required_device<fantom_keyscan_device> m_keyscan;
 	required_ioport m_velocity;
+	enum { LED_BEAT_A, LED_BEAT_B, LED_REC, LED_RTC1, LED_RTC2, LED_RTC3, LED_RTC4, LED_ARPEGGIO, LED_RHYTHM, LED_PLAY, LED_DBEAM, LEDS };
+	output_finder<LEDS> m_leds;
 
 	static constexpr int LCD_WIDTH = 320, LCD_HEIGHT = 240;
 	static constexpr int VRAM_BYTES = LCD_WIDTH * LCD_HEIGHT / 4;
@@ -394,6 +415,26 @@ void fantom_state::portc_w(u64 data)
 	const bool scl_out = ((pccr >> 12) & 3) == 1;
 	m_eeprom->write_sda(sda_out ? BIT(data, 7) : 1);
 	m_eeprom->write_scl(scl_out ? BIT(data, 6) : 1);
+}
+
+
+//-------------------------------------------------
+//  the panel LEDs, a matrix on the scan strobes LS0-LS3 and the lines
+//  LD0-LD2 as the panel schematic draws it; the BEAT LED is two colours
+//  on line 0 of strobes 0 and 1
+//-------------------------------------------------
+
+void fantom_state::led_w(offs_t offset, u8 data)
+{
+	static const int led[4][3] = {
+		{ LED_BEAT_A, LED_RTC2, LED_ARPEGGIO },
+		{ LED_BEAT_B, LED_RTC3, LED_RHYTHM },
+		{ LED_REC, LED_RTC4, LED_PLAY },
+		{ -1, LED_RTC1, LED_DBEAM }
+	};
+	const int strobe = offset >> 3, line = offset & 7;
+	if (strobe < 4 && line < 3 && led[strobe][line] >= 0)
+		m_leds[led[strobe][line]] = data;
 }
 
 
@@ -486,6 +527,8 @@ void fantom_state::fantom(machine_config &config)
 	ROLAND_XV(config, m_xv, 16.9344_MHz_XTAL);
 	m_xv->set_addrmap(roland_xv_device::AS_WAVE, &fantom_state::xv_wave_map);
 	m_xv->int_callback().set_inputline(m_maincpu, 0);   // IRQ0, the falling edge
+	m_xv->switch_callback().set_ioport("PANEL");
+	m_xv->led_callback().set(FUNC(fantom_state::led_w));
 	m_xv->add_route(0, "outa", 1.0, 0);
 	m_xv->add_route(1, "outa", 1.0, 1);
 	m_xv->add_route(2, "outb", 1.0, 0);
@@ -500,6 +543,41 @@ void fantom_state::fantom(machine_config &config)
 
 
 static INPUT_PORTS_START(fantom)
+	// the switch matrix as the XV numbers it: strobe SS0-SS3 times eight, plus the data line SD0-SD7
+	PORT_START("PANEL")
+	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 4")
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Stop/Play") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Rec") PORT_CODE(KEYCODE_R)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Mode") PORT_CODE(KEYCODE_F1)
+	PORT_BIT(0x00000010, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Menu") PORT_CODE(KEYCODE_F2)
+	PORT_BIT(0x00000020, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("List") PORT_CODE(KEYCODE_F3)
+	PORT_BIT(0x00000040, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 1")
+	PORT_BIT(0x00000080, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 5")
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 3")
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Fwd")
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Rhythm")
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Dec") PORT_CODE(KEYCODE_MINUS)
+	PORT_BIT(0x00001000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x00002000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00004000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 2")
+	PORT_BIT(0x00008000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 6")
+	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 2")
+	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Bwd")
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Arpeggio")
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x00100000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x00200000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Jump") PORT_CODE(KEYCODE_F4)
+	PORT_BIT(0x00400000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 3")
+	PORT_BIT(0x00800000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 7")
+	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 1")
+	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Reset")
+	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("D Beam")
+	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inc") PORT_CODE(KEYCODE_EQUALS)
+	PORT_BIT(0x10000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x20000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Exit") PORT_CODE(KEYCODE_ESC)
+	PORT_BIT(0x40000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 4")
+	PORT_BIT(0x80000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 8")
+
 	PORT_START("VELOCITY")
 	PORT_CONFNAME(0x07, 0x03, "Key velocity")
 	PORT_CONFSETTING(0x00, "pp")
