@@ -637,6 +637,10 @@ protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 
+	static uint8_t port_direction(uint16_t cr);
+	uint8_t port_read(int port, uint8_t dr, uint16_t cr);
+	void port_write(int port, uint8_t dr, uint16_t cr);
+
 	void sh3_internal_map(address_map &map) ATTR_COLD;
 	virtual void sh3_register_map(address_map& map) ATTR_COLD {}
 
