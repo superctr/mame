@@ -54,10 +54,10 @@
     and its panel, LEDs and value dial work; there is nothing to hear,
     because the wave mask ROMs are undumped.  The SCI's MIDI port is the
     core's to implement, and the answer its USB controller gives at
-    power-on is a stub of two bytes.  The SD-90 is still a skeleton: its boot block
-    copies its loader to the top of the SDRAM and waits there for bit 13 of
-    the tone generator's word 0x24 -- a word the XV-5080's firmware only ever
-    writes -- before it will inflate anything.
+    power-on is a stub of two bytes.  The SD-90 boots its loader out of the
+    flash into the SDRAM at 0x883de000, inflates its program and enters it,
+    and stops in the driver for its own area 6 device, polling +8 for the
+    1 that would say a command had been taken.
 
 ****************************************************************************/
 
@@ -270,7 +270,9 @@ void sd90_state::uipc_w(offs_t offset, u8 data)
 
 //-------------------------------------------------
 //  what the SD-90 has there instead: the MR3 by its driver's shape, and a
-//  mailbox that takes a count at +13 and its message from +16
+//  command port -- write the command to +8, read +8 back for 1, wait for
+//  a result code at +13 and take the reply from +16 -- which is where the
+//  machine now stops
 //-------------------------------------------------
 
 template <int Device>
