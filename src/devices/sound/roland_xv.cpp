@@ -464,8 +464,8 @@ void roland_xv_device::word_w(int word, u16 data)
 			m_scan_select = data & 7;
 		else if ((data & 0xfff0) == 0x0260)
 			m_led_select = data & 15;
-		else if ((data & 0xfff0) == 0x0200)
-			m_fifo_write = m_fifo_read = data & 15;   // 0x200+n selects the word, as 0x240+n and 0x260+n do
+		else if ((data & 0xffc0) == 0x0200)
+			m_fifo_write = m_fifo_read = data & 0x3f;   // 0x200+n selects the word, as 0x240+n and 0x260+n do
 		else
 			fifo_rewind();
 		break;
