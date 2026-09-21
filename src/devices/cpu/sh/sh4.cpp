@@ -993,14 +993,6 @@ void sh7709_base_device::device_add_mconfig(machine_config &config)
 	m_scif->write_txi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFTXI) : sh4_exception_unrequest(SH4_INTC_SCIFTXI); });
 }
 
-void sh7709_base_device::device_start()
-{
-	sh3_base_device::device_start();
-
-	m_irda->set_unscaled_clock(m_pm_clock);
-	m_scif->set_unscaled_clock(m_pm_clock);
-}
-
 
 sh4_base_device::sh4_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness)
 	: sh34_base_device(mconfig, type, tag, owner, clock, endianness, address_map_constructor(FUNC(sh4_base_device::sh4_internal_map), this))
@@ -3150,6 +3142,7 @@ void sh3_base_device::device_start()
 
 	// CPG
 	m_frqcr = 0x0102;
+	sh3_cpg_update();
 	m_wtcnt = 0;
 	m_wtcsr = 0;
 	m_stbcr = 0;

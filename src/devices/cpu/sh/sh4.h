@@ -650,6 +650,7 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 
+	virtual void sh3_cpg_update();
 	void sh3_wdt_update();
 	uint8_t sh3_wdt_count();
 	TIMER_CALLBACK_MEMBER(sh3_wdt_overflow);
@@ -1798,7 +1799,8 @@ protected:
 	sh7709_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness);
 
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
-	virtual void device_start() override ATTR_COLD;
+
+	virtual void sh3_cpg_update() override;
 
 	void irda_7709_map(address_map& map) ATTR_COLD;
 	void scif_7709_map(address_map& map) ATTR_COLD;
