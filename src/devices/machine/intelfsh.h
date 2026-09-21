@@ -351,6 +351,12 @@ public:
 	intel_e28f400b_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 };
 
+class tc58fvb321_device : public intelfsh16_device
+{
+public:
+	tc58fvb321_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+};
+
 class sharp_lh28f320bf_device : public intelfsh16_device
 {
 public:
@@ -479,6 +485,7 @@ DECLARE_DEVICE_TYPE(SST_39VF400A,            sst_39vf400a_device)
 DECLARE_DEVICE_TYPE(ATMEL_49F4096,           atmel_49f4096_device)
 DECLARE_DEVICE_TYPE(CAT28F020,               cat28f020_device)
 DECLARE_DEVICE_TYPE(TC58FVT800,              tc58fvt800_device)
+DECLARE_DEVICE_TYPE(TC58FVB321,              tc58fvb321_device)
 DECLARE_DEVICE_TYPE(WINBOND_W29C020C,        winbond_w29c020c_device)
 
 #endif // MAME_MACHINE_INTELFSH_H

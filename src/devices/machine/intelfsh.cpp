@@ -142,6 +142,7 @@ DEFINE_DEVICE_TYPE(ATMEL_49F4096,            atmel_49f4096_device,            "a
 DEFINE_DEVICE_TYPE(CAT28F020,                cat28f020_device,                "cat28f020",                "CSI CAT28F020 Flash")
 
 DEFINE_DEVICE_TYPE(TC58FVT800,               tc58fvt800_device,               "tc58fvt800",               "Toshiba TC58FVT800 Flash")
+DEFINE_DEVICE_TYPE(TC58FVB321,               tc58fvb321_device,               "tc58fvb321",               "Toshiba TC58FVB321 Flash")
 
 DEFINE_DEVICE_TYPE(WINBOND_W29C020C,         winbond_w29c020c_device,               "winbond_w29c020c",               "Winbond W29C020C Flash")
 
@@ -349,6 +350,9 @@ tms_29f040_device::tms_29f040_device(const machine_config &mconfig, const char *
 
 tc58fvt800_device::tc58fvt800_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, TC58FVT800, tag, owner, clock, 0x100000, MFG_TOSHIBA, 0x4f) { m_top_boot_sector = true; }
+
+tc58fvb321_device::tc58fvb321_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: intelfsh16_device(mconfig, TC58FVB321, tag, owner, clock, 0x400000, MFG_TOSHIBA, 0x57) { m_bot_boot_sector = true; }
 
 winbond_w29c020c_device::winbond_w29c020c_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, WINBOND_W29C020C, tag, owner, clock, 0x40000, MFG_WINBOND, 0x45) {
@@ -642,7 +646,7 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 			break;
 		case 0x90:
 			// TODO: W640GB also needs this path
-			if ( m_fast_mode && (m_maker_id == MFG_FUJITSU || (m_maker_id == MFG_ST && (m_device_id == 0x22ed || m_device_id == 0x227e))) ) // reset from fast mode (when fast mode is enabled)
+			if ( m_fast_mode && (m_maker_id == MFG_FUJITSU || m_maker_id == MFG_TOSHIBA || (m_maker_id == MFG_ST && (m_device_id == 0x22ed || m_device_id == 0x227e))) ) // reset from fast mode (when fast mode is enabled)
 				m_flash_mode = FM_FAST_RESET;
 			else // read ID
 				m_flash_mode = FM_READID;
@@ -683,7 +687,7 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 			m_flash_mode = FM_READSTATUS;
 			break;
 		case 0xa0: // fast program (fast mode must be enabled)
-			if ( m_fast_mode && (m_maker_id == MFG_FUJITSU || (m_maker_id == MFG_ST && (m_device_id == 0x22ed || m_device_id == 0x227e))) )
+			if ( m_fast_mode && (m_maker_id == MFG_FUJITSU || m_maker_id == MFG_TOSHIBA || (m_maker_id == MFG_ST && (m_device_id == 0x22ed || m_device_id == 0x227e))) )
 			{
 				m_flash_mode = FM_BYTEPROGRAM;
 			}
