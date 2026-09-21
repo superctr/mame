@@ -40366,6 +40366,10 @@ w30
 @source:roland/roland_sb55.cpp
 sb55
 
+@source:roland/roland_sd90.cpp
+sd80
+sd90
+
 @source:roland/roland_sc55.cpp
 sc55
 sc155
