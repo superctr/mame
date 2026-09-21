@@ -29,28 +29,39 @@
         IC59/62 AK4393-VF-E2        D/A
         IC68    TC9271FS            digital out
 
-    CN7 is the SR-JV80 socket and CN10 and CN11 the two SRX, which the test
-    mode calls slots A, B and C.
+    The display is an LM320191, 320 x 240 dots, backlit, driven by the
+    M66273FP out of its own 19 200-byte VRAM.  CN7 is the SR-JV80 socket
+    and CN10 and CN11 the two SRX, which the test mode calls slots A, B
+    and C.
 
     The wave mask ROMs are the XV-3080's and the XV-5080's, the same two
     Roland stock numbers (02010023 and 02010056) in all three machines, and
     the machine's own wave list and sample records -- which its firmware
     carries in the clear -- are those machines' byte for byte.
 
-    State: the boot block runs, sets the bus up, inflates the program into
-    the SDRAM and enters it.  It then spins in a loop that waits on a queue
-    an interrupt has to fill, so the next thing this wants is the interrupt
-    sources: the key scan at IC24, the tone generator, and whatever else
-    area 6 carries.
+    The interrupt inputs, from the service notes and confirmed by the
+    firmware's own vector table: IRQ0 the tone generator, IRQ2 the key
+    scan, IRQ3 the floppy controller, IRQ4 one phase of the value encoder,
+    and DREQ0/DACK0/TCLK the floppy controller's DMA.  MIDI is SCI channel
+    1, the serial EEPROM is bit-banged on port C and the encoder is read
+    on port F.
+
+    State: the machine boots, programs the tone generator and draws its
+    splash screen, then waits there.  The key scan, the serial EEPROM and
+    MIDI are not emulated, and the panel and the keyboard have no inputs.
 
 ****************************************************************************/
 
 #include "emu.h"
 
 #include "cpu/sh/sh4.h"
+#include "imagedev/floppy.h"
+#include "machine/upd765.h"
 #include "sound/roland_xv.h"
 #include "wavecard.h"
 
+#include "emupal.h"
+#include "screen.h"
 #include "speaker.h"
 
 
@@ -62,6 +73,7 @@ public:
 	fantom_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
+		, m_fdc(*this, "fdc")
 		, m_xv(*this, "xv")
 		, m_exp(*this, "expa")
 		, m_srx(*this, "exp%c", 'b')
@@ -70,33 +82,94 @@ public:
 
 	void fantom(machine_config &config) ATTR_COLD;
 
+protected:
+	virtual void machine_start() override ATTR_COLD;
+
 private:
 	void fantom_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
 
+	u8 vram_r(offs_t offset) { return m_vram[offset]; }
+	void vram_w(offs_t offset, u8 data) { m_vram[offset] = data; }
+	u8 lcdc_r(offs_t offset) { return m_lcdc[offset >> 1]; }
+	void lcdc_w(offs_t offset, u8 data) { m_lcdc[offset >> 1] = data; }
+	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void lcd_palette(palette_device &palette) const ATTR_COLD;
+
 	required_device<sh7709_device> m_maincpu;
+	required_device<n82077aa_device> m_fdc;
 	required_device<roland_xv_device> m_xv;
 	required_device<srjv80_slot_device> m_exp;
 	required_device_array<srx_slot_device, 2> m_srx;
+
+	static constexpr int LCD_WIDTH = 320, LCD_HEIGHT = 240;
+	static constexpr int VRAM_BYTES = LCD_WIDTH * LCD_HEIGHT / 4;
+
+	std::unique_ptr<u8[]> m_vram;
+	u8 m_lcdc[0x50]{};
 };
 
 
+void fantom_state::machine_start()
+{
+	m_vram = make_unique_clear<u8[]>(VRAM_BYTES);
+	save_pointer(NAME(m_vram), VRAM_BYTES);
+	save_item(NAME(m_lcdc));
+}
+
+
+void fantom_state::lcd_palette(palette_device &palette) const
+{
+	for (int i = 0; i < 4; i++)     // pen 0 dark, pen 3 fully lit
+		palette.set_pen_color(i, rgb_t(0xff * i / 3, 0xff * i / 3, 0xff * i / 3));
+}
+
+
 //-------------------------------------------------
-//  the CPU's own bus.  The boot block sets the bus controller up and the
-//  areas it declares are the map: area 0 the flash, area 3 the SDRAM,
-//  area 4 the XV, area 5 the floppy controller and area 6 the panel and
-//  the display.  Only the first two are settled; the rest are where the
-//  firmware's own literals reach, and what sits at each address in areas
-//  4 and 6 is unread.
+//  the display.  The M66273FP's own VRAM is 19 200 bytes and every byte of
+//  it is on the bus; the firmware sets the controller to single scan, four
+//  grey levels and eighty characters a line, which is a 320 x 240 panel
+//  with two bits a pixel, the leftmost pixel in the top bits.  R1's REV bit
+//  is set, so the largest value is the background.  Nothing else the
+//  controller does -- the scroll registers, the grey-scale pattern table it
+//  loads into R17 to R80 -- is emulated.
+//-------------------------------------------------
+
+u32 fantom_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+{
+	const bool on = BIT(m_lcdc[0], 0);      // R1 bit 0, LCDE
+	const int rev = BIT(m_lcdc[0], 1) ? 3 : 0;  // R1 bit 1, REV
+
+	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
+	{
+		u16 *dest = &bitmap.pix(y, cliprect.left());
+		for (int x = cliprect.left(); x <= cliprect.right(); x++)
+		{
+			const u8 byte = m_vram[y * (LCD_WIDTH / 4) + (x >> 2)];
+			const int level = (byte >> (6 - 2 * (x & 3))) & 3;
+			*dest++ = on ? (level ^ rev) : 0;
+		}
+	}
+	return 0;
+}
+
+
+//-------------------------------------------------
+//  the CPU's own bus.  Each chip select carries one part, and the service
+//  notes name them: CS0 the flash, CS3 the SDRAM, CS4 the key scan, CS5
+//  the floppy controller, CS6 the tone generator and the display, which
+//  two gates split by A15.
 //-------------------------------------------------
 
 void fantom_state::fantom_map(address_map &map)
 {
 	map(0x00000000, 0x003fffff).rom().region("progrom", 0);
 	map(0x0c000000, 0x0cffffff).ram();
-	map(0x10000000, 0x100001ff).rw(m_xv, FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x14000000, 0x14000007).noprw();    // the FDC's eight byte registers
-	map(0x18000000, 0x1800ffff).noprw();    // the panel, and the LCD controller at 0xd000
+	map(0x10000000, 0x10000007).noprw();    // the key scan: two words, A1 its only address line
+	map(0x14000000, 0x14000007).m(m_fdc, FUNC(n82077aa_device::map));
+	map(0x18000000, 0x180001ff).mirror(0x7e00).rw(m_xv, FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	map(0x18008000, 0x1800caff).rw(FUNC(fantom_state::vram_r), FUNC(fantom_state::vram_w));
+	map(0x1800d000, 0x1800d09f).rw(FUNC(fantom_state::lcdc_r), FUNC(fantom_state::lcdc_w));
 }
 
 
@@ -121,6 +194,19 @@ void fantom_state::fantom(machine_config &config)
 	SH7709(config, m_maincpu, 16.5_MHz_XTAL * 8, ENDIANNESS_BIG);   // HD6417709AF133
 	m_maincpu->set_addrmap(AS_PROGRAM, &fantom_state::fantom_map);
 
+	N82077AA(config, m_fdc, 24_MHz_XTAL, n82077aa_device::mode_t::PS2);   // FDC37C78
+	m_fdc->intrq_wr_callback().set_inputline(m_maincpu, 3);               // IRQ3
+	FLOPPY_CONNECTOR(config, "fdc:0", "35hd", FLOPPY_35_HD, true, floppy_image_device::default_pc_floppy_formats);
+
+	// the LM320191 panel on the M66273FP's four-bit output
+	screen_device &screen(SCREEN(config, "screen").set_lcd());
+	screen.set_refresh_hz(60);
+	screen.set_size(LCD_WIDTH, LCD_HEIGHT);
+	screen.set_visarea_full();
+	screen.set_screen_update(FUNC(fantom_state::screen_update));
+	screen.set_palette("palette");
+	PALETTE(config, "palette", FUNC(fantom_state::lcd_palette), 4);
+
 	SRJV80_SLOT(config, m_exp, 0);      // CN7, slot A
 	for (auto &srx : m_srx)             // CN10 and CN11, slots B and C
 		SRX_SLOT(config, srx, 0);
@@ -131,6 +217,7 @@ void fantom_state::fantom(machine_config &config)
 
 	ROLAND_XV(config, m_xv, 16.9344_MHz_XTAL);
 	m_xv->set_addrmap(roland_xv_device::AS_WAVE, &fantom_state::xv_wave_map);
+	m_xv->int_callback().set_inputline(m_maincpu, 0);   // IRQ0, the falling edge
 	m_xv->add_route(0, "outa", 1.0, 0);
 	m_xv->add_route(1, "outa", 1.0, 1);
 	m_xv->add_route(2, "outb", 1.0, 0);
