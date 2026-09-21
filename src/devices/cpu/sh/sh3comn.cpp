@@ -1293,136 +1293,149 @@ void sh3_base_device::dadcr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 }
 
 // PORT 7709
+
+// each pin of a port control register: 00 other function, 01 output, 10 input
+// with pull-up, 11 input.  The I/O space sees the output pins' data in the
+// low byte with the control register above it, and supplies the input pins.
+uint8_t sh3_base_device::port_direction(uint16_t cr)
+{
+	uint8_t dir = 0;
+	for (int pin = 0; pin < 8; pin++)
+		if (((cr >> (2 * pin)) & 3) == 1)
+			dir |= 1 << pin;
+	return dir;
+}
+
+uint8_t sh3_base_device::port_read(int port, uint8_t dr, uint16_t cr)
+{
+	const uint8_t dir = port_direction(cr);
+	return (m_io->read_qword(port) & ~dir) | (dr & dir);
+}
+
+void sh3_base_device::port_write(int port, uint8_t dr, uint16_t cr)
+{
+	m_io->write_qword(port, (dr & port_direction(cr)) | (uint64_t(cr) << 16));
+}
+
 uint16_t sh3_base_device::pacr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PACR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pacr);
 	return m_pacr;
 }
 
 void sh3_base_device::pacr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pacr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PACR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_A, m_padr, m_pacr);
 }
 
 uint16_t sh3_base_device::pbcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PBCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pbcr);
 	return m_pbcr;
 }
 
 void sh3_base_device::pbcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pbcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PBCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_B, m_pbdr, m_pbcr);
 }
 
 uint16_t sh3_base_device::pccr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PCCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pccr);
 	return m_pccr;
 }
 
 void sh3_base_device::pccr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pccr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PCCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_C, m_pcdr, m_pccr);
 }
 
 uint16_t sh3_base_device::pdcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PDCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pdcr);
 	return m_pdcr;
 }
 
 void sh3_base_device::pdcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pdcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PDCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_D, m_pddr, m_pdcr);
 }
 
 uint16_t sh3_base_device::pecr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PECR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pecr);
 	return m_pecr;
 }
 
 void sh3_base_device::pecr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pecr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PECR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_E, m_pedr, m_pecr);
 }
 
 uint16_t sh3_base_device::pfcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PFCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pfcr);
 	return m_pfcr;
 }
 
 void sh3_base_device::pfcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pfcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PFCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_F, m_pfdr, m_pfcr);
 }
 
 uint16_t sh3_base_device::pgcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PGCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pgcr);
 	return m_pgcr;
 }
 
 void sh3_base_device::pgcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pgcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PGCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_G, m_pgdr, m_pgcr);
 }
 
 uint16_t sh3_base_device::phcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PHCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_phcr);
 	return m_phcr;
 }
 
 void sh3_base_device::phcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_phcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PHCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_H, m_phdr, m_phcr);
 }
 
 uint16_t sh3_base_device::pjcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PJCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pjcr);
 	return m_pjcr;
 }
 
 void sh3_base_device::pjcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pjcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PJCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_J, m_pjdr, m_pjcr);
 }
 
 uint16_t sh3_base_device::pkcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PKCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_pkcr);
 	return m_pkcr;
 }
 
 void sh3_base_device::pkcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pkcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PKCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_K, m_pkdr, m_pkcr);
 }
 
 uint16_t sh3_base_device::plcr_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): PORT unmapped internal read mask %04x (PLCR) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_plcr);
 	return m_plcr;
 }
 
 void sh3_base_device::plcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_plcr);
-	logerror("'%s' (%08x): PORT unmapped internal write %04x & %04x (PLCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	port_write(SH3_PORT_L, m_pldr, m_plcr);
 }
 
 uint16_t sh3_base_device::scpcr_r(offs_t offset, uint16_t mem_mask)
@@ -1439,145 +1452,123 @@ void sh3_base_device::scpcr_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 
 uint8_t sh3_base_device::padr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PADR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_padr);
-	return m_io->read_qword(SH3_PORT_A);
+	return port_read(SH3_PORT_A, m_padr, m_pacr);
 }
 
 void sh3_base_device::padr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_padr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PADR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_A, data);
+	port_write(SH3_PORT_A, m_padr, m_pacr);
 }
 
 uint8_t sh3_base_device::pbdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PBDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_padr);
-	return m_io->read_qword(SH3_PORT_B);
+	return port_read(SH3_PORT_B, m_pbdr, m_pbcr);
 }
 
 void sh3_base_device::pbdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pbdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PBDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_B, data);
+	port_write(SH3_PORT_B, m_pbdr, m_pbcr);
 }
 
 uint8_t sh3_base_device::pcdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PCDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pcdr);
-	return m_io->read_qword(SH3_PORT_C);
+	return port_read(SH3_PORT_C, m_pcdr, m_pccr);
 }
 
 void sh3_base_device::pcdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pcdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PCDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_C, data);
+	port_write(SH3_PORT_C, m_pcdr, m_pccr);
 }
 
 uint8_t sh3_base_device::pddr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PDDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pddr);
-	return m_io->read_qword(SH3_PORT_D);
+	return port_read(SH3_PORT_D, m_pddr, m_pdcr);
 }
 
 void sh3_base_device::pddr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pddr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PDDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_D, data);
+	port_write(SH3_PORT_D, m_pddr, m_pdcr);
 }
 
 uint8_t sh3_base_device::pedr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PEDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pedr);
-	return m_io->read_qword(SH3_PORT_E);
+	return port_read(SH3_PORT_E, m_pedr, m_pecr);
 }
 
 void sh3_base_device::pedr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pedr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PEDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_E, data);
+	port_write(SH3_PORT_E, m_pedr, m_pecr);
 }
 
 uint8_t sh3_base_device::pfdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PFDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pfdr);
-	return m_io->read_qword(SH3_PORT_F);
+	return port_read(SH3_PORT_F, m_pfdr, m_pfcr);
 }
 
 void sh3_base_device::pfdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pfdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PFDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_F, data);
+	port_write(SH3_PORT_F, m_pfdr, m_pfcr);
 }
 
 uint8_t sh3_base_device::pgdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PGDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pgdr);
-	return m_io->read_qword(SH3_PORT_G);
+	return port_read(SH3_PORT_G, m_pgdr, m_pgcr);
 }
 
 void sh3_base_device::pgdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pgdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PGDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_G, data);
+	port_write(SH3_PORT_G, m_pgdr, m_pgcr);
 }
 
 uint8_t sh3_base_device::phdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PHDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_phdr);
-	return m_io->read_qword(SH3_PORT_H);
+	return port_read(SH3_PORT_H, m_phdr, m_phcr);
 }
 
 void sh3_base_device::phdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_phdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PHDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_H, data);
+	port_write(SH3_PORT_H, m_phdr, m_phcr);
 }
 
 uint8_t sh3_base_device::pjdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PJDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pjdr);
-	return m_io->read_qword(SH3_PORT_J);
+	return port_read(SH3_PORT_J, m_pjdr, m_pjcr);
 }
 
 void sh3_base_device::pjdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pjdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PJDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_J, data);
+	port_write(SH3_PORT_J, m_pjdr, m_pjcr);
 }
 
 uint8_t sh3_base_device::pkdr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PKDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pkdr);
-	return m_io->read_qword(SH3_PORT_K);
+	return port_read(SH3_PORT_K, m_pkdr, m_pkcr);
 }
 
 void sh3_base_device::pkdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pkdr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PKDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_K, data);
+	port_write(SH3_PORT_K, m_pkdr, m_pkcr);
 }
 
 uint8_t sh3_base_device::pldr_r(offs_t offset, uint8_t mem_mask)
 {
-	//logerror("'%s' (%08x): PORT unmapped internal read mask %02x (PLDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_pldr);
-	return m_io->read_qword(SH3_PORT_L);
+	return port_read(SH3_PORT_L, m_pldr, m_plcr);
 }
 
 void sh3_base_device::pldr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
 	COMBINE_DATA(&m_pldr);
-	//logerror("'%s' (%08x): PORT unmapped internal write %02x & %02x (PLDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	m_io->write_qword(SH3_PORT_L, data);
+	port_write(SH3_PORT_L, m_pldr, m_plcr);
 }
 
 uint8_t sh3_base_device::scpdr_r(offs_t offset, uint8_t mem_mask)
