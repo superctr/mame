@@ -36,43 +36,10 @@
     two zlib containers into the SDRAM and enters it.  The SD-80's dump is
     the flash with the two bytes of every word exchanged.
 
-    The bus, as the boot block declares it and the program's own literals
-    reach it: area 0 the flash, areas 2 and 3 synchronous DRAM with the 4 MB
-    on area 2, area 5 sixteen bits wide with one XV at 0x14000000 and the
-    other at 0x15000000, and area 6 eight bits wide.  Nothing reaches area 4.
-    Areas 5 and 6 are declared PCMCIA space, which is how the boards' chip
-    selects are wired rather than a card anywhere.
-
-    Area 6 is the USB block, and the SD-80's schematic names it: the chip
-    select is XCSIPC, IC13A (a TC74VHCT139A) decodes it into XS0 and XS1,
-    and those are the S0 and S1 pins of IC17's bus interface unit, with the
-    CPU's A1 at its A0, XRD and XWR at its R and W, and D0-D7 at its DQ0-DQ7
-    through the level converters.  So the two windows are the controller's
-    two mailboxes -- UIPC(0) outbound at 0x18000000, UIPC(1) inbound at
-    0x19000000 -- each with its data at +0 and its status at +2, and the
-    controller's IBF and OBF come back as IRQ2 and IRQ3.  The firmware waits
-    for UIPC(0)'s bit 1 to fall before it writes and for UIPC(1)'s bit 0 to
-    rise before it reads, and a message is four bytes, the first to +2 and
-    the other three to +0: the same part, the same registers, the same bits
-    and the same interrupt numbering as the SC-8850's and SC-8820's UIPC.
-
-    The SD-90's area 6 is not the same.  Its 0x18000000 answers code the
-    SD-80's firmware does not carry at all -- a 32-bit address at +0, a
-    16-bit command at +4, a busy flag at +30 -- which is the MR3, the one
-    chip that machine has and the SD-80 has not, and its 0x18800000 is a
-    mailbox on IRQ2 that takes a count at +13 and the message from +16.
-    Without that machine's service notes both are readings, not facts.
-
     Neither the display nor the panel is on the CPU's bus: the SD-80's
     20 x 2 LCD hangs off the first tone generator's own pins, LP0-LP7 with
     RS and LE (IC19 pins 48-55, 44 and 43), beside the panel scanner's
     SCAN, XSW and LED lines, so the chip carries the front panel whole.
-    A display byte is a one-word command to that chip under mode 0 -- word
-    0x09 = 0x0200, word 0x08 = (RS << 8) | byte, word 0x36 = 0x8100 -- and
-    both the boot block and the program drive an ordinary HD44780 sequence
-    through it, timing every byte themselves.  The splash is painted before
-    the machine stalls; sound/roland_xv does not present the port yet, so
-    there is nothing here to show it on.
 
     The interrupts, read out of the firmware's own dispatch table -- it
     indexes on INTEVT2 and every entry here has a handler of its own:
@@ -84,14 +51,8 @@
         SD-90   TMU0, TMU1, the watchdog, IRQ0 and IRQ1 the two XVs, IRQ2
                 its 0x18800000 mailbox, PINT0-7, the IrDA channel and the SCIF
 
-    So both machines' MIDI is two channels of the CPU's own: the SD-80 puts
-    one on the SCI at 0xfffffe80, which this core carries as registers only,
-    and the other on the SCIF; the SD-90 uses the IrDA channel and the SCIF.
-
-    The wave mask ROMs are a set of the machines' own -- not the XV-3080 and
-    XV-5080 set the Fantom shares, which the two firmwares' own wave list and
-    sample records rule out -- and both are undumped, so there is nothing for
-    the tone generators to play.
+    So both machines' MIDI is two channels of the CPU's own: the SD-80's
+    SCI and SCIF, the SD-90's IrDA channel and SCIF.
 
     State: **the SD-80 boots, shows its display and takes MIDI.**  It runs
     its boot block, inflates the program into the SDRAM at 0x08001000,
@@ -179,7 +140,11 @@ void sd90_state::lcd_palette(palette_device &palette) const
 
 
 //-------------------------------------------------
-//  the USB controller's mailboxes: data at +0, status at +2, bit 1 of
+//  the USB controller's mailboxes.  IC13A, a TC74VHCT139A, decodes the
+//  chip select XCSIPC into XS0 and XS1, which are the S0 and S1 pins of
+//  IC17's bus interface unit, with the CPU's A1 at its A0 and XRD and XWR
+//  at its R and W; its IBF and OBF come back as IRQ2 and IRQ3.  So each
+//  window is one channel: data at +0, status at +2, bit 1 of
 //  UIPC(0) set while the byte just written is still there and bit 0 of
 //  UIPC(1) set while one waits, with bits 4-7 of the status the byte's
 //  tag -- the same channels, bits and tags as the SC-8850's.
@@ -246,17 +211,20 @@ void sd90_state::sd90_area6_w(offs_t offset, u8 data)
 
 
 //-------------------------------------------------
-//  the CPU's own bus, by area: the flash, the SDRAM, the two tone
-//  generators and what area 6 carries
+//  the CPU's own bus, as the boot block declares it and the program's own
+//  literals reach it.  Areas 5 and 6 are declared PCMCIA space, which is
+//  how the boards' chip selects are wired rather than a card anywhere.
 //-------------------------------------------------
 
 void sd90_state::sd80_map(address_map &map)
 {
-	map(0x00000000, 0x001fffff).rom().region("progrom", 0);
-	map(0x08000000, 0x083fffff).ram();
-	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::uipc_r<0>), FUNC(sd90_state::uipc_w<0>));   // XS0
+	map(0x00000000, 0x001fffff).rom().region("progrom", 0);         // area 0, IC3
+	map(0x08000000, 0x083fffff).ram();                              // area 2, IC4 and IC6
+//  map(0x0c000000, 0x0fffffff)                                     // area 3, declared SDRAM and unpopulated
+//  map(0x10000000, 0x13ffffff)                                     // area 4, which nothing reaches
+	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // area 5, IC19
+	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC27
+	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::uipc_r<0>), FUNC(sd90_state::uipc_w<0>));   // area 6, XS0
 	map(0x19000000, 0x19000003).rw(FUNC(sd90_state::uipc_r<1>), FUNC(sd90_state::uipc_w<1>));   // XS1
 }
 
@@ -266,8 +234,8 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x1800003f).rw(FUNC(sd90_state::sd90_area6_r<0>), FUNC(sd90_state::sd90_area6_w<0>));
-	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));
+	map(0x18000000, 0x1800003f).rw(FUNC(sd90_state::sd90_area6_r<0>), FUNC(sd90_state::sd90_area6_w<0>));    // the MR3
+	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));    // its mailbox
 }
 
 
@@ -329,9 +297,8 @@ void sd90_state::sd80(machine_config &config)
 	m_lcd->set_lcd_size(2, 20);
 	m_xv[0]->lcd_callback().set(m_lcd, FUNC(hd44780_device::write));
 
-	// the SCIF is one of the two MIDI ports and takes and sends notes;
-	// which jack it is has not been read, and the other is the SCI at
-	// 0xfffffe80, which this core carries as registers only
+	// which of the two jacks the SCIF is has not been read; the other is
+	// the SCI at 0xfffffe80, which this core carries as registers only
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu->scif(), FUNC(sh3_scif_device::rxd_w));
 	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
