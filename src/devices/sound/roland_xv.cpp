@@ -367,8 +367,10 @@ u16 roland_xv_device::word_peek(int word)
 		return m_fifo[m_fifo_read];
 
 	case IRQ_MASK:
-	case 0x24:      // the SD-90's boot loader takes reason 13 here, not at 0x0f
 		return m_irq_pending;
+
+	case 0x24:      // the SD-90's boot loader wants to read bit 13 here
+		return 0xffff;
 
 	case SWITCH_INDEX:
 		return m_switch_index;
@@ -478,7 +480,6 @@ void roland_xv_device::word_w(int word, u16 data)
 		if ((m_regs[MODE] & 0xffc0) == 0)
 			m_lcd_callback(BIT(m_fifo[0], 8), m_fifo[0] & 0xff);
 		fifo_rewind();
-		raise_irq(IRQ_COMMAND, 0);
 		break;
 
 	case XFER_COMMAND:
