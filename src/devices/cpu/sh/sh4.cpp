@@ -953,6 +953,7 @@ sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type
 	: sh34_base_device(mconfig, type, tag, owner, clock, endianness, address_map_constructor(FUNC(sh3_base_device::sh3_internal_map), this))
 	, m_irda(*this, "irda")
 	, m_scif(*this, "scif")
+	, m_wdt_timer(nullptr)
 {
 	m_cpu_type = CPU_TYPE_SH3;
 	m_am = SH34_AM;
@@ -2708,6 +2709,8 @@ void sh3_base_device::device_reset()
 {
 	sh34_base_device::device_reset();
 
+	m_wdt_timer->adjust(attotime::never);
+
 	// INTC
 	m_icr0 &= 0x8000;
 	m_iprb = 0;
@@ -3114,6 +3117,7 @@ void sh3_base_device::device_start()
 
 	m_irda->set_unscaled_clock(m_pm_clock);
 	m_scif->set_unscaled_clock(m_pm_clock);
+	m_wdt_timer = timer_alloc(FUNC(sh3_base_device::sh3_wdt_overflow), this);
 
 	// UBC
 	m_bara = 0;

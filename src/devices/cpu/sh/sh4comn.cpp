@@ -235,9 +235,9 @@ static const int sh3_intevt2_exception_codes[] =
 	0x8A0, /* SH4_INTC_IRDARXI */
 	0x8C0, /* SH4_INTC_IRDABRI */
 	0x8E0, /* SH4_INTC_IRDATXI */
-	-1, /* SH4_INTC_ITI */
-	-1, /* SH4_INTC_RCMI */
-	-1 /* SH4_INTC_ROVI */
+	0x560, /* SH4_INTC_ITI */
+	0x580, /* SH4_INTC_RCMI */
+	0x5A0 /* SH4_INTC_ROVI */
 };
 
 void sh34_base_device::sh4_swap_fp_registers()

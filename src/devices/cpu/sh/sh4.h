@@ -650,6 +650,11 @@ protected:
 	required_device<sh3_scif_device> m_irda;
 	required_device<sh3_scif_device> m_scif;
 
+	void sh3_wdt_update();
+	uint8_t sh3_wdt_count();
+	TIMER_CALLBACK_MEMBER(sh3_wdt_overflow);
+	emu_timer *m_wdt_timer;
+
 	static uint8_t port_direction(uint16_t cr);
 	uint8_t port_read(int port, uint8_t dr, uint16_t cr);
 	void port_write(int port, uint8_t dr, uint16_t cr);
