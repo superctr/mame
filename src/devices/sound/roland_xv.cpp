@@ -476,11 +476,12 @@ void roland_xv_device::word_w(int word, u16 data)
 		if (!BIT(data, 15))
 			break;
 		LOGMASKED(LOG_XFER, "%s: command %04x (strobe %04x)\n", machine().describe_context(), m_fifo[0], data);
-		// under mode 0 the word is a byte for the display on the chip's own
-		// LCD pins, its bit 8 the RS line; the modes the transfer engine and
-		// the streams set take it elsewhere
+		// under mode 0 each word is a byte for the display on the chip's own
+		// LCD pins, its bit 8 the RS line, and bits 13:8 of the strobe say how
+		// many; the modes the transfer engine and the streams set take it elsewhere
 		if ((m_regs[MODE] & 0xffc0) == 0)
-			m_lcd_callback(BIT(m_fifo[0], 8), m_fifo[0] & 0xff);
+			for (int i = 0, count = std::max(1, (data >> 8) & 0x3f); i < count; i++)
+				m_lcd_callback(BIT(m_fifo[i], 8), m_fifo[i] & 0xff);
 		fifo_rewind();
 		break;
 
