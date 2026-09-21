@@ -36,11 +36,6 @@
     two zlib containers into the SDRAM and enters it.  The SD-80's dump is
     the flash with the two bytes of every word exchanged.
 
-    Neither the display nor the panel is on the CPU's bus: the SD-80's
-    20 x 2 LCD hangs off the first tone generator's own pins, LP0-LP7 with
-    RS and LE (IC19 pins 48-55, 44 and 43), beside the panel scanner's
-    SCAN, XSW and LED lines, so the chip carries the front panel whole.
-
     The interrupts, read out of the firmware's own dispatch table -- it
     indexes on INTEVT2 and every entry here has a handler of its own:
 
@@ -54,13 +49,12 @@
     So both machines' MIDI is two channels of the CPU's own: the SD-80's
     SCI and SCIF, the SD-90's IrDA channel and SCIF.
 
-    State: **the SD-80 boots, shows its display and takes MIDI.**  It runs
-    its boot block, inflates the program into the SDRAM at 0x08001000,
-    enters it and reaches its play screen, and a note on the SCIF's MIDI in
-    drives the voice engine; there is nothing to hear, because the wave mask
-    ROMs are undumped.  Its panel is not wired, the SCI's MIDI port is the
-    core's to implement, and the answer its USB controller gives at power-on
-    is a stub of two bytes.  The SD-90 is still a skeleton: its boot block
+    State: **the SD-80 runs.**  It boots, inflates the program into the
+    SDRAM at 0x08001000, reaches its play screen, takes MIDI on the SCIF,
+    and its panel, LEDs and value dial work; there is nothing to hear,
+    because the wave mask ROMs are undumped.  The SCI's MIDI port is the
+    core's to implement, and the answer its USB controller gives at
+    power-on is a stub of two bytes.  The SD-90 is still a skeleton: its boot block
     copies its loader to the top of the SDRAM and waits there for bit 13 of
     the tone generator's word 0x24 -- a word the XV-5080's firmware only ever
     writes -- before it will inflate anything.
@@ -72,6 +66,7 @@
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
 #include "cpu/sh/sh3_scif.h"
+#include "cpu/sh/sh3comn.h"
 #include "cpu/sh/sh4.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
@@ -96,6 +91,8 @@ public:
 		, m_maincpu(*this, "maincpu")
 		, m_xv(*this, "xv%u", 0U)
 		, m_lcd(*this, "lcd")
+		, m_dial(*this, "DIAL")
+		, m_leds(*this, "led_%u", 0U)
 	{
 	}
 
@@ -103,13 +100,14 @@ public:
 	void sd90(machine_config &config) ATTR_COLD;
 
 protected:
-	virtual void machine_start() override ATTR_COLD { save_item(NAME(m_uipc_step)); }
+	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD { m_uipc_step = 0; }
 
 	void common(machine_config &config) ATTR_COLD;
 
 	void sd80_map(address_map &map) ATTR_COLD;
 	void sd90_map(address_map &map) ATTR_COLD;
+	void sd80_io_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
 
 	template <int Channel> u8 uipc_r(offs_t offset);
@@ -117,14 +115,40 @@ protected:
 	template <int Device> u8 sd90_area6_r(offs_t offset);
 	template <int Device> void sd90_area6_w(offs_t offset, u8 data);
 
+	void led_w(offs_t offset, u8 data);
+	u64 scp_r();
+	bool enca() const { return m_encoder_phase != 1 && m_encoder_phase != 2; }
+	TIMER_CALLBACK_MEMBER(step_encoder);
+
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
+	enum { LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM, LEDS };
+
 	u32 m_uipc_step = 0;
+	u8 m_dial_last = 0;
+	s8 m_dial_pending = 0;
+	u8 m_encoder_phase = 0;
+
+	emu_timer *m_encoder_timer = nullptr;
 
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
 	optional_device<hd44780_device> m_lcd;
+	optional_ioport m_dial;
+	output_finder<LEDS> m_leds;
 };
+
+
+void sd90_state::machine_start()
+{
+	m_encoder_timer = timer_alloc(FUNC(sd90_state::step_encoder), this);
+	m_encoder_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
+
+	save_item(NAME(m_uipc_step));
+	save_item(NAME(m_dial_last));
+	save_item(NAME(m_dial_pending));
+	save_item(NAME(m_encoder_phase));
+}
 
 
 //-------------------------------------------------
@@ -136,6 +160,60 @@ void sd90_state::lcd_palette(palette_device &palette) const
 {
 	palette.set_pen_color(0, rgb_t(0x20, 0x50, 0xd0));  // backlight
 	palette.set_pen_color(1, rgb_t(0xe8, 0xf0, 0xff));  // dot on
+}
+
+
+//-------------------------------------------------
+//  the front panel, which is on the tone generator: ten buttons and nine
+//  LEDs, three strobes each way, in the chip's own numbering
+//-------------------------------------------------
+
+void sd90_state::led_w(offs_t offset, u8 data)
+{
+	static const int led[3][3] = {
+		{ LED_GS,     LED_MIDI,    LED_SYSTEM },
+		{ LED_NATIVE, LED_USB,     LED_EFFECTS },
+		{ LED_GM2,    LED_PREVIEW, LED_INST_DRUM }
+	};
+	const int strobe = offset >> 3, line = offset & 7;
+	if (strobe < 3 && line < 3)
+		m_leds[led[strobe][line]] = data;
+}
+
+
+//-------------------------------------------------
+//  the value encoder, which is not: XENCA on SCPT5 is IRQ5 and the
+//  handler reads XENCB back on SCPDR, so a detent is a quadrature cycle
+//-------------------------------------------------
+
+u64 sd90_state::scp_r()
+{
+	const bool encb = m_encoder_phase < 2;
+	return 0xcf | (enca() << 5) | (encb << 4);   // SCPT3, XENCSW, is not wired
+}
+
+TIMER_CALLBACK_MEMBER(sd90_state::step_encoder)
+{
+	if (!m_dial)
+		return;
+
+	const u8 now = m_dial->read();
+	m_dial_pending += s8(now - m_dial_last);
+	m_dial_last = now;
+
+	if (!m_dial_pending)
+		return;
+
+	const int step = m_dial_pending > 0 ? 1 : -1;
+	const bool was = enca();
+	m_encoder_phase = (m_encoder_phase + step) & 3;
+	if (!m_encoder_phase)
+		m_dial_pending -= step;
+
+	// one edge, one interrupt: the handler takes XENCB for the direction
+	// and clears its own bit in IRR0
+	if (was != enca())
+		m_maincpu->set_input_line(5, enca() ? CLEAR_LINE : ASSERT_LINE);
 }
 
 
@@ -239,6 +317,12 @@ void sd90_state::sd90_map(address_map &map)
 }
 
 
+void sd90_state::sd80_io_map(address_map &map)
+{
+	map(SH3_PORT_SC, SH3_PORT_SC + 7).r(FUNC(sd90_state::scp_r));
+}
+
+
 //-------------------------------------------------
 //  the wave memory as both chips see it: the two mask ROMs at cell 0, two
 //  bytes a cell, and no expansion socket on either machine
@@ -297,6 +381,10 @@ void sd90_state::sd80(machine_config &config)
 	m_lcd->set_lcd_size(2, 20);
 	m_xv[0]->lcd_callback().set(m_lcd, FUNC(hd44780_device::write));
 
+	m_maincpu->set_addrmap(AS_IO, &sd90_state::sd80_io_map);
+	m_xv[0]->switch_callback().set_ioport("PANEL");
+	m_xv[0]->led_callback().set(FUNC(sd90_state::led_w));
+
 	// which of the two jacks the SCIF is has not been read; the other is
 	// the SCI at 0xfffffe80, which this core carries as registers only
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
@@ -323,15 +411,30 @@ void sd90_state::sd90(machine_config &config)
 }
 
 
+static INPUT_PORTS_START(sd80)
+	PORT_START("PANEL")   // strobe times eight plus line, as the chip numbers them
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inst/Drum") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part Down") PORT_CODE(KEYCODE_OPENBRACE)
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part Up") PORT_CODE(KEYCODE_CLOSEBRACE)
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("System") PORT_CODE(KEYCODE_S)
+
+	PORT_START("DIAL")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
+INPUT_PORTS_END
+
+
 static INPUT_PORTS_START(sd90)
 INPUT_PORTS_END
 
 
 //-------------------------------------------------
-//  ROM definitions.  Neither wave ROM is dumped, and the descrambled
-//  XV-3080/XV-5080 set is not theirs to stand in with: no sample record of
-//  these machines' 2226 is one of that set's 3111, and only 77 of their 589
-//  wave names appear in its 1083.
+//  ROM definitions.  Neither wave ROM is dumped.
 //-------------------------------------------------
 
 #define ROM_WAVEROM \
@@ -363,4 +466,4 @@ ROM_END
 
 //    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY   FULLNAME  FLAGS
 SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, empty_init, "Roland", "SD-90 Studio Canvas", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-SYST( 2002, sd80, 0,      0,      sd80,    sd90,  sd90_state, empty_init, "Roland", "SD-80 Studio Canvas", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, empty_init, "Roland", "SD-80 Studio Canvas", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
