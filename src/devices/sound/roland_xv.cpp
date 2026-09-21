@@ -367,7 +367,7 @@ u16 roland_xv_device::word_peek(int word)
 		return m_fifo[m_fifo_read];
 
 	case IRQ_MASK:
-	case 0x24:      // the SD-90's boot loader takes the pending reasons here
+	case 0x24:      // the SD-90's boot loader takes reason 13 here, not at 0x0f
 		return m_irq_pending;
 
 	case SWITCH_INDEX:
