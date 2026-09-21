@@ -56,10 +56,10 @@
     core's to implement, and the answer its USB controller gives at
     power-on is a stub of two bytes.  The SD-90 boots its loader out of the
     flash into the SDRAM at 0x883de000, gets past the word its loader polls
-    after each of the commands it sends the tone generator, inflates its
-    program and enters it,
-    and stops in the driver for its own area 6 device, polling +8 for the
-    1 that would say a command had been taken.
+    after each of the commands it sends the tone generator, paints the
+    figure that loader draws on its graphic panel, inflates its program and
+    enters it, and stops in the driver for its own area 6 device, polling
+    +8 for the 1 that would say a command had been taken.
 
 ****************************************************************************/
 
@@ -72,6 +72,7 @@
 #include "cpu/sh/sh4.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
+#include "video/st7565.h"
 
 #include "emupal.h"
 #include "screen.h"
@@ -93,6 +94,7 @@ public:
 		, m_maincpu(*this, "maincpu")
 		, m_xv(*this, "xv%u", 0U)
 		, m_lcd(*this, "lcd")
+		, m_glcd(*this, "glcd")
 		, m_dial(*this, "DIAL")
 		, m_leds(*this, "led_%u", 0U)
 	{
@@ -136,6 +138,7 @@ protected:
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
 	optional_device<hd44780_device> m_lcd;
+	optional_device<st7565_device> m_glcd;
 	optional_ioport m_dial;
 	output_finder<LEDS> m_leds;
 };
@@ -401,6 +404,22 @@ void sd90_state::sd90(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd90_map);
+
+	// a graphic panel on the same LCD pins the SD-80 drives its character
+	// module from; its columns run from SEG131 down, which is what the boot
+	// loader's ADC reverse is for, and its contrast is the CPU's D/A again
+	screen_device &screen(SCREEN(config, "screen"));
+	screen.set_lcd();
+	screen.set_refresh_hz(60);
+	screen.set_screen_update(m_glcd, FUNC(st7565_device::screen_update));
+	screen.set_size(128, 64);
+	screen.set_visarea_full();
+	screen.set_palette("palette");
+	PALETTE(config, "palette", FUNC(sd90_state::lcd_palette), 2);
+
+	ST7565(config, m_glcd, 0);
+	m_glcd->set_panel(128, 64, 131, -1);
+	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
 
 	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
