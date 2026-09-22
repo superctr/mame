@@ -5,6 +5,11 @@
 
 #pragma once
 
+#include <memory>
+#include <vector>
+
+class roland_xv_dsp_recompiler;
+
 class roland_xv_device : public device_t, public device_memory_interface, public device_sound_interface
 {
 public:
@@ -112,6 +117,73 @@ public:
 	// the multiplier's operand, W0 bits 3:1
 	enum multiplier_source { SOURCE_R = 0, SOURCE_S = 1, SOURCE_M = 2, SOURCE_C = 3, SOURCE_A = 4, SOURCE_B = 5, SOURCE_P = 6, SOURCE_UNKNOWN = 7 };
 
+	// what the rows read and write, in one block near the code when there is a recompiler
+	struct dsp_state
+	{
+		s32 acc[2];
+		s32 product;
+		s32 latch[4];
+		s32 flag_value;
+		s64 flag_raw;
+		s32 last_value;
+		s64 last_raw;
+		u32 last_hold;
+		u32 tap_count;
+		u32 pc;
+		u32 steps;
+		u64 cursor;
+		s64 scratch[4];
+	};
+
+	// a row's operand as the code reads it: the immediate the ALU adds and the coefficient the multiplier takes
+	struct dsp_operand
+	{
+		s32 immediate;
+		s32 coefficient;
+	};
+
+	// the rows compiled to native code, when the machine runs with the recompiler (roland_xv_drc.cpp)
+	class dsp_recompiler
+	{
+	public:
+		static std::unique_ptr<dsp_recompiler> create(roland_xv_device &device);
+		virtual ~dsp_recompiler() = default;
+
+		virtual void *alloc_near(size_t bytes, size_t align) = 0;
+		virtual void reset() = 0;
+		virtual void touched() = 0;
+		virtual void run() = 0;
+	};
+
+	// a program row, its three words and their fields decoded
+	struct dsp_row
+	{
+		u16 w0 = 0;
+		u16 w1 = 0;
+		u16 operand = 0;
+		bool conditional = false;
+		bool branch = false;
+		u8 condition = 0;
+		s8 displacement = 0;
+		bool multiply = false;
+		u8 shift = 0;
+		u8 mode = 0;
+		u16 address = 0;
+		bool second = false;
+		u8 mode2 = 0;
+		u16 address2 = 0;
+		bool cell_coefficient = false;
+		u8 source = 0;
+		u8 left = 0;
+		u8 right = 0;
+		bool negate_left = false;
+		bool negate_right = false;
+		bool to_b = false;
+		bool wrap = false;
+		bool hold = true;
+		bool clamp = false;
+	};
+
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_callback.bind(); }
@@ -185,47 +257,11 @@ protected:
 		bool wrapped;
 	};
 
-	// a program row, its three words and their fields decoded
-	struct dsp_row
-	{
-		u16 w0 = 0;
-		u16 w1 = 0;
-		u16 operand = 0;
-		bool conditional = false;
-		bool branch = false;
-		u8 condition = 0;
-		s8 displacement = 0;
-		bool multiply = false;
-		u8 shift = 0;
-		u8 mode = 0;
-		u16 address = 0;
-		bool second = false;
-		u8 mode2 = 0;
-		u16 address2 = 0;
-		bool cell_coefficient = false;
-		u8 source = 0;
-		u8 left = 0;
-		u8 right = 0;
-		bool negate_left = false;
-		bool negate_right = false;
-		bool to_b = false;
-		bool wrap = false;
-		bool hold = true;
-		bool clamp = false;
-		s32 immediate = 0;
-	};
-
 	struct transfer
 	{
 		bool write;
 		u16 cell;
 		u32 offset;
-	};
-
-	struct tap_request
-	{
-		u16 cell;
-		s32 delay;
 	};
 
 	u16 object_word(int voice, int word) const { return m_object_regs[voice][word - OBJECT_BASE]; }
@@ -239,10 +275,14 @@ protected:
 
 	optional_device<roland_xv_device> m_link;
 	std::unique_ptr<u32[]> m_space;
-	s32 m_bus[IBUS_BANK - IBUS_MIX];
-	u32 m_cursor;
+	u32 *m_ring;
+	s32 *m_bus;
+	dsp_state *m_dsp;
 
 private:
+	friend class roland_xv_dsp_recompiler;
+
+	void *alloc_near(size_t bytes, size_t align);
 	u16 word_peek(int word);
 	void word_taken(int word);
 	void word_w(int word, u16 data);
@@ -284,11 +324,14 @@ private:
 	void frame();
 	static u16 next_address(u16 address);
 	void space_w(u16 address, u32 data);
+	u32 space_r(u16 address) const { return address < RING_CELLS ? m_ring[address] : m_space[address]; }
+	void row_changed(int n);
 	void decode_row(int n);
 	void decode_transfers();
-	u32 ring_index(u16 address) const { return (m_cursor + address) & (RING_CELLS - 1); }
-	u32 eram_index(s32 offset) const { return (m_cursor + offset) & (ERAM_CELLS - 1); }
-	void execute(const dsp_row &row, bool commit);
+	u32 ring_index(u16 address) const { return (m_dsp->cursor + address) & (RING_CELLS - 1); }
+	u32 eram_index(s32 offset) const { return (m_dsp->cursor + offset) & (ERAM_CELLS - 1); }
+	void interpret();
+	void execute(const dsp_row &row, const dsp_operand &k, bool commit);
 	bool condition(int code);
 	void log_once(int what, const char *text);
 
@@ -335,21 +378,16 @@ private:
 	dsp_row m_rows[DSP_ROWS];
 	int m_rows_end;
 	std::unique_ptr<s32[]> m_eram;
-	s32 m_bank[IBUS_BANK_END - IBUS_BANK];
-	s32 m_acc[2];
-	s32 m_product;
-	s32 m_latch[4];
-	s32 m_flag_value;
-	s64 m_flag_raw;
-	s32 m_last_value;
-	s64 m_last_raw;
-	bool m_last_hold;
+	s32 *m_bank;
+	dsp_operand *m_operands;
+	u16 *m_tap_cell;
+	s32 *m_tap_delay;
 	transfer m_transfers[RECORDS];
 	int m_transfer_count;
 	bool m_transfers_stale;
-	tap_request m_taps[TAPS];
-	int m_tap_count;
 	u32 m_logged;
+	std::unique_ptr<dsp_recompiler> m_recompiler;
+	std::vector<std::unique_ptr<u8[]>> m_heap;
 };
 
 DECLARE_DEVICE_TYPE(ROLAND_XV, roland_xv_device)
