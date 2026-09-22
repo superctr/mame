@@ -644,26 +644,22 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 
 //-------------------------------------------------
 //  the run mask: word 0x0d bit 0 is voice 0, word 0x0a bit 15 voice 63.
-//  A written bit takes effect at once; a cleared one waits for the
-//  commit, a write of word 0x0e, which reads back with its busy bit clear.
+//  Each word takes effect as written; word 0x0e is the sync the host
+//  polls after a stop, and reads back with its busy bit clear.
 //-------------------------------------------------
 
 void roland_xv_device::run_mask_w(int word, u16 data)
 {
-	u64 written = 0;
-	for (int w = 0; w < 4; w++)
-		written |= u64(m_regs[RUN_MASK + 3 - w]) << (16 * w);
 	if (word == RUN_COMMIT)
 	{
-		m_run_mask = written;
 		m_regs[RUN_COMMIT] = data & 0x7f;
-		LOGMASKED(LOG_REGS, "%s: run mask commit %016llx\n", machine().describe_context(), (unsigned long long)m_run_mask);
+		LOGMASKED(LOG_REGS, "%s: run mask sync %04x\n", machine().describe_context(), data);
+		return;
 	}
-	else
-	{
-		m_run_mask |= written;
-		LOGMASKED(LOG_REGS, "%s: run mask word %02x = %04x\n", machine().describe_context(), word, data);
-	}
+	m_run_mask = 0;
+	for (int w = 0; w < 4; w++)
+		m_run_mask |= u64(m_regs[RUN_MASK + 3 - w]) << (16 * w);
+	LOGMASKED(LOG_REGS, "%s: run mask word %02x = %04x\n", machine().describe_context(), word, data);
 }
 
 
