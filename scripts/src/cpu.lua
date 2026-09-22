@@ -21,6 +21,10 @@ for i, v in ipairs(DRC_CPUS) do
 		break
 	end
 end
+-- sound devices whose DSP is recompiled
+if (SOUNDS["ROLANDXV"]~=null) then
+	CPU_INCLUDE_DRC = true
+end
 CPU_INCLUDE_DRC_NATIVE = CPU_INCLUDE_DRC and (not _OPTIONS["FORCE_DRC_C_BACKEND"]) and ((_OPTIONS["PLATFORM"] == "x86") or (_OPTIONS["PLATFORM"] == "arm64"))
 
 

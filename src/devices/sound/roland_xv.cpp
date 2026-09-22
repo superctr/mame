@@ -134,6 +134,15 @@ device_memory_interface::space_config_vector roland_xv_device::memory_space_conf
 	return space_config_vector { std::make_pair(AS_WAVE, &m_wave_config) };
 }
 
+// the state the rows touch sits near the recompiler's code when there is one
+void *roland_xv_device::alloc_near(size_t bytes, size_t align)
+{
+	if (m_recompiler)
+		return m_recompiler->alloc_near(bytes, align);
+	m_heap.emplace_back(new u8[bytes + align]);
+	return reinterpret_cast<void *>((uintptr_t(m_heap.back().get()) + align - 1) & ~uintptr_t(align - 1));
+}
+
 void roland_xv_device::device_start()
 {
 	space(AS_WAVE).specific(m_wave);
@@ -143,9 +152,19 @@ void roland_xv_device::device_start()
 	if (m_link)
 		m_link->m_master = this;
 
+	m_recompiler = dsp_recompiler::create(*this);
+	m_dsp = static_cast<dsp_state *>(alloc_near(sizeof(dsp_state), alignof(dsp_state)));
+	m_operands = static_cast<dsp_operand *>(alloc_near(sizeof(dsp_operand) * DSP_ROWS, alignof(dsp_operand)));
+	m_ring = static_cast<u32 *>(alloc_near(sizeof(u32) * RING_CELLS, alignof(u32)));
+	m_bus = static_cast<s32 *>(alloc_near(sizeof(s32) * (IBUS_BANK - IBUS_MIX), alignof(s32)));
+	m_bank = static_cast<s32 *>(alloc_near(sizeof(s32) * (IBUS_BANK_END - IBUS_BANK), alignof(s32)));
+	m_tap_cell = static_cast<u16 *>(alloc_near(sizeof(u16) * TAPS, alignof(u16)));
+	m_tap_delay = static_cast<s32 *>(alloc_near(sizeof(s32) * TAPS, alignof(s32)));
+
 	save_item(NAME(m_regs));
 	save_item(NAME(m_object_regs));
 	save_pointer(NAME(m_space), 0x10000);
+	save_pointer(NAME(m_ring), RING_CELLS);
 	save_item(NAME(m_address));
 	save_item(NAME(m_data_high));
 	save_item(NAME(m_fifo));
@@ -191,20 +210,20 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_rows, w1));
 	save_item(STRUCT_MEMBER(m_rows, operand));
 	save_pointer(NAME(m_eram), ERAM_CELLS);
-	save_item(NAME(m_bus));
-	save_item(NAME(m_bank));
-	save_item(NAME(m_cursor));
-	save_item(NAME(m_acc));
-	save_item(NAME(m_product));
-	save_item(NAME(m_latch));
-	save_item(NAME(m_flag_value));
-	save_item(NAME(m_flag_raw));
-	save_item(NAME(m_last_value));
-	save_item(NAME(m_last_raw));
-	save_item(NAME(m_last_hold));
-	save_item(STRUCT_MEMBER(m_taps, cell));
-	save_item(STRUCT_MEMBER(m_taps, delay));
-	save_item(NAME(m_tap_count));
+	save_pointer(NAME(m_bus), IBUS_BANK - IBUS_MIX);
+	save_pointer(NAME(m_bank), IBUS_BANK_END - IBUS_BANK);
+	save_item(NAME(m_dsp->cursor));
+	save_item(NAME(m_dsp->acc));
+	save_item(NAME(m_dsp->product));
+	save_item(NAME(m_dsp->latch));
+	save_item(NAME(m_dsp->flag_value));
+	save_item(NAME(m_dsp->flag_raw));
+	save_item(NAME(m_dsp->last_value));
+	save_item(NAME(m_dsp->last_raw));
+	save_item(NAME(m_dsp->last_hold));
+	save_pointer(NAME(m_tap_cell), TAPS);
+	save_pointer(NAME(m_tap_delay), TAPS);
+	save_item(NAME(m_dsp->tap_count));
 }
 
 void roland_xv_device::device_post_load()
@@ -213,6 +232,8 @@ void roland_xv_device::device_post_load()
 	for (int n = 0; n < DSP_ROWS; n++)
 		decode_row(n);
 	m_transfers_stale = true;
+	if (m_recompiler)
+		m_recompiler->reset();
 }
 
 void roland_xv_device::device_reset()
@@ -247,21 +268,19 @@ void roland_xv_device::device_reset()
 		r = dsp_row();
 	m_rows_end = -1;
 	std::fill_n(m_eram.get(), ERAM_CELLS, 0);
-	std::fill(std::begin(m_bus), std::end(m_bus), 0);
-	std::fill(std::begin(m_bank), std::end(m_bank), 0);
-	m_cursor = 0;
-	m_acc[0] = m_acc[1] = 0;
-	m_product = 0;
-	std::fill(std::begin(m_latch), std::end(m_latch), 0);
-	m_flag_value = 0;
-	m_flag_raw = 0;
-	m_last_value = 0;
-	m_last_raw = 0;
-	m_last_hold = true;
+	std::fill_n(m_ring, RING_CELLS, 0);
+	std::fill_n(m_bus, IBUS_BANK - IBUS_MIX, 0);
+	std::fill_n(m_bank, IBUS_BANK_END - IBUS_BANK, 0);
+	std::fill_n(m_operands, DSP_ROWS, dsp_operand{ 0, 0 });
+	std::fill_n(m_tap_cell, TAPS, 0);
+	std::fill_n(m_tap_delay, TAPS, 0);
+	*m_dsp = dsp_state();
+	m_dsp->last_hold = 1;
 	m_transfer_count = 0;
 	m_transfers_stale = true;
-	m_tap_count = 0;
 	m_logged = 0;
+	if (m_recompiler)
+		m_recompiler->reset();
 }
 
 // a linked chip's frames are run from its master's stream; its own stream is silent
@@ -354,10 +373,10 @@ u16 roland_xv_device::word_peek(int word)
 	switch (word)
 	{
 	case DATA_HIGH:
-		return m_space[m_address] >> 16;
+		return space_r(m_address) >> 16;
 
 	case DATA_LOW:
-		return m_space[m_address] & 0xffff;
+		return space_r(m_address) & 0xffff;
 
 	case FIFO:
 		if (m_scan_select >= 0)
@@ -394,7 +413,7 @@ void roland_xv_device::word_taken(int word)
 	switch (word)
 	{
 	case DATA_LOW:
-		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
+		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, space_r(m_address));
 		m_address = next_address(m_address);
 		break;
 
@@ -422,7 +441,7 @@ void roland_xv_device::word_w(int word, u16 data)
 
 	case DATA_LOW:
 		space_w(m_address, (u32(m_data_high) << 16) | data);
-		LOGMASKED(LOG_SPACE, "%s: write %04x = %08x\n", machine().describe_context(), m_address, m_space[m_address]);
+		LOGMASKED(LOG_SPACE, "%s: write %04x = %08x\n", machine().describe_context(), m_address, space_r(m_address));
 		m_address = next_address(m_address);
 		m_data_high = 0;
 		break;
@@ -666,7 +685,10 @@ u16 roland_xv_device::next_address(u16 address)
 
 void roland_xv_device::space_w(u16 address, u32 data)
 {
-	m_space[address] = data;
+	if (address < RING_CELLS)
+		m_ring[address] = data;
+	else
+		m_space[address] = data;
 	switch (address & 0xf000)
 	{
 	case SPACE_PRAM:
@@ -678,7 +700,7 @@ void roland_xv_device::space_w(u16 address, u32 data)
 		case 1: m_rows[n].w1 = data; break;
 		default: m_rows[n].operand = data; break;
 		}
-		decode_row(n);
+		row_changed(n);
 		break;
 	}
 
@@ -1193,6 +1215,27 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 //  is the state it was entered with.
 //-------------------------------------------------
 
+// a row's fields are decoded as its words land; a change to anything but
+// the operand's value is a change to the code the recompiler holds
+void roland_xv_device::row_changed(int n)
+{
+	const dsp_row before = m_rows[n];
+	const int end_before = m_rows_end;
+	decode_row(n);
+	if (!m_recompiler)
+		return;
+	const dsp_row &r = m_rows[n];
+	const bool same = before.conditional == r.conditional && before.branch == r.branch && before.condition == r.condition
+			&& before.displacement == r.displacement && before.multiply == r.multiply && before.shift == r.shift
+			&& before.mode == r.mode && before.address == r.address && before.second == r.second
+			&& before.mode2 == r.mode2 && before.address2 == r.address2 && before.cell_coefficient == r.cell_coefficient
+			&& before.source == r.source && before.left == r.left && before.right == r.right
+			&& before.negate_left == r.negate_left && before.negate_right == r.negate_right && before.to_b == r.to_b
+			&& before.wrap == r.wrap && before.hold == r.hold && before.clamp == r.clamp;
+	if (!same || end_before != m_rows_end)
+		m_recompiler->touched();
+}
+
 void roland_xv_device::decode_row(int n)
 {
 	dsp_row &r = m_rows[n];
@@ -1229,12 +1272,15 @@ void roland_xv_device::decode_row(int n)
 	r.hold = r.left == LEFT_ZERO && r.right == RIGHT_ZERO;
 	const bool immediate = r.right == RIGHT_K23 || r.right == RIGHT_K19 || r.right == RIGHT_K15;
 	r.clamp = immediate && (r.left != LEFT_ZERO || r.negate_right);
+
+	dsp_operand &k = m_operands[n];
 	if (!r.multiply && r.right == RIGHT_K23)
-		r.immediate = r.operand;
+		k.immediate = r.operand;
 	else if (!r.multiply && r.right == RIGHT_K19)
-		r.immediate = s32(r.operand) << 4;
+		k.immediate = s32(r.operand) << 4;
 	else
-		r.immediate = s32(s16(r.operand)) << (DSP_FRACTION_BITS - 15 + r.shift);
+		k.immediate = s32(s16(r.operand)) << (DSP_FRACTION_BITS - 15 + r.shift);
+	k.coefficient = s32(s16(r.operand)) << (DSP_FRACTION_BITS - 15);
 
 	const bool nop = !r.w0 && !r.w1;
 	if (!nop && n > m_rows_end)
@@ -1272,7 +1318,7 @@ void roland_xv_device::decode_transfers()
 s32 roland_xv_device::cell_r(u16 address) const
 {
 	if (address < IBUS_MIX)
-		return wrap24(s32(m_space[ring_index(address)]));
+		return wrap24(s32(m_ring[ring_index(address)]));
 	if (address < IBUS_BANK)
 		return m_bus[address - IBUS_MIX];
 	if (address < IBUS_BANK_END)
@@ -1283,7 +1329,7 @@ s32 roland_xv_device::cell_r(u16 address) const
 void roland_xv_device::cell_w(u16 address, s32 value)
 {
 	if (address < IBUS_MIX)
-		m_space[ring_index(address)] = u32(value);
+		m_ring[ring_index(address)] = u32(value);
 	else if (address < IBUS_BANK)
 		m_bus[address - IBUS_MIX] = value;
 }
@@ -1306,18 +1352,39 @@ void roland_xv_device::run_dsp()
 		if (!m_transfers[n].write)
 			cell_w(m_transfers[n].cell, m_eram[eram_index(m_transfers[n].offset)]);
 
+	if (m_recompiler)
+		m_recompiler->run();
+	else
+		interpret();
+
+	for (int n = 0; n < m_transfer_count; n++)
+		if (m_transfers[n].write)
+			m_eram[eram_index(m_transfers[n].offset)] = cell_r(m_transfers[n].cell);
+	m_dsp->cursor--;
+	for (u32 n = 0; n < m_dsp->tap_count; n++)
+	{
+		const s32 whole = m_tap_delay[n] >> 4;
+		cell_w(m_tap_cell[n], m_eram[eram_index(whole)]);
+		cell_w(m_tap_cell[n] + 1, m_eram[eram_index(whole + 1)]);
+		cell_w(m_tap_cell[n] + 2, (m_tap_delay[n] & 15) << (DSP_FRACTION_BITS - 4));
+	}
+	m_dsp->tap_count = 0;
+}
+
+void roland_xv_device::interpret()
+{
 	int pc = 0;
 	for (int steps = 0; pc <= m_rows_end && steps < DSP_ROW_BUDGET; steps++)
 	{
 		const dsp_row &row = m_rows[pc];
 		if (!row.conditional)
 		{
-			execute(row, true);
+			execute(row, m_operands[pc], true);
 			pc++;
 			continue;
 		}
 		const bool taken = condition(row.condition);
-		execute(row, row.branch || taken);
+		execute(row, m_operands[pc], row.branch || taken);
 		if (!row.branch)
 		{
 			pc++;
@@ -1328,53 +1395,41 @@ void roland_xv_device::run_dsp()
 		const dsp_row &slot = m_rows[pc + 1];
 		if (slot.branch)
 			log_once(0, "branch in a delay slot");
-		execute(slot, !slot.conditional || slot.branch || condition(slot.condition));
+		execute(slot, m_operands[pc + 1], !slot.conditional || slot.branch || condition(slot.condition));
 		steps++;
 		const int target = pc + 1 + row.displacement;
 		if (taken && target == pc)
 			break;
 		pc = taken ? target & (DSP_ROWS - 1) : pc + 2;
 	}
-
-	for (int n = 0; n < m_transfer_count; n++)
-		if (m_transfers[n].write)
-			m_eram[eram_index(m_transfers[n].offset)] = cell_r(m_transfers[n].cell);
-	m_cursor--;
-	for (int n = 0; n < m_tap_count; n++)
-	{
-		const s32 whole = m_taps[n].delay >> 4;
-		cell_w(m_taps[n].cell, m_eram[eram_index(whole)]);
-		cell_w(m_taps[n].cell + 1, m_eram[eram_index(whole + 1)]);
-		cell_w(m_taps[n].cell + 2, (m_taps[n].delay & 15) << (DSP_FRACTION_BITS - 4));
-	}
-	m_tap_count = 0;
 }
 
 bool roland_xv_device::condition(int code)
 {
+	const dsp_state &s = *m_dsp;
 	switch (code)
 	{
 	case 0x0: return false;
 	case 0x1: return true;
-	case 0x2: return m_flag_value == 0;
-	case 0x3: return m_flag_value != 0;
-	case 0x6: return m_flag_raw >= (1 << DSP_FRACTION_BITS) || m_flag_raw <= -(1 << DSP_FRACTION_BITS);
-	case 0x7: return m_flag_raw < (1 << DSP_FRACTION_BITS) && m_flag_raw > -(1 << DSP_FRACTION_BITS);
-	case 0x8: case 0xc: return m_flag_value >= 0;
-	case 0x9: case 0xd: return m_flag_value < 0;
-	case 0xa: return m_flag_value > 0;
-	case 0xb: return m_flag_value <= 0;
+	case 0x2: return s.flag_value == 0;
+	case 0x3: return s.flag_value != 0;
+	case 0x6: return s.flag_raw >= (1 << DSP_FRACTION_BITS) || s.flag_raw <= -(1 << DSP_FRACTION_BITS);
+	case 0x7: return s.flag_raw < (1 << DSP_FRACTION_BITS) && s.flag_raw > -(1 << DSP_FRACTION_BITS);
+	case 0x8: case 0xc: return s.flag_value >= 0;
+	case 0x9: case 0xd: return s.flag_value < 0;
+	case 0xa: return s.flag_value > 0;
+	case 0xb: return s.flag_value <= 0;
 	default:
 		log_once(1, "unobserved condition code");
 		return false;
 	}
 }
 
-void roland_xv_device::execute(const dsp_row &row, bool commit)
+void roland_xv_device::execute(const dsp_row &row, const dsp_operand &k, bool commit)
 {
-	const s32 a = m_acc[0], b = m_acc[1], p = m_product;
-	const s32 r = m_latch[0], sl = m_latch[1], m = m_latch[2], c = m_latch[3];
-	const s32 k = row.immediate;
+	dsp_state &s = *m_dsp;
+	const s32 a = s.acc[0], b = s.acc[1], p = s.product;
+	const s32 r = s.latch[0], sl = s.latch[1], m = s.latch[2], c = s.latch[3];
 
 	s64 left = 0;
 	switch (row.left)
@@ -1393,7 +1448,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 	case RIGHT_A: right = a; break;
 	case RIGHT_B: right = b; break;
 	case RIGHT_R: right = r; break;
-	case RIGHT_K23: case RIGHT_K19: case RIGHT_K15: right = k; break;
+	case RIGHT_K23: case RIGHT_K19: case RIGHT_K15: right = k.immediate; break;
 	case RIGHT_P: right = p; break;
 	}
 
@@ -1404,13 +1459,17 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 		switch (mode)
 		{
 		case MEM_NONE:
-			if (address && m_tap_count < TAPS)
-				m_taps[m_tap_count++] = tap_request{ u16(address | 0x100), BIT(address, 8) ? b : a };
+			if (address && s.tap_count < TAPS)
+			{
+				m_tap_cell[s.tap_count] = address | 0x100;
+				m_tap_delay[s.tap_count] = BIT(address, 8) ? b : a;
+				s.tap_count++;
+			}
 			break;
 		case MEM_STORE_P: cell_w(address, clamp24(p)); break;
 		case MEM_STORE_A: cell_w(address, clamp24(a)); break;
 		case MEM_STORE_B: cell_w(address, clamp24(b)); break;
-		default: m_latch[mode - MEM_READ_R] = cell_r(address); break;
+		default: s.latch[mode - MEM_READ_R] = cell_r(address); break;
 		}
 	}
 
@@ -1429,7 +1488,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 	bool product = true;
 	s64 coefficient = 0;
 	if (row.multiply)
-		coefficient = s32(s16(row.operand)) << (DSP_FRACTION_BITS - 15);
+		coefficient = k.coefficient;
 	else if (row.cell_coefficient)
 		coefficient = c;
 	else if (row.source == SOURCE_M || row.source == SOURCE_A || row.source == SOURCE_B)
@@ -1442,7 +1501,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 	{
 		const s64 full = operand * coefficient;
 		const int shift = DSP_FRACTION_BITS - row.shift;
-		m_product = s32((full + ((full >> 63) & ((s64(1) << shift) - 1))) >> shift);
+		s.product = s32((full + ((full >> 63) & ((s64(1) << shift) - 1))) >> shift);
 	}
 
 	const s32 destination = row.to_b ? b : a;
@@ -1456,14 +1515,14 @@ void roland_xv_device::execute(const dsp_row &row, bool commit)
 		result = clamp24(result);
 	const s32 value = s32(result);
 	if (commit)
-		m_acc[row.to_b ? 1 : 0] = value;
+		s.acc[row.to_b ? 1 : 0] = value;
 
-	if (!m_last_hold)
+	if (!s.last_hold)
 	{
-		m_flag_value = m_last_value;
-		m_flag_raw = m_last_raw;
+		s.flag_value = s.last_value;
+		s.flag_raw = s.last_raw;
 	}
-	m_last_value = value;
-	m_last_raw = raw;
-	m_last_hold = row.hold;
+	s.last_value = value;
+	s.last_raw = raw;
+	s.last_hold = row.hold;
 }
