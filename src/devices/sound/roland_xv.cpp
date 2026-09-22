@@ -1342,25 +1342,21 @@ void roland_xv_device::log_once(int what, const char *text)
 	LOGMASKED(LOG_DSP, "%s: %s\n", machine().describe_context(), text);
 }
 
-// the sample: the read records into their cells, the rows from 0 to the halt,
-// the write records out of theirs, the cursor down, the taps deposited
+// the sample: the records in table order, the writes out of their cells
+// and the reads into theirs, then the taps requested by the last sample,
+// then the rows from 0 to the halt, then the cursor down
 void roland_xv_device::run_dsp()
 {
 	if (m_transfers_stale)
 		decode_transfers();
 	for (int n = 0; n < m_transfer_count; n++)
-		if (!m_transfers[n].write)
-			cell_w(m_transfers[n].cell, m_eram[eram_index(m_transfers[n].offset)]);
-
-	if (m_recompiler)
-		m_recompiler->run();
-	else
-		interpret();
-
-	for (int n = 0; n < m_transfer_count; n++)
-		if (m_transfers[n].write)
-			m_eram[eram_index(m_transfers[n].offset)] = cell_r(m_transfers[n].cell);
-	m_dsp->cursor--;
+	{
+		const transfer &t = m_transfers[n];
+		if (t.write)
+			m_eram[eram_index(t.offset)] = cell_r(t.cell);
+		else
+			cell_w(t.cell, m_eram[eram_index(t.offset)]);
+	}
 	for (u32 n = 0; n < m_dsp->tap_count; n++)
 	{
 		const s32 whole = m_tap_delay[n] >> 4;
@@ -1369,6 +1365,12 @@ void roland_xv_device::run_dsp()
 		cell_w(m_tap_cell[n] + 2, (m_tap_delay[n] & 15) << (DSP_FRACTION_BITS - 4));
 	}
 	m_dsp->tap_count = 0;
+
+	if (m_recompiler)
+		m_recompiler->run();
+	else
+		interpret();
+	m_dsp->cursor--;
 }
 
 void roland_xv_device::interpret()
