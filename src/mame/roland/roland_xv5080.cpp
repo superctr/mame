@@ -149,8 +149,8 @@ protected:
 
 	required_device<sh7042_device> m_maincpu;
 	optional_device_array<roland_xp_device, 2> m_xp;
-	required_device_array<srjv80_slot_device, 4> m_exp;
-	optional_device_array<srx_slot_device, 4> m_srx;
+	required_device_array<roland_srjv80_slot_device, 4> m_exp;
+	optional_device_array<roland_srx_slot_device, 4> m_srx;
 	optional_device<hd44780_device> m_lcd;
 	required_ioport_array<8> m_keys;
 	required_ioport m_dial;
@@ -518,10 +518,10 @@ void xv5080_state::xv_wave_map(address_map &map)
 {
 	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).r(m_exp[slot], FUNC(srjv80_slot_device::read)).umask16(0x00ff);
+		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read)).umask16(0x00ff);
 	static const offs_t srx_base[4] = { 0x04000000, 0x07000000, 0x08000000, 0x0b000000 };
 	for (int slot = 0; slot < 4; slot++)
-		map(srx_base[slot], srx_base[slot] + 0xffffff).r(m_srx[slot], FUNC(srx_slot_device::read16));
+		map(srx_base[slot], srx_base[slot] + 0xffffff).r(m_srx[slot], FUNC(roland_srx_slot_device::read16));
 }
 
 
@@ -585,9 +585,9 @@ void xv3080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x1ffffff).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x2000000 + slot * 0x800000, 0x27fffff + slot * 0x800000).r(m_exp[slot], FUNC(srjv80_slot_device::read));
+		map(0x2000000 + slot * 0x800000, 0x27fffff + slot * 0x800000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
 	for (int slot = 0; slot < 2; slot++)
-		map(0x4000000 + slot * 0x2000000, 0x5ffffff + slot * 0x2000000).r(m_srx[slot], FUNC(srx_slot_device::read));
+		map(0x4000000 + slot * 0x2000000, 0x5ffffff + slot * 0x2000000).r(m_srx[slot], FUNC(roland_srx_slot_device::read));
 }
 
 void xv5080_state::lcdc_map(address_map &map)
@@ -789,8 +789,8 @@ void xv3080_state::common(machine_config &config)
 
 	// EXP A to EXP D, one 8 MB board each, filling the 1 MB wave regions
 	// 0x20 to 0x3f that the boot scan probes
-	for (auto &exp : m_exp)
-		SRJV80_SLOT(config, exp, 0);
+	for (int slot = 0; slot < 4; slot++)
+		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot));
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 	SOFTWARE_LIST(config, "srx_list").set_original("roland_srx");
 
@@ -805,7 +805,7 @@ void xv3080_state::xv3080(machine_config &config)
 
 	// EXP E and EXP F, one 32 MB SRX board each on a pair of chip selects
 	for (int slot = 0; slot < 2; slot++)
-		SRX_SLOT(config, m_srx[slot], 0);
+		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'e' + slot), util::string_format("xp-%c", 'e' + slot));
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
@@ -852,8 +852,8 @@ void xv5080_state::xv5080(machine_config &config)
 	m_display_channel = 1;
 
 	// EXP E to EXP H, one 32 MB SRX board each
-	for (auto &srx : m_srx)
-		SRX_SLOT(config, srx, 0);
+	for (int slot = 0; slot < 4; slot++)
+		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'e' + slot), util::string_format("xp-%c", 'e' + slot));
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();

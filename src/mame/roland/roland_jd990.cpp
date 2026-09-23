@@ -199,8 +199,8 @@ private:
 	required_device<roland_tvf_device> m_tvf;
 	required_device_array<roland_csp_device, 2> m_csp;
 	required_device<jd990_ifcs_device> m_ifcs;
-	required_device<srjv80_slot_device> m_exp;
-	required_device<sopcm1_slot_device> m_card;
+	required_device<roland_srjv80_slot_device> m_exp;
+	required_device<roland_sopcm1_slot_device> m_card;
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
@@ -429,8 +429,8 @@ void roland_jd990_state::mem_map(address_map &map)
 // and CN7's eight are the two sockets'
 void roland_jd990_state::wave_map(address_map &map)
 {
-	map(0x600000, 0x7fffff).r(m_card, FUNC(sopcm1_slot_device::read));
-	map(0x800000, 0xffffff).r(m_exp, FUNC(srjv80_slot_device::read));
+	map(0x600000, 0x7fffff).r(m_card, FUNC(roland_sopcm1_slot_device::read));
+	map(0x800000, 0xffffff).r(m_exp, FUNC(roland_srjv80_slot_device::read));
 }
 
 void roland_jd990_state::lcdc_map(address_map &map)
@@ -559,11 +559,11 @@ void roland_jd990_state::jd990(machine_config &config)
 	}
 
 	// CN7, one 8 MB board at bank 8 of the EP's wave space
-	SRJV80_SLOT(config, m_exp, 0);
+	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("exp", "exp");
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	// the PCM card, one or two 1 MB banks from 6 up
-	SOPCM1_SLOT(config, m_card, 0);
+	ROLAND_SOPCM1_SLOT(config, m_card, 0).set_image_names("card", "card");
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));

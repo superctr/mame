@@ -38,12 +38,13 @@
 #include "wavecard.h"
 
 
-DEFINE_DEVICE_TYPE(SRJV80_SLOT, srjv80_slot_device, "srjv80_slot", "Roland SR-JV80 expansion board socket")
-DEFINE_DEVICE_TYPE(SRX_SLOT, srx_slot_device, "srx_slot", "Roland SRX expansion board socket")
-DEFINE_DEVICE_TYPE(SOPCM1_SLOT, sopcm1_slot_device, "sopcm1_slot", "Roland PCM card slot")
+DEFINE_DEVICE_TYPE(ROLAND_SRJV80_SLOT, roland_srjv80_slot_device, "roland_srjv80_slot", "Roland SR-JV80 expansion board socket")
+DEFINE_DEVICE_TYPE(ROLAND_SRX_SLOT, roland_srx_slot_device, "roland_srx_slot", "Roland SRX expansion board socket")
+DEFINE_DEVICE_TYPE(ROLAND_SOPCM1_SLOT, roland_sopcm1_slot_device, "roland_sopcm1_slot", "Roland PCM card slot")
 
 roland_wavecard_device::roland_wavecard_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock,
-		u32 min_size, u32 max_size, const char *size_error, const u8 *address_lines, int lines)
+		u32 min_size, u32 max_size, const char *size_error, const u8 *address_lines, int lines,
+		const char *type_name, const char *brief_type_name)
 	: device_t(mconfig, type, tag, owner, clock)
 	, device_cartrom_image_interface(mconfig, *this)
 	, m_min_size(min_size)
@@ -51,8 +52,17 @@ roland_wavecard_device::roland_wavecard_device(const machine_config &mconfig, de
 	, m_size_error(size_error)
 	, m_address_lines(address_lines)
 	, m_lines(lines)
+	, m_type_name(type_name)
+	, m_brief_type_name(brief_type_name)
 	, m_size(0)
 {
+}
+
+roland_wavecard_device &roland_wavecard_device::set_image_names(std::string type_name, std::string brief_type_name)
+{
+	m_type_name = std::move(type_name);
+	m_brief_type_name = std::move(brief_type_name);
+	return *this;
 }
 
 void roland_wavecard_device::device_start()
@@ -116,17 +126,17 @@ void roland_wavecard_device::call_unload()
 static const u8 srjv80_lines[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14 };
 static const u8 srx_lines[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
 
-srjv80_slot_device::srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SRJV80_SLOT, tag, owner, clock, 0x200000, 0x800000, "Expansion boards are 2 or 8 MB", srjv80_lines, 19)
+roland_srjv80_slot_device::roland_srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: roland_wavecard_device(mconfig, ROLAND_SRJV80_SLOT, tag, owner, clock, 0x200000, 0x800000, "Expansion boards are 2 or 8 MB", srjv80_lines, 19, "expboard", "exp")
 {
 }
 
-srx_slot_device::srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18)
+roland_srx_slot_device::roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: roland_wavecard_device(mconfig, ROLAND_SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18, "srxboard", "srx")
 {
 }
 
-sopcm1_slot_device::sopcm1_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB", srjv80_lines, 19)
+roland_sopcm1_slot_device::roland_sopcm1_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: roland_wavecard_device(mconfig, ROLAND_SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB", srjv80_lines, 19, "pcmcard", "pcm")
 {
 }
