@@ -1265,7 +1265,7 @@ void roland_xv_device::decode_row(int n)
 	r.negate_right = BIT(control, 7);
 	r.to_b = BIT(control, 12);
 	r.wrap = BIT(control, 13);
-	r.hold = r.left == LEFT_ZERO && r.right == RIGHT_ZERO;
+	r.hold = r.left == LEFT_ZERO && r.right == RIGHT_ZERO && !r.wrap;
 	const bool immediate = r.right == RIGHT_K23 || r.right == RIGHT_K19 || r.right == RIGHT_K15;
 	r.clamp = immediate && (r.left != LEFT_ZERO || r.negate_right);
 
