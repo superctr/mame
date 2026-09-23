@@ -330,8 +330,8 @@ private:
 	required_device<tc58fvb321_device> m_flash;
 	required_device<n82077aa_device> m_fdc;
 	required_device<roland_xv_device> m_xv;
-	required_device<srjv80_slot_device> m_exp;
-	required_device_array<srx_slot_device, 2> m_srx;
+	required_device<roland_srjv80_slot_device> m_exp;
+	required_device_array<roland_srx_slot_device, 2> m_srx;
 	required_device<i2c_24c08_device> m_eeprom;
 	required_device<fantom_keyscan_device> m_keyscan;
 	required_ioport m_velocity;
@@ -484,9 +484,9 @@ void fantom_state::fantom_io_map(address_map &map)
 void fantom_state::xv_wave_map(address_map &map)
 {
 	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
-	map(0x02000000, 0x027fffff).r(m_exp, FUNC(srjv80_slot_device::read)).umask16(0x00ff);
-	map(0x04000000, 0x04ffffff).r(m_srx[0], FUNC(srx_slot_device::read16));
-	map(0x07000000, 0x07ffffff).r(m_srx[1], FUNC(srx_slot_device::read16));
+	map(0x02000000, 0x027fffff).r(m_exp, FUNC(roland_srjv80_slot_device::read)).umask16(0x00ff);
+	map(0x04000000, 0x04ffffff).r(m_srx[0], FUNC(roland_srx_slot_device::read16));
+	map(0x07000000, 0x07ffffff).r(m_srx[1], FUNC(roland_srx_slot_device::read16));
 }
 
 
@@ -516,9 +516,9 @@ void fantom_state::fantom(machine_config &config)
 	screen.set_palette("palette");
 	PALETTE(config, "palette", FUNC(fantom_state::lcd_palette), 4);
 
-	SRJV80_SLOT(config, m_exp, 0);      // CN7, slot A
-	for (auto &srx : m_srx)             // CN10 and CN11, slots B and C
-		SRX_SLOT(config, srx, 0);
+	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("xp-a", "xp-a");   // CN7, slot A
+	for (int slot = 0; slot < 2; slot++)                                     // CN10 and CN11, slots B and C
+		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'b' + slot), util::string_format("xp-%c", 'b' + slot));
 
 	// OUTPUT A and OUTPUT B, one AK4393 each
 	SPEAKER(config, "outa", 2).front();

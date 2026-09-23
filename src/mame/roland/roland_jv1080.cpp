@@ -62,7 +62,7 @@ private:
 	required_device<roland_xp_device> m_xp;
 	required_device<m60205_device> m_ga;
 	required_device<hd44780_device> m_lcd;
-	required_device_array<srjv80_slot_device, 4> m_exp;
+	required_device_array<roland_srjv80_slot_device, 4> m_exp;
 	output_finder<24> m_leds;
 };
 
@@ -101,7 +101,7 @@ void roland_jv1080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x07fffff).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(srjv80_slot_device::read));
+		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
 }
 
 
@@ -234,8 +234,8 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	// EXP-A to EXP-D, CN501-CN504, one 8 MB board at the foot of each of the
 	// XP's chip selects 2 to 5; select 1 is the PCM card's
-	for (auto &exp : m_exp)
-		SRJV80_SLOT(config, exp, 0);
+	for (int slot = 0; slot < 4; slot++)
+		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot));
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
