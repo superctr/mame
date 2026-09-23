@@ -895,13 +895,15 @@ void roland_xv_dsp_recompiler::emit_row(drcuml_block *block, int n, chain &c, co
 				else if (!(left == REG_T))
 					UML_DMOV(b, REG_T, left);
 			}
-			else
+			else if (have_right)
 			{
 				if (r.negate_right)
 					UML_DSUB(b, REG_T, 0, right);
 				else
 					UML_DMOV(b, REG_T, right);
 			}
+			else
+				UML_DMOV(b, REG_T, 0);
 		}
 		if (wanted)
 			UML_DSTORE(b, &m_flag_raw[n], 0, REG_T, SIZE_QWORD, SCALE_x1);
