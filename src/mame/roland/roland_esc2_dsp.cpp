@@ -40,6 +40,7 @@ constexpr offs_t NOTIFY_STATUS = 0x640 / 4;
 constexpr offs_t TARGET_STATUS = 0x648 / 4;
 constexpr offs_t SWITCH_STATUS[2] = { 0x658 / 4, 0x654 / 4 };
 constexpr offs_t MEMORY_DATA = 0x800 / 4;
+constexpr offs_t FIELD_DESCRIPTOR = 0x900 / 4;
 constexpr offs_t FIELD_DATA = 0x904 / 4;
 constexpr offs_t DIRECT_BASE = 0x1000 / 4;
 constexpr offs_t UNIT_BASE = 0x40000 / 4;
@@ -342,6 +343,8 @@ void mb8aa4181_dsp_device::write(offs_t offset, u32 data, u32 mem_mask)
 		field_write(data);
 		return;
 	}
+	if (offset == FIELD_DESCRIPTOR)
+		COMBINE_DATA(&m_field);
 
 	host_write(offset, data, mem_mask);
 
