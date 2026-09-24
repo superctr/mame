@@ -22,6 +22,7 @@
 
 #include "emupal.h"
 #include "screen.h"
+#include "speaker.h"
 
 
 namespace {
@@ -37,6 +38,7 @@ public:
 		, m_spiflash(*this, "spiflash")
 		, m_flash(*this, "flash")
 		, m_subflash(*this, "subcpu")
+		, m_volume(*this, "VOLUME")
 	{
 	}
 
@@ -51,6 +53,7 @@ private:
 	required_device<generic_spi_flash_device> m_spiflash;
 	required_region_ptr<u32> m_flash;
 	required_region_ptr<u32> m_subflash;
+	required_ioport m_volume;
 
 	u32 m_lcd_port = 0;
 
@@ -117,6 +120,8 @@ HD44780_PIXEL_UPDATE(boutique_state::lcd_pixel_update)
 }
 
 static INPUT_PORTS_START(d05)
+	PORT_START("VOLUME")
+	PORT_ADJUSTER(80, "Volume")
 INPUT_PORTS_END
 
 void boutique_state::d05(machine_config &config)
@@ -127,10 +132,17 @@ void boutique_state::d05(machine_config &config)
 	m_maincpu->gpio_out_cb<0>().set(FUNC(boutique_state::subcpu_control_w));
 	m_maincpu->gpio_out_cb<6>().set(FUNC(boutique_state::lcd_port_w));
 	m_maincpu->gpio_in_cb<6>().set_constant((1 << 21) | (1 << 3));
+	m_maincpu->adc_in_cb<2>().set([this] () { return u16(m_volume->read() * 0xfff / 100); });
 	m_maincpu->sot_cb<1>().set(FUNC(boutique_state::lcd_data_w));
 	m_maincpu->sfi_cs_cb().set(m_spiflash, FUNC(generic_spi_flash_device::cs_w));
 	m_maincpu->sfi_tx_cb().set(m_spiflash, FUNC(generic_spi_flash_device::write));
 	m_maincpu->sfi_rx_cb().set(m_spiflash, FUNC(generic_spi_flash_device::read));
+
+	SPEAKER(config, "speaker", 2).front();
+	mb8aa4181_dsp_device &dsp = *m_maincpu->subdevice<mb8aa4181_dsp_device>("dsp");
+	dsp.set_clock(24'576'000);
+	dsp.add_route(0, "speaker", 1.0, 0);
+	dsp.add_route(1, "speaker", 1.0, 1);
 
 	GENERIC_SPI_FLASH(config, m_spiflash);
 
