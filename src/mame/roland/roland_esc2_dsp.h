@@ -137,6 +137,13 @@ private:
 		}
 	};
 
+	struct direct_write
+	{
+		u16 index;
+		u32 packet;
+		u32 before;
+	};
+
 	struct sample_request
 	{
 		u32 owner;
@@ -184,6 +191,8 @@ private:
 		bool drp_dirty;
 
 		std::vector<sample_request> samples;
+		std::vector<direct_write> direct_log;
+		u32 packets_run;
 
 		u32 target_queued[TARGETS / 32];
 		u32 target_pending[TARGETS / 32];
@@ -194,6 +203,9 @@ private:
 
 	sound_stream *m_stream;
 	emu_timer *m_frame_timer;
+	emu_timer *m_notify_timer[UNITS][16];
+	u32 m_packet_clock;
+	attotime m_frame_start;
 	std::unique_ptr<unit_state[]> m_unit;
 	std::unique_ptr<u32[]> m_memory;
 	double m_shared[0x100];
@@ -212,6 +224,8 @@ private:
 	char m_layout[256][MAX_OPS + 1];
 
 	TIMER_CALLBACK_MEMBER(frame);
+	TIMER_CALLBACK_MEMBER(notify);
+	void direct_store(unit_state &u, unsigned index, double value);
 
 	void host_write(offs_t offset, u32 data, u32 mem_mask);
 	u32 host_read(offs_t offset) const;

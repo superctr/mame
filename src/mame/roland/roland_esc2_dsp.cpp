@@ -124,6 +124,10 @@ void mb8aa4181_dsp_device::device_start()
 
 	m_stream = stream_alloc(0, 2, clock() / 256);
 	m_frame_timer = timer_alloc(FUNC(mb8aa4181_dsp_device::frame), this);
+	for (unsigned i = 0; i < UNITS; i++)
+		for (unsigned j = 0; j < 16; j++)
+			m_notify_timer[i][j] = timer_alloc(FUNC(mb8aa4181_dsp_device::notify), this);
+	m_packet_clock = owner()->clock();
 
 	for (unsigned i = 0; i < UNITS; i++)
 	{
@@ -171,6 +175,7 @@ void mb8aa4181_dsp_device::device_start()
 	save_item(NAME(m_shared));
 	save_item(NAME(m_port));
 	save_item(NAME(m_field));
+	save_item(NAME(m_frame_start));
 	save_item(NAME(m_frames));
 	save_item(NAME(m_switch_queued));
 	save_item(NAME(m_switch_done));
@@ -217,6 +222,8 @@ void mb8aa4181_dsp_device::device_reset()
 		u.dirty = true;
 		u.drp_dirty = true;
 		u.samples.clear();
+		u.direct_log.clear();
+		u.packets_run = 0;
 		u.pending.clear();
 		std::fill_n(u.target_queued, TARGETS / 32, 0);
 		std::fill_n(u.target_pending, TARGETS / 32, 0);
@@ -236,6 +243,7 @@ void mb8aa4181_dsp_device::device_post_load()
 		m_unit[i].dirty = true;
 		m_unit[i].drp_dirty = true;
 		m_unit[i].samples.clear();
+		m_unit[i].direct_log.clear();
 		m_unit[i].pending.clear();
 		for (unsigned slot = 0; slot < SLOTS; slot++)
 			if (m_unit[i].requested_valid[slot])
@@ -342,7 +350,18 @@ void mb8aa4181_dsp_device::write(offs_t offset, u32 data, u32 mem_mask)
 u32 mb8aa4181_dsp_device::host_read(offs_t offset) const
 {
 	if (offset >= DIRECT_BASE && offset < DIRECT_BASE + UNITS * DIRECT_WORDS)
-		return m_unit[(offset - DIRECT_BASE) / DIRECT_WORDS].direct[offset & (DIRECT_WORDS - 1)];
+	{
+		const unit_state &u = m_unit[(offset - DIRECT_BASE) / DIRECT_WORDS];
+		const unsigned index = offset & (DIRECT_WORDS - 1);
+		if (!u.direct_log.empty())
+		{
+			const u64 elapsed = (machine().time() - m_frame_start).as_ticks(m_packet_clock);
+			for (const direct_write &w : u.direct_log)
+				if (w.index == index && w.packet > elapsed)
+					return w.before;
+		}
+		return u.direct[index];
+	}
 	if (offset >= UNIT_BASE && offset < UNIT_BASE + UNITS * UNIT_STRIDE)
 	{
 		const unit_state &u = m_unit[(offset - UNIT_BASE) / UNIT_STRIDE];
@@ -656,7 +675,7 @@ void mb8aa4181_dsp_device::write_operand(unsigned unit, u16 address, double valu
 	case 0xa: case 0xb:
 		if (address < 0xa100)
 		{
-			u.direct[address & 0xff] = std::bit_cast<u32>(float(value));
+			direct_store(u, address & 0xff, value);
 			return;
 		}
 		if ((address & 0xf00) == 0x100)
@@ -1270,8 +1289,14 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
 			{
-				u.notify_pending |= 1 << y;
-				irq_update(unitnum);
+				emu_timer *const timer = m_notify_timer[unitnum][y];
+				if (timer->enabled())
+				{
+					u.notify_pending |= 1 << y;
+					irq_update(unitnum);
+				}
+				else
+					timer->adjust(attotime::from_ticks(u.packets_run, m_packet_clock), (unitnum << 4) | y);
 			}
 			break;
 		case OP_D_CLEAR:
@@ -1409,7 +1434,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		case STORE_OPERAND: write_operand(unitnum, s.address, s.value); break;
 		case STORE_SHORT: u.shortmem[s.address & (SHORT_WORDS - 1)] = s.value; break;
 		case STORE_LOCAL: u.local[s.address & (SHORT_WORDS - 1)] = s.value; break;
-		case STORE_DIRECT: u.direct[s.address & (DIRECT_WORDS - 1)] = std::bit_cast<u32>(float(s.value)); break;
+		case STORE_DIRECT: direct_store(u, s.address & (DIRECT_WORDS - 1), s.value); break;
 		case STORE_CELL: set_cell(s.address, s.value); break;
 		}
 	}
@@ -1516,8 +1541,23 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	return transfer;
 }
 
+void mb8aa4181_dsp_device::direct_store(unit_state &u, unsigned index, double value)
+{
+	u.direct_log.push_back({ u16(index), u.packets_run, u.direct[index] });
+	u.direct[index] = std::bit_cast<u32>(float(value));
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_dsp_device::notify)
+{
+	const unsigned unit = param >> 4;
+	m_unit[unit].notify_pending |= 1 << (param & 15);
+	irq_update(unit);
+}
+
 void mb8aa4181_dsp_device::begin_frame(unit_state &u)
 {
+	u.direct_log.clear();
+	u.packets_run = 0;
 	if (u.dirty)
 		decode(u);
 	if (u.drp_dirty)
@@ -1554,6 +1594,7 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 		const packet &p = u.packets[index];
 		bool call;
 		const int transfer = step(unit, p, call);
+		u.packets_run++;
 		if (!pending)
 		{
 			index = p.next;
@@ -1592,6 +1633,7 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_dsp_device::frame)
 	if (!(m_frames & 0xff))
 		m_stream->update();
 
+	m_frame_start = machine().time();
 	run_frame(1);
 	run_frame(0);
 	m_frames++;
