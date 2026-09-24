@@ -43,13 +43,15 @@ public:
 	}
 
 	void d05(machine_config &config) ATTR_COLD;
+	void sh01a(machine_config &config) ATTR_COLD;
+	void tr08(machine_config &config) ATTR_COLD;
 
 	void init_boutique() ATTR_COLD;
 
 private:
 	required_device<mb8aa4181_device> m_maincpu;
 	required_device<stm32f103_device> m_subcpu;
-	required_device<hd44780_device> m_lcdc;
+	optional_device<hd44780_device> m_lcdc;
 	required_device<generic_spi_flash_device> m_spiflash;
 	required_region_ptr<u32> m_flash;
 	required_region_ptr<u32> m_subflash;
@@ -58,6 +60,7 @@ private:
 	u32 m_lcd_port = 0;
 
 	void mem_map(address_map &map) ATTR_COLD;
+	void boutique(machine_config &config, u16 strap) ATTR_COLD;
 
 	void subcpu_control_w(u32 data);
 	void lcd_port_w(u32 data);
@@ -103,7 +106,7 @@ void boutique_state::lcd_port_w(u32 data)
 
 void boutique_state::lcd_data_w(u8 data)
 {
-	if (!BIT(m_lcd_port, 9))
+	if (m_lcdc && !BIT(m_lcd_port, 9))
 		m_lcdc->write(BIT(m_lcd_port, 8), data);
 }
 
@@ -124,7 +127,7 @@ static INPUT_PORTS_START(d05)
 	PORT_ADJUSTER(80, "Volume")
 INPUT_PORTS_END
 
-void boutique_state::d05(machine_config &config)
+void boutique_state::boutique(machine_config &config, u16 strap)
 {
 	MB8AA4181(config, m_maincpu, 156'000'000);
 	m_maincpu->set_addrmap(AS_PROGRAM, &boutique_state::mem_map);
@@ -147,13 +150,18 @@ void boutique_state::d05(machine_config &config)
 	GENERIC_SPI_FLASH(config, m_spiflash);
 
 	STM32F103(config, m_subcpu, 32'000'000);
-	m_subcpu->gpio_in_cb<4>().set_constant(0xfffb);
+	m_subcpu->gpio_in_cb<4>().set_constant(strap);
 	m_subcpu->usart_txd_cb<0>().set(m_maincpu, FUNC(mb8aa4181_device::rxd_w<2>));
 	m_maincpu->txd_cb<2>().set(m_subcpu, FUNC(stm32f103_device::usart_rxd_w<0>));
 
 	MIDI_PORT(config, "mdin", midiin_slot, "midiin").rxd_handler().set(m_maincpu, FUNC(mb8aa4181_device::rxd_w<3>));
 	m_maincpu->txd_cb<3>().set("mdout", FUNC(midi_port_device::write_txd));
 	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+}
+
+void boutique_state::d05(machine_config &config)
+{
+	boutique(config, 0xfffb);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
@@ -170,6 +178,16 @@ void boutique_state::d05(machine_config &config)
 	m_lcdc->set_pixel_update_cb(FUNC(boutique_state::lcd_pixel_update));
 }
 
+void boutique_state::sh01a(machine_config &config)
+{
+	boutique(config, 0xfff6);
+}
+
+void boutique_state::tr08(machine_config &config)
+{
+	boutique(config, 0xfff5);
+}
+
 ROM_START(d05)
 	ROM_REGION32_LE(0x400000, "flash", 0)
 	// the 1.07 update image with the Roland Cloud D-50 plugin's waves at 0x200000, where the update leaves the flash blank
@@ -178,7 +196,25 @@ ROM_START(d05)
 	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
 ROM_END
 
+ROM_START(sh01a)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.07 update image
+	ROM_LOAD("bq3_107.bin", 0, 0x400000, BAD_DUMP CRC(e764d4ef) SHA1(8de26fe6b18925b137eafe71c861a0caf647c2bd))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
+ROM_START(tr08)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.07 update image
+	ROM_LOAD("bq3_107.bin", 0, 0x400000, BAD_DUMP CRC(e764d4ef) SHA1(8de26fe6b18925b137eafe71c861a0caf647c2bd))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
 } // anonymous namespace
 
 
-SYST(2017, d05, 0, 0, d05, d05, boutique_state, init_boutique, "Roland", "Boutique D-05 Linear Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "Boutique D-05 Linear Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, sh01a, 0, 0, sh01a, d05, boutique_state, init_boutique, "Roland", "Boutique SH-01A Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, tr08,  0, 0, tr08,  d05, boutique_state, init_boutique, "Roland", "Boutique TR-08 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
