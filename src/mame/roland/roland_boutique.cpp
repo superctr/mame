@@ -172,7 +172,8 @@ void boutique_state::d05(machine_config &config)
 
 ROM_START(d05)
 	ROM_REGION32_LE(0x400000, "flash", 0)
-	ROM_LOAD("bq3_107.bin", 0, 0x400000, CRC(e764d4ef) SHA1(8de26fe6b18925b137eafe71c861a0caf647c2bd))
+	// the 1.07 update image with the Roland Cloud D-50 plugin's waves at 0x200000, where the update leaves the flash blank
+	ROM_LOAD("d05_flash.bin", 0, 0x400000, BAD_DUMP CRC(4e757a03) SHA1(5dcf776575444cc168122b3d14a3d78d8550c3a8))
 
 	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
 ROM_END
