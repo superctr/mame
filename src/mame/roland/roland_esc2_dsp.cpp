@@ -983,7 +983,13 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_D_COUNTER;
 		else if (low == 0xf8)
 			op.type = OP_D_RETURN;
-		else if (low == 0xe8 || low == 0xe9 || low == 0xf1)
+		else if (low == 0xe8)
+		{
+			op.type = OP_D_ADDRESS;
+			op.y = 0;
+			op.q = 0.0;
+		}
+		else if (low == 0xe9 || low == 0xf1)
 			op.type = OP_NONE;
 		break;
 	}
@@ -995,6 +1001,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		{
 			op.type = OP_E_OPERAND;
 			op.value = raw(p, w & 15, 2);
+			if (BIT(w, 4))
+				op.flags |= F_INDEXED;
 		}
 		else if ((w & 0x8ff8) == 0x89b0)
 		{
@@ -1058,6 +1066,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	double r[8];
 	std::copy_n(u.r, 8, r);
 	const unsigned n = p.count;
+	bool step_index = false;
 
 	u8 dropped = 0;
 	if (p.selectors)
@@ -1328,12 +1337,21 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			break;
 
 		case OP_E_OPERAND:
+		{
 			has = false;
+			u32 address = op.value;
+			if (op.flags & F_INDEXED)
+			{
+				address = (address + s32(u.sel[0])) & 0xffff;
+				if ((op.value & 0xf000) == 0xb000)
+					step_index = true;
+			}
 			if (op.flags & F_STORE)
-				stores[nstores++] = { STORE_OPERAND, op.value, r[d] };
+				stores[nstores++] = { STORE_OPERAND, address, r[d] };
 			else
-				loads[nloads++] = { u8(d), read_operand(unitnum, op.value) };
+				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
 			break;
+		}
 		case OP_E_PUBLISH:
 			has = false;
 			publications[npublications++] = { u8(op.value), u8(y - 1) };
@@ -1448,6 +1466,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	}
 	for (unsigned i = 0; i < nselectors; i++)
 		u.sel[selector_sets[i].reg] = selector_sets[i].value;
+	if (step_index)
+		u.sel[0] += 1.0;
 	for (unsigned i = 0; i < nrequests; i++)
 	{
 		const store &q = requests[i];
