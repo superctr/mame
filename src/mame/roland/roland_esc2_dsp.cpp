@@ -594,7 +594,7 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 		return shortmem(u, address);
 	case 0x2:
 		if (address < 0x2200)
-			return u.bus[address & (BUS_WORDS - 1)];
+			return u.bus[(u.origin + address) & (BUS_WORDS - 1)];
 		break;
 	case 0x4:
 		if (address < 0x4200)
@@ -649,7 +649,7 @@ void mb8aa4181_dsp_device::write_operand(unsigned unit, u16 address, double valu
 	case 0x2:
 		if (address < 0x2200)
 		{
-			u.bus[address & (BUS_WORDS - 1)] = value;
+			u.bus[(u.origin + address) & (BUS_WORDS - 1)] = value;
 			return;
 		}
 		break;
