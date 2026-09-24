@@ -40353,6 +40353,9 @@ d550
 @source:roland/roland_d70.cpp
 d70
 
+@source:roland/roland_esc2_cputest.cpp
+esc2cputest
+
 @source:roland/roland_jd800.cpp
 jd800
 
