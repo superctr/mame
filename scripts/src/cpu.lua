@@ -203,6 +203,8 @@ if CPUS["ARMV7M"] then
 	files {
 		MAME_DIR .. "src/devices/cpu/armv7m/armv7m.cpp",
 		MAME_DIR .. "src/devices/cpu/armv7m/armv7m.h",
+		MAME_DIR .. "src/devices/cpu/armv7m/stm32f1.cpp",
+		MAME_DIR .. "src/devices/cpu/armv7m/stm32f1.h",
 	}
 end
 
