@@ -57,9 +57,9 @@ const u32 cm3_id_regs[13] = {
 } // anonymous namespace
 
 
-armv7m_device::armv7m_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u32 cpuid)
+armv7m_device::armv7m_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u32 cpuid, address_map_constructor internal_map)
 	: cpu_device(mconfig, type, tag, owner, clock)
-	, m_program_config("program", ENDIANNESS_LITTLE, 32, 32)
+	, m_program_config("program", ENDIANNESS_LITTLE, 32, 32, 0, internal_map)
 	, m_cpuid(cpuid)
 	, m_num_irq(240)
 	, m_prio_bits(8)
@@ -76,6 +76,11 @@ armv7m_device::armv7m_device(const machine_config &mconfig, device_type type, co
 
 cortex_m3_device::cortex_m3_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: armv7m_device(mconfig, CORTEX_M3, tag, owner, clock, 0x412fc231)
+{
+}
+
+cortex_m3_device::cortex_m3_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor internal_map)
+	: armv7m_device(mconfig, type, tag, owner, clock, 0x412fc231, internal_map)
 {
 }
 

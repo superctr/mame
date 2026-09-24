@@ -46,7 +46,7 @@ public:
 	template <unsigned Irq> void irq_w(int state) { set_irq_line(Irq, state); }
 
 protected:
-	armv7m_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u32 cpuid);
+	armv7m_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u32 cpuid, address_map_constructor internal_map = address_map_constructor());
 
 	// device_t overrides
 	virtual void device_resolve_objects() override ATTR_COLD;
@@ -293,6 +293,9 @@ class cortex_m3_device : public armv7m_device
 {
 public:
 	cortex_m3_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
+	cortex_m3_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor internal_map);
 };
 
 DECLARE_DEVICE_TYPE(CORTEX_M3, cortex_m3_device)
