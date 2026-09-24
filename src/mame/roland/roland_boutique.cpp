@@ -180,12 +180,12 @@ void boutique_state::d05(machine_config &config)
 
 void boutique_state::sh01a(machine_config &config)
 {
-	boutique(config, 0xfff6);
+	boutique(config, 0xfff3);
 }
 
 void boutique_state::tr08(machine_config &config)
 {
-	boutique(config, 0xfff5);
+	boutique(config, 0xfff7);
 }
 
 ROM_START(d05)
