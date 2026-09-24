@@ -15,7 +15,9 @@
 #include "emu.h"
 #include "roland_esc2.h"
 
+#include <algorithm>
 #include <bit>
+#include <cmath>
 
 #define LOG_UNMAPPED (1U << 1)
 #define LOG_BOOTROM  (1U << 2)
@@ -41,17 +43,8 @@ constexpr u32 BOOTROM_ENTRIES = 0x100;
 constexpr unsigned IRQ_DUALTIMER = 26;
 constexpr unsigned IRQ_MFS = 64;
 constexpr unsigned IRQ_ADC = 128;
-constexpr unsigned IRQ_DSP_TARGET = 146;
 constexpr unsigned IRQ_EVENT[8] = { 47, 49, 50, 51, 62, 63, 96, 97 };
-
-constexpr unsigned IRQ_DSP_SWITCH[2] = { 150, 149 };
-
-constexpr offs_t DSP_SWITCH_REQUEST[2] = { 0x54 / 4, 0x5c / 4 };
-constexpr offs_t DSP_SWITCH_STATUS[2] = { 0x658 / 4, 0x654 / 4 };
-constexpr u32 DSP_SWITCH_GO = 1 << 30;
-constexpr offs_t DSP_TARGET_STATUS = 0x648 / 4;
-constexpr offs_t DSP_TARGETS[2] = { 0x4c000 / 4, 0x6c000 / 4 };
-constexpr u32 DSP_TARGET_NOTIFY = 1 << 28;
+constexpr unsigned IRQ_DSP[mb8aa4181_dsp_device::IRQ_COUNT] = { 144, 145, 146, 147, 150, 149 };
 
 } // anonymous namespace
 
@@ -646,6 +639,7 @@ mb8aa4181_device::mb8aa4181_device(const machine_config &mconfig, const char *ta
 	: cortex_m3_device(mconfig, MB8AA4181, tag, owner, clock, address_map_constructor(FUNC(mb8aa4181_device::internal_map), this))
 	, m_flash(*this, finder_base::DUMMY_TAG)
 	, m_mfs(*this, "mfs%u", 0U)
+	, m_dsp(*this, "dsp")
 	, m_iram(*this, "iram", IRAM_SIZE, ENDIANNESS_LITTLE)
 	, m_gpio_out_cb(*this)
 	, m_gpio_in_cb(*this, 0)
@@ -667,6 +661,10 @@ void mb8aa4181_device::device_add_mconfig(machine_config &config)
 		m_mfs[i]->tx_irq_cb().set([this, i] (int state) { set_irq_line(IRQ_MFS + 4 * i + 1, state); });
 		m_mfs[i]->status_irq_cb().set([this, i] (int state) { set_irq_line(IRQ_MFS + 4 * i + 2, state); });
 	}
+
+	MB8AA4181_DSP(config, m_dsp, 0);
+	for (unsigned i = 0; i < mb8aa4181_dsp_device::IRQ_COUNT; i++)
+		m_dsp->irq_cb(i).set([this, i] (int state) { set_irq_line(IRQ_DSP[i], state); });
 }
 
 void mb8aa4181_device::internal_map(address_map &map)
@@ -680,6 +678,7 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x40002000, 0x4000200b).rw(FUNC(mb8aa4181_device::dmaflag_r), FUNC(mb8aa4181_device::dmaflag_w));
 	map(0x40005000, 0x4000503f).rw(FUNC(mb8aa4181_device::sfi_r), FUNC(mb8aa4181_device::sfi_w));
 	map(0x40017040, 0x40017047).r(FUNC(mb8aa4181_device::timebase_r));
+	map(0x40040500, 0x4004057f).rw(FUNC(mb8aa4181_device::converter_r), FUNC(mb8aa4181_device::converter_w));
 	map(0x40023000, 0x4002301f).rw(FUNC(mb8aa4181_device::exint_reg_r), FUNC(mb8aa4181_device::exint_reg_w));
 	map(0x40025000, 0x40025fff).rw(FUNC(mb8aa4181_device::dualtimer_r), FUNC(mb8aa4181_device::dualtimer_w));
 	for (unsigned i = 0; i < 8; i++)
@@ -687,7 +686,7 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x4002c000, 0x4002c03f).rw(FUNC(mb8aa4181_device::adc_r), FUNC(mb8aa4181_device::adc_w));
 	map(0x4002d000, 0x4002d03f).rw(FUNC(mb8aa4181_device::gpio_r), FUNC(mb8aa4181_device::gpio_w));
 	map(0x4002de20, 0x4002de3f).w(FUNC(mb8aa4181_device::event_w));
-	map(0x40100000, 0x4017ffff).rw(FUNC(mb8aa4181_device::dsp_r), FUNC(mb8aa4181_device::dsp_w));
+	map(0x40100000, 0x4017ffff).rw(m_dsp, FUNC(mb8aa4181_dsp_device::read), FUNC(mb8aa4181_dsp_device::write));
 	map(0x40045000, 0x40045fff).ram();
 }
 
@@ -698,11 +697,11 @@ void mb8aa4181_device::device_start()
 	for (int i = 0; i < 2; i++)
 		m_timer[i] = timer_alloc(FUNC(mb8aa4181_device::dualtimer_expired), this);
 	m_adc_timer = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
-	m_frame_timer = timer_alloc(FUNC(mb8aa4181_device::frame_end), this);
 	m_exint_level = 0;
 
 	save_item(NAME(m_gpio_out));
 	save_item(NAME(m_dma_flags));
+	save_item(NAME(m_converter));
 	save_item(NAME(m_adc_ctrl));
 	save_item(NAME(m_adc_config));
 	save_item(NAME(m_adc_status));
@@ -711,10 +710,6 @@ void mb8aa4181_device::device_start()
 	save_item(NAME(m_timer_bgload));
 	save_item(NAME(m_timer_ctrl));
 	save_item(NAME(m_timer_int));
-	save_item(NAME(m_target_queued));
-	save_item(NAME(m_target_pending));
-	save_item(NAME(m_switch_queued));
-	save_item(NAME(m_switch_done));
 	save_item(NAME(m_sfi));
 	save_item(NAME(m_exint));
 	save_item(NAME(m_exint_level));
@@ -730,23 +725,16 @@ void mb8aa4181_device::device_reset()
 		m_iram[i / 4] = m_flash[(0x30 + i) / 4];
 
 	m_regs.clear();
-	m_dsp.clear();
 	m_dma_flags = 0;
 	std::fill_n(m_sfi, 16, 0);
 	std::fill_n(m_exint, 8, 0);
 	m_exint_pending = 0;
 	m_sfi_rx_left = 0;
 	m_sfi_tx_left = 0;
+	std::fill_n(m_converter, 4, 0.0);
 	m_adc_ctrl = m_adc_config = m_adc_status = 0;
 	std::fill_n(m_adc_data, 8, 0);
 	m_adc_timer->adjust(attotime::never);
-	for (int i = 0; i < 2; i++)
-	{
-		std::fill_n(m_target_queued[i], 8, 0);
-		std::fill_n(m_target_pending[i], 8, 0);
-	}
-	m_switch_queued = m_switch_done = 0;
-	m_frame_timer->adjust(attotime::never);
 	for (int i = 0; i < 8; i++)
 	{
 		m_gpio_out[i] = 0;
@@ -763,11 +751,7 @@ void mb8aa4181_device::device_reset()
 
 	cortex_m3_device::device_reset();
 	for (int i = 0; i < 2; i++)
-	{
 		dualtimer_irq(i);
-		target_irq(i);
-		set_irq_line(IRQ_DSP_SWITCH[i], CLEAR_LINE);
-	}
 	exint_update();
 }
 
@@ -952,6 +936,37 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_device::adc_done)
 	set_irq_line(IRQ_ADC, ASSERT_LINE);
 }
 
+u32 mb8aa4181_device::converter_r(offs_t offset)
+{
+	const double value = m_converter[offset >> 3];
+	switch (offset & 7)
+	{
+	case 1: case 2: case 3:
+	{
+		const double scaled = std::trunc(std::ldexp(value, (offset & 7) == 1 ? 16 : (offset & 7) == 2 ? 24 : 31));
+		return u32(s32(std::clamp(scaled, -2147483648.0, 2147483647.0)));
+	}
+	case 4:
+		return mb8aa4181_dsp_device::native_number(std::bit_cast<u32>(float(value)), 32);
+	case 5:
+		return std::bit_cast<u32>(float(value));
+	}
+	return 0;
+}
+
+void mb8aa4181_device::converter_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	double &value = m_converter[offset >> 3];
+	switch (offset & 7)
+	{
+	case 1: value = std::ldexp(double(s32(data)), -16); break;
+	case 2: value = std::ldexp(double(s32(data)), -24); break;
+	case 3: value = std::ldexp(double(s32(data)), -31); break;
+	case 4: value = mb8aa4181_dsp_device::native_value(data, 32); break;
+	case 5: value = std::bit_cast<float>(data); break;
+	}
+}
+
 u32 mb8aa4181_device::adc_r(offs_t offset)
 {
 	switch (offset)
@@ -1027,103 +1042,6 @@ void mb8aa4181_device::dmaflag_w(offs_t offset, u32 data, u32 mem_mask)
 {
 	if (offset == 2)
 		m_dma_flags &= ~(data & mem_mask);
-}
-
-
-//  DSP window
-
-int mb8aa4181_device::target_next(int unit) const
-{
-	for (int i = 0; i < 8; i++)
-		if (m_target_pending[unit][i])
-			return i * 32 + std::countr_zero(m_target_pending[unit][i]);
-	return -1;
-}
-
-void mb8aa4181_device::target_irq(int unit)
-{
-	set_irq_line(IRQ_DSP_TARGET + unit, target_next(unit) >= 0 ? ASSERT_LINE : CLEAR_LINE);
-}
-
-void mb8aa4181_device::frame_request()
-{
-	if (m_frame_timer->remaining().is_never())
-		m_frame_timer->adjust(attotime::from_ticks(3250, clock()));
-}
-
-TIMER_CALLBACK_MEMBER(mb8aa4181_device::frame_end)
-{
-	for (int unit = 0; unit < 2; unit++)
-	{
-		for (int i = 0; i < 8; i++)
-		{
-			m_target_pending[unit][i] |= m_target_queued[unit][i];
-			m_target_queued[unit][i] = 0;
-		}
-		target_irq(unit);
-		if (BIT(m_switch_queued, unit))
-			set_irq_line(IRQ_DSP_SWITCH[unit], ASSERT_LINE);
-	}
-	m_switch_done |= m_switch_queued;
-	m_switch_queued = 0;
-}
-
-u32 mb8aa4181_device::dsp_r(offs_t offset, u32 mem_mask)
-{
-	if (offset == 0x48 / 4)
-		return u32(machine().time().as_ticks(clock() / 3250));
-	if (offset == DSP_TARGET_STATUS || offset == DSP_TARGET_STATUS + 1)
-	{
-		const int index = target_next(offset - DSP_TARGET_STATUS);
-		return index >= 0 ? index << 4 : 0;
-	}
-	for (int unit = 0; unit < 2; unit++)
-		if (offset == DSP_SWITCH_STATUS[unit])
-			return BIT(m_switch_done, unit);
-	const auto it = m_dsp.find(offset);
-	return it != m_dsp.end() ? it->second : 0;
-}
-
-void mb8aa4181_device::dsp_w(offs_t offset, u32 data, u32 mem_mask)
-{
-	if (offset == 0x0c / 4)
-		return;
-	if (offset == DSP_TARGET_STATUS || offset == DSP_TARGET_STATUS + 1)
-	{
-		const int unit = offset - DSP_TARGET_STATUS;
-		const int index = target_next(unit);
-		if (index >= 0)
-			m_target_pending[unit][index >> 5] &= ~(1U << (index & 31));
-		target_irq(unit);
-		return;
-	}
-	for (int unit = 0; unit < 2; unit++)
-	{
-		if (offset == DSP_SWITCH_STATUS[unit])
-		{
-			m_switch_done &= ~(1 << unit);
-			set_irq_line(IRQ_DSP_SWITCH[unit], CLEAR_LINE);
-			return;
-		}
-	}
-	COMBINE_DATA(&m_dsp[offset]);
-	for (int unit = 0; unit < 2; unit++)
-	{
-		if (offset == DSP_SWITCH_REQUEST[unit] && (data & mem_mask & DSP_SWITCH_GO))
-		{
-			m_switch_queued |= 1 << unit;
-			frame_request();
-		}
-	}
-	for (int unit = 0; unit < 2; unit++)
-	{
-		const offs_t index = (offset - DSP_TARGETS[unit]) >> 2;
-		if (index < 0x100 && (offset & 3) == 1 && (m_dsp[offset - 1] & DSP_TARGET_NOTIFY))
-		{
-			m_target_queued[unit][index >> 5] |= 1U << (index & 31);
-			frame_request();
-		}
-	}
 }
 
 

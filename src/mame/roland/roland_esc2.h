@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "roland_esc2_dsp.h"
+
 #include "cpu/armv7m/armv7m.h"
 #include "diserial.h"
 
@@ -130,10 +132,10 @@ protected:
 private:
 	required_region_ptr<u32> m_flash;
 	required_device_array<mb8aa4181_mfs_device, 8> m_mfs;
+	required_device<mb8aa4181_dsp_device> m_dsp;
 	memory_share_creator<u32> m_iram;
 	std::unordered_map<offs_t, u32> m_regs;
 	std::unordered_map<offs_t, u32> m_logged;
-	std::unordered_map<offs_t, u32> m_dsp;
 	devcb_write32::array<8> m_gpio_out_cb;
 	devcb_read32::array<8> m_gpio_in_cb;
 	devcb_read16::array<8> m_adc_in_cb;
@@ -149,6 +151,7 @@ private:
 	u8 m_exint_pending;
 	u32 m_sfi_rx_left;
 	u32 m_sfi_tx_left;
+	double m_converter[4];
 	u32 m_adc_ctrl;
 	u32 m_adc_config;
 	u32 m_adc_status;
@@ -159,11 +162,6 @@ private:
 	u32 m_timer_ctrl[2];
 	bool m_timer_int[2];
 	emu_timer *m_timer[2];
-	u32 m_target_queued[2][8];
-	u32 m_target_pending[2][8];
-	u8 m_switch_queued;
-	u8 m_switch_done;
-	emu_timer *m_frame_timer;
 
 	void internal_map(address_map &map) ATTR_COLD;
 
@@ -179,6 +177,8 @@ private:
 	void unmapped_w(offs_t offset, u32 data, u32 mem_mask);
 
 	u32 timebase_r(offs_t offset);
+	u32 converter_r(offs_t offset);
+	void converter_w(offs_t offset, u32 data, u32 mem_mask);
 	u32 adc_r(offs_t offset);
 	void adc_w(offs_t offset, u32 data, u32 mem_mask);
 	TIMER_CALLBACK_MEMBER(adc_done);
@@ -186,13 +186,6 @@ private:
 	u32 dmaflag_r(offs_t offset);
 	void dmaflag_w(offs_t offset, u32 data, u32 mem_mask);
 	void rom_dma(u32 desc);
-
-	u32 dsp_r(offs_t offset, u32 mem_mask);
-	void dsp_w(offs_t offset, u32 data, u32 mem_mask);
-	int target_next(int unit) const;
-	void target_irq(int unit);
-	void frame_request();
-	TIMER_CALLBACK_MEMBER(frame_end);
 
 	void event_w(offs_t offset, u32 data, u32 mem_mask);
 
