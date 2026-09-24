@@ -15,6 +15,8 @@
 #include "emu.h"
 #include "roland_esc2.h"
 
+#include <bit>
+
 #define LOG_UNMAPPED (1U << 1)
 #define LOG_BOOTROM  (1U << 2)
 
@@ -39,6 +41,17 @@ constexpr u32 BOOTROM_ENTRIES = 0x100;
 constexpr unsigned IRQ_DUALTIMER = 26;
 constexpr unsigned IRQ_MFS = 64;
 constexpr unsigned IRQ_ADC = 128;
+constexpr unsigned IRQ_DSP_TARGET = 146;
+constexpr unsigned IRQ_EVENT[8] = { 47, 49, 50, 51, 62, 63, 96, 97 };
+
+constexpr unsigned IRQ_DSP_SWITCH[2] = { 150, 149 };
+
+constexpr offs_t DSP_SWITCH_REQUEST[2] = { 0x54 / 4, 0x5c / 4 };
+constexpr offs_t DSP_SWITCH_STATUS[2] = { 0x658 / 4, 0x654 / 4 };
+constexpr u32 DSP_SWITCH_GO = 1 << 30;
+constexpr offs_t DSP_TARGET_STATUS = 0x648 / 4;
+constexpr offs_t DSP_TARGETS[2] = { 0x4c000 / 4, 0x6c000 / 4 };
+constexpr u32 DSP_TARGET_NOTIFY = 1 << 28;
 
 } // anonymous namespace
 
@@ -637,6 +650,9 @@ mb8aa4181_device::mb8aa4181_device(const machine_config &mconfig, const char *ta
 	, m_gpio_out_cb(*this)
 	, m_gpio_in_cb(*this, 0)
 	, m_adc_in_cb(*this, 0)
+	, m_sfi_cs_cb(*this)
+	, m_sfi_tx_cb(*this)
+	, m_sfi_rx_cb(*this, 0xff)
 {
 	set_num_irq(160);
 	set_vtor_reset(IRAM_BASE);
@@ -662,12 +678,15 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x20000000, 0x2000ffff).ram();
 	map(0x40008000, 0x4000a0ff).ram();
 	map(0x40002000, 0x4000200b).rw(FUNC(mb8aa4181_device::dmaflag_r), FUNC(mb8aa4181_device::dmaflag_w));
+	map(0x40005000, 0x4000503f).rw(FUNC(mb8aa4181_device::sfi_r), FUNC(mb8aa4181_device::sfi_w));
 	map(0x40017040, 0x40017047).r(FUNC(mb8aa4181_device::timebase_r));
+	map(0x40023000, 0x4002301f).rw(FUNC(mb8aa4181_device::exint_reg_r), FUNC(mb8aa4181_device::exint_reg_w));
 	map(0x40025000, 0x40025fff).rw(FUNC(mb8aa4181_device::dualtimer_r), FUNC(mb8aa4181_device::dualtimer_w));
 	for (unsigned i = 0; i < 8; i++)
 		map(0x40028000 + 0x400 * i, 0x400283ff + 0x400 * i).rw(m_mfs[i], FUNC(mb8aa4181_mfs_device::read), FUNC(mb8aa4181_mfs_device::write));
 	map(0x4002c000, 0x4002c03f).rw(FUNC(mb8aa4181_device::adc_r), FUNC(mb8aa4181_device::adc_w));
 	map(0x4002d000, 0x4002d03f).rw(FUNC(mb8aa4181_device::gpio_r), FUNC(mb8aa4181_device::gpio_w));
+	map(0x4002de20, 0x4002de3f).w(FUNC(mb8aa4181_device::event_w));
 	map(0x40100000, 0x4017ffff).rw(FUNC(mb8aa4181_device::dsp_r), FUNC(mb8aa4181_device::dsp_w));
 	map(0x40045000, 0x40045fff).ram();
 }
@@ -679,6 +698,8 @@ void mb8aa4181_device::device_start()
 	for (int i = 0; i < 2; i++)
 		m_timer[i] = timer_alloc(FUNC(mb8aa4181_device::dualtimer_expired), this);
 	m_adc_timer = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
+	m_frame_timer = timer_alloc(FUNC(mb8aa4181_device::frame_end), this);
+	m_exint_level = 0;
 
 	save_item(NAME(m_gpio_out));
 	save_item(NAME(m_dma_flags));
@@ -690,6 +711,16 @@ void mb8aa4181_device::device_start()
 	save_item(NAME(m_timer_bgload));
 	save_item(NAME(m_timer_ctrl));
 	save_item(NAME(m_timer_int));
+	save_item(NAME(m_target_queued));
+	save_item(NAME(m_target_pending));
+	save_item(NAME(m_switch_queued));
+	save_item(NAME(m_switch_done));
+	save_item(NAME(m_sfi));
+	save_item(NAME(m_exint));
+	save_item(NAME(m_exint_level));
+	save_item(NAME(m_exint_pending));
+	save_item(NAME(m_sfi_rx_left));
+	save_item(NAME(m_sfi_tx_left));
 }
 
 void mb8aa4181_device::device_reset()
@@ -701,9 +732,21 @@ void mb8aa4181_device::device_reset()
 	m_regs.clear();
 	m_dsp.clear();
 	m_dma_flags = 0;
+	std::fill_n(m_sfi, 16, 0);
+	std::fill_n(m_exint, 8, 0);
+	m_exint_pending = 0;
+	m_sfi_rx_left = 0;
+	m_sfi_tx_left = 0;
 	m_adc_ctrl = m_adc_config = m_adc_status = 0;
 	std::fill_n(m_adc_data, 8, 0);
 	m_adc_timer->adjust(attotime::never);
+	for (int i = 0; i < 2; i++)
+	{
+		std::fill_n(m_target_queued[i], 8, 0);
+		std::fill_n(m_target_pending[i], 8, 0);
+	}
+	m_switch_queued = m_switch_done = 0;
+	m_frame_timer->adjust(attotime::never);
 	for (int i = 0; i < 8; i++)
 	{
 		m_gpio_out[i] = 0;
@@ -720,7 +763,12 @@ void mb8aa4181_device::device_reset()
 
 	cortex_m3_device::device_reset();
 	for (int i = 0; i < 2; i++)
+	{
 		dualtimer_irq(i);
+		target_irq(i);
+		set_irq_line(IRQ_DSP_SWITCH[i], CLEAR_LINE);
+	}
+	exint_update();
 }
 
 u32 mb8aa4181_device::bootrom_call(u32 entry)
@@ -745,6 +793,9 @@ u32 mb8aa4181_device::bootrom_call(u32 entry)
 	case 0x134:
 		rom_dma(r1);
 		return 0;
+
+	case 0x0c8:
+		return sfi_status();
 
 	default:
 		LOGBOOTROM("%s: boot ROM API %03x (%08x %08x %08x %08x)\n", machine().describe_context(), entry,
@@ -773,6 +824,111 @@ u32 mb8aa4181_device::bootrom_r(offs_t offset, u32 mem_mask)
 u32 mb8aa4181_device::flash_r(offs_t offset)
 {
 	return m_flash[offset & (m_flash.length() - 1)];
+}
+
+
+//  serial-flash interface
+
+void mb8aa4181_device::sfi_start(u8 command)
+{
+	m_sfi_cs_cb(0);
+	m_sfi_tx_cb(command);
+	if (BIT(m_sfi[0x10 / 4], 29, 2))
+		for (int i = 16; i >= 0; i -= 8)
+			m_sfi_tx_cb(m_sfi[0x1c / 4] >> i);
+}
+
+void mb8aa4181_device::sfi_end()
+{
+	m_sfi_rx_left = m_sfi_tx_left = 0;
+	m_sfi_cs_cb(1);
+}
+
+u8 mb8aa4181_device::sfi_status()
+{
+	sfi_end();
+	m_sfi_cs_cb(0);
+	m_sfi_tx_cb(0x05);
+	m_sfi_tx_cb(0);
+	const u8 status = m_sfi_rx_cb();
+	m_sfi_cs_cb(1);
+	return status;
+}
+
+u32 mb8aa4181_device::sfi_r(offs_t offset)
+{
+	switch (offset)
+	{
+	case 0x08 / 4:
+		return (m_sfi[offset] & ~0x1f1f) | (std::min<u32>(m_sfi_rx_left, 16) << 8);
+
+	case 0x20 / 4:
+	{
+		if (machine().side_effects_disabled())
+			return 0;
+		u32 data = 0;
+		for (int i = 0; i < 4 && m_sfi_rx_left; i++)
+		{
+			m_sfi_tx_cb(0);
+			data |= u32(m_sfi_rx_cb()) << (8 * i);
+			if (!--m_sfi_rx_left)
+				sfi_end();
+		}
+		return data;
+	}
+
+	default:
+		return m_sfi[offset];
+	}
+}
+
+void mb8aa4181_device::sfi_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	COMBINE_DATA(&m_sfi[offset]);
+	switch (offset)
+	{
+	case 0x18 / 4:
+	{
+		sfi_end();
+		const u32 length = BIT(m_sfi[0x10 / 4], 16, 13) ? BIT(m_sfi[0x10 / 4], 16, 13) : BIT(m_sfi[0x10 / 4], 0, 16);
+		if (data == 0x01 || data == 0x02 || data == 0x20)
+		{
+			m_sfi_cs_cb(0);
+			m_sfi_tx_cb(0x06);
+			m_sfi_cs_cb(1);
+		}
+		sfi_start(data);
+		switch (data)
+		{
+		case 0x01:
+			m_sfi_tx_cb(m_sfi[0x30 / 4]);
+			sfi_end();
+			break;
+
+		case 0x02:
+			m_sfi_tx_left = length;
+			break;
+
+		case 0x03:
+			m_sfi_rx_left = length;
+			break;
+
+		default:
+			sfi_end();
+			break;
+		}
+		break;
+	}
+
+	case 0x30 / 4:
+		for (int i = 0; i < 4 && m_sfi_tx_left; i++)
+		{
+			m_sfi_tx_cb(data >> (8 * i));
+			if (!--m_sfi_tx_left)
+				sfi_end();
+		}
+		break;
+	}
 }
 
 
@@ -876,10 +1032,54 @@ void mb8aa4181_device::dmaflag_w(offs_t offset, u32 data, u32 mem_mask)
 
 //  DSP window
 
+int mb8aa4181_device::target_next(int unit) const
+{
+	for (int i = 0; i < 8; i++)
+		if (m_target_pending[unit][i])
+			return i * 32 + std::countr_zero(m_target_pending[unit][i]);
+	return -1;
+}
+
+void mb8aa4181_device::target_irq(int unit)
+{
+	set_irq_line(IRQ_DSP_TARGET + unit, target_next(unit) >= 0 ? ASSERT_LINE : CLEAR_LINE);
+}
+
+void mb8aa4181_device::frame_request()
+{
+	if (m_frame_timer->remaining().is_never())
+		m_frame_timer->adjust(attotime::from_ticks(3250, clock()));
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_device::frame_end)
+{
+	for (int unit = 0; unit < 2; unit++)
+	{
+		for (int i = 0; i < 8; i++)
+		{
+			m_target_pending[unit][i] |= m_target_queued[unit][i];
+			m_target_queued[unit][i] = 0;
+		}
+		target_irq(unit);
+		if (BIT(m_switch_queued, unit))
+			set_irq_line(IRQ_DSP_SWITCH[unit], ASSERT_LINE);
+	}
+	m_switch_done |= m_switch_queued;
+	m_switch_queued = 0;
+}
+
 u32 mb8aa4181_device::dsp_r(offs_t offset, u32 mem_mask)
 {
 	if (offset == 0x48 / 4)
 		return u32(machine().time().as_ticks(clock() / 3250));
+	if (offset == DSP_TARGET_STATUS || offset == DSP_TARGET_STATUS + 1)
+	{
+		const int index = target_next(offset - DSP_TARGET_STATUS);
+		return index >= 0 ? index << 4 : 0;
+	}
+	for (int unit = 0; unit < 2; unit++)
+		if (offset == DSP_SWITCH_STATUS[unit])
+			return BIT(m_switch_done, unit);
 	const auto it = m_dsp.find(offset);
 	return it != m_dsp.end() ? it->second : 0;
 }
@@ -888,7 +1088,42 @@ void mb8aa4181_device::dsp_w(offs_t offset, u32 data, u32 mem_mask)
 {
 	if (offset == 0x0c / 4)
 		return;
+	if (offset == DSP_TARGET_STATUS || offset == DSP_TARGET_STATUS + 1)
+	{
+		const int unit = offset - DSP_TARGET_STATUS;
+		const int index = target_next(unit);
+		if (index >= 0)
+			m_target_pending[unit][index >> 5] &= ~(1U << (index & 31));
+		target_irq(unit);
+		return;
+	}
+	for (int unit = 0; unit < 2; unit++)
+	{
+		if (offset == DSP_SWITCH_STATUS[unit])
+		{
+			m_switch_done &= ~(1 << unit);
+			set_irq_line(IRQ_DSP_SWITCH[unit], CLEAR_LINE);
+			return;
+		}
+	}
 	COMBINE_DATA(&m_dsp[offset]);
+	for (int unit = 0; unit < 2; unit++)
+	{
+		if (offset == DSP_SWITCH_REQUEST[unit] && (data & mem_mask & DSP_SWITCH_GO))
+		{
+			m_switch_queued |= 1 << unit;
+			frame_request();
+		}
+	}
+	for (int unit = 0; unit < 2; unit++)
+	{
+		const offs_t index = (offset - DSP_TARGETS[unit]) >> 2;
+		if (index < 0x100 && (offset & 3) == 1 && (m_dsp[offset - 1] & DSP_TARGET_NOTIFY))
+		{
+			m_target_queued[unit][index >> 5] |= 1U << (index & 31);
+			frame_request();
+		}
+	}
 }
 
 
@@ -911,6 +1146,53 @@ void mb8aa4181_device::gpio_w(offs_t offset, u32 data, u32 mem_mask)
 	COMBINE_DATA(&m_gpio_out[port]);
 	if (m_gpio_out[port] != old)
 		m_gpio_out_cb[port](m_gpio_out[port]);
+}
+
+
+//  external interrupts
+
+void mb8aa4181_device::exint_in(unsigned channel, int state)
+{
+	const u8 bit = 1 << channel;
+	if (!state && (m_exint_level & bit))
+		m_exint_pending |= bit;
+	m_exint_level = state ? (m_exint_level | bit) : (m_exint_level & ~bit);
+	exint_update();
+}
+
+void mb8aa4181_device::exint_update()
+{
+	const u8 active = m_exint_pending & ~m_exint[0];
+	for (unsigned i = 0; i < 8; i++)
+		set_irq_line(i, BIT(active, i) ? ASSERT_LINE : CLEAR_LINE);
+}
+
+u32 mb8aa4181_device::exint_reg_r(offs_t offset)
+{
+	switch (offset)
+	{
+	case 0x0c / 4: return m_exint_level;
+	case 0x10 / 4: return m_exint_pending;
+	default: return m_exint[offset];
+	}
+}
+
+void mb8aa4181_device::exint_reg_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	if (offset == 0x10 / 4)
+		m_exint_pending &= ~data;
+	else
+		COMBINE_DATA(&m_exint[offset]);
+	exint_update();
+}
+
+
+//  event triggers
+
+void mb8aa4181_device::event_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	set_irq_line(IRQ_EVENT[offset], ASSERT_LINE);
+	set_irq_line(IRQ_EVENT[offset], CLEAR_LINE);
 }
 
 

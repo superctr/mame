@@ -117,6 +117,10 @@ public:
 	template <unsigned N> auto gpio_in_cb() { return m_gpio_in_cb[N].bind(); }
 	template <unsigned N> auto adc_in_cb() { return m_adc_in_cb[N].bind(); }
 	template <unsigned N> void rxd_w(int state) { m_mfs[N]->rxd_w(state); }
+	template <unsigned N> void exint_w(int state) { exint_in(N, state); }
+	auto sfi_cs_cb() { return m_sfi_cs_cb.bind(); }
+	auto sfi_tx_cb() { return m_sfi_tx_cb.bind(); }
+	auto sfi_rx_cb() { return m_sfi_rx_cb.bind(); }
 
 protected:
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
@@ -133,9 +137,18 @@ private:
 	devcb_write32::array<8> m_gpio_out_cb;
 	devcb_read32::array<8> m_gpio_in_cb;
 	devcb_read16::array<8> m_adc_in_cb;
+	devcb_write_line m_sfi_cs_cb;
+	devcb_write8 m_sfi_tx_cb;
+	devcb_read8 m_sfi_rx_cb;
 
 	u32 m_gpio_out[8];
 	u32 m_dma_flags;
+	u32 m_sfi[16];
+	u32 m_exint[8];
+	u8 m_exint_level;
+	u8 m_exint_pending;
+	u32 m_sfi_rx_left;
+	u32 m_sfi_tx_left;
 	u32 m_adc_ctrl;
 	u32 m_adc_config;
 	u32 m_adc_status;
@@ -146,12 +159,22 @@ private:
 	u32 m_timer_ctrl[2];
 	bool m_timer_int[2];
 	emu_timer *m_timer[2];
+	u32 m_target_queued[2][8];
+	u32 m_target_pending[2][8];
+	u8 m_switch_queued;
+	u8 m_switch_done;
+	emu_timer *m_frame_timer;
 
 	void internal_map(address_map &map) ATTR_COLD;
 
 	u32 bootrom_r(offs_t offset, u32 mem_mask);
 	u32 bootrom_call(u32 entry);
 	u32 flash_r(offs_t offset);
+	void sfi_start(u8 command);
+	void sfi_end();
+	u8 sfi_status();
+	u32 sfi_r(offs_t offset);
+	void sfi_w(offs_t offset, u32 data, u32 mem_mask);
 	u32 unmapped_r(offs_t offset, u32 mem_mask);
 	void unmapped_w(offs_t offset, u32 data, u32 mem_mask);
 
@@ -166,6 +189,17 @@ private:
 
 	u32 dsp_r(offs_t offset, u32 mem_mask);
 	void dsp_w(offs_t offset, u32 data, u32 mem_mask);
+	int target_next(int unit) const;
+	void target_irq(int unit);
+	void frame_request();
+	TIMER_CALLBACK_MEMBER(frame_end);
+
+	void event_w(offs_t offset, u32 data, u32 mem_mask);
+
+	void exint_in(unsigned channel, int state);
+	void exint_update();
+	u32 exint_reg_r(offs_t offset);
+	void exint_reg_w(offs_t offset, u32 data, u32 mem_mask);
 
 	u32 gpio_r(offs_t offset);
 	void gpio_w(offs_t offset, u32 data, u32 mem_mask);
