@@ -384,6 +384,8 @@ void generic_spi_flash_device::process_sector_erase_command(u8 data)
 	case 0x02:
 		m_spi_addr = (m_spi_addr & 0xffff00) | (data); m_spi_state_step++;
 		LOGMASKED(LOG_SPI, "SPI set to Erase Sector with address %08x\n", m_spi_addr);
+		if ((m_spi_statusreg & 0x02) && m_spiptr && m_length)
+			std::fill_n(&m_spiptr[m_spi_addr & (m_length - 1) & ~0xfff], std::min<size_t>(0x1000, m_length), 0xff);
 		break;
 	default:
 		LOGMASKED(LOG_SPI, "unexpected byte %02x when writing sector erase address\n", data);
