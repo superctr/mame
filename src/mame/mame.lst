@@ -40341,6 +40341,9 @@ juno6
 @source:roland/roland_cm32p.cpp
 cm32p
 
+@source:roland/roland_boutique.cpp
+d05
+
 @source:roland/roland_d10.cpp
 d10
 d110
