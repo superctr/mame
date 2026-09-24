@@ -212,6 +212,7 @@ private:
 	double m_port[0x100];
 	std::unordered_map<offs_t, u32> m_regs;
 	u32 m_field;
+	u32 m_flags;
 	u32 m_frames;
 	u8 m_switch_queued;
 	u8 m_switch_done;

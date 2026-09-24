@@ -35,6 +35,7 @@ namespace {
 constexpr offs_t FRAME_COUNT = 0x048 / 4;
 constexpr offs_t MEMORY_ADDRESS = 0x050 / 4;
 constexpr offs_t SWITCH_REQUEST[2] = { 0x054 / 4, 0x05c / 4 };
+constexpr offs_t FLAGS = 0x600 / 4;
 constexpr offs_t NOTIFY_STATUS = 0x640 / 4;
 constexpr offs_t TARGET_STATUS = 0x648 / 4;
 constexpr offs_t SWITCH_STATUS[2] = { 0x658 / 4, 0x654 / 4 };
@@ -175,6 +176,7 @@ void mb8aa4181_dsp_device::device_start()
 	save_item(NAME(m_shared));
 	save_item(NAME(m_port));
 	save_item(NAME(m_field));
+	save_item(NAME(m_flags));
 	save_item(NAME(m_frame_start));
 	save_item(NAME(m_frames));
 	save_item(NAME(m_switch_queued));
@@ -187,6 +189,7 @@ void mb8aa4181_dsp_device::device_reset()
 	std::fill_n(m_shared, 0x100, 0.0);
 	std::fill_n(m_port, 0x100, 0.0);
 	m_field = 0;
+	m_flags = 0;
 	m_frames = 0;
 	m_switch_queued = m_switch_done = 0;
 	m_output_read = m_output_write = 0;
@@ -416,6 +419,8 @@ void mb8aa4181_dsp_device::host_write(offs_t offset, u32 data, u32 mem_mask)
 		}
 	}
 	COMBINE_DATA(&m_regs[offset]);
+	if (offset == FLAGS)
+		m_flags = m_regs[offset];
 }
 
 u32 mb8aa4181_dsp_device::native_number(u32 data, unsigned bits)
@@ -700,7 +705,7 @@ bool mb8aa4181_dsp_device::condition(const unit_state &u, u16 word) const
 	const unsigned relation = (word >> 9) & 3;
 	const bool complement = BIT(word, 8);
 	if (source == 3)
-		return complement;
+		return BIT(m_flags, (word >> 9) & 7) != complement;
 	if (relation == 2)
 		return source == 1 ? u.arrival_visible != complement : false;
 
