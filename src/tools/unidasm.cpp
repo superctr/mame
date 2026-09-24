@@ -23,6 +23,7 @@ using util::BIT;
 #include "cpu/arc/arcdasm.h"
 #include "cpu/arcompact/arcompactdasm.h"
 #include "cpu/arm7/arm7dasm.h"
+#include "cpu/armv7m/armv7mdasm.h"
 #include "cpu/asap/asapdasm.h"
 #include "cpu/avr8/avr8dasm.h"
 #include "cpu/bcp/bcpdasm.h"
@@ -425,6 +426,7 @@ static const dasm_table_entry dasm_table[] =
 	{ "arm7_be",         be,  0, []() -> util::disasm_interface * { arm7_unidasm.t_flag = false; arm7_unidasm.arch_rev = 5; return new arm7_disassembler(&arm7_unidasm); } },
 	{ "arm7thumb",       le,  0, []() -> util::disasm_interface * { arm7_unidasm.t_flag = true; arm7_unidasm.arch_rev = 5; return new arm7_disassembler(&arm7_unidasm); } },
 	{ "arm7thumbb",      be,  0, []() -> util::disasm_interface * { arm7_unidasm.t_flag = true; arm7_unidasm.arch_rev = 5; return new arm7_disassembler(&arm7_unidasm); } },
+	{ "armv7m",          le,  0, []() -> util::disasm_interface * { return new armv7m_disassembler; } },
 	{ "asap",            le,  0, []() -> util::disasm_interface * { return new asap_disassembler; } },
 	{ "avr8",            le,  0, []() -> util::disasm_interface * { return new avr8_disassembler; } },
 	{ "axc51core",       le,  0, []() -> util::disasm_interface * { return new axc51core_disassembler; } },

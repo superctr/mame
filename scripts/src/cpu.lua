@@ -195,6 +195,23 @@ if opt_tool(CPUS, "ARM7") then
 end
 
 --------------------------------------------------
+-- ARMv7-M (Cortex-M3)
+--@src/devices/cpu/armv7m/armv7m.h,CPUS["ARMV7M"] = true
+--------------------------------------------------
+
+if CPUS["ARMV7M"] then
+	files {
+		MAME_DIR .. "src/devices/cpu/armv7m/armv7m.cpp",
+		MAME_DIR .. "src/devices/cpu/armv7m/armv7m.h",
+	}
+end
+
+if opt_tool(CPUS, "ARMV7M") then
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/armv7m/armv7mdasm.cpp")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/cpu/armv7m/armv7mdasm.h")
+end
+
+--------------------------------------------------
 -- Advanced Digital Chips SE3208
 --@src/devices/cpu/se3208/se3208.h,CPUS["SE3208"] = true
 --------------------------------------------------
