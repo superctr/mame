@@ -16,6 +16,7 @@
 #include "roland_esc2.h"
 
 #include "cpu/armv7m/stm32f1.h"
+#include "machine/generic_spi_flash.h"
 #include "bus/midi/midi.h"
 #include "video/hd44780.h"
 
@@ -33,6 +34,7 @@ public:
 		, m_maincpu(*this, "maincpu")
 		, m_subcpu(*this, "subcpu")
 		, m_lcdc(*this, "lcdc")
+		, m_spiflash(*this, "spiflash")
 		, m_flash(*this, "flash")
 		, m_subflash(*this, "subcpu")
 	{
@@ -46,6 +48,7 @@ private:
 	required_device<mb8aa4181_device> m_maincpu;
 	required_device<stm32f103_device> m_subcpu;
 	required_device<hd44780_device> m_lcdc;
+	required_device<generic_spi_flash_device> m_spiflash;
 	required_region_ptr<u32> m_flash;
 	required_region_ptr<u32> m_subflash;
 
@@ -77,7 +80,12 @@ void boutique_state::init_boutique()
 
 void boutique_state::machine_start()
 {
+	m_spiflash->set_rom_ptr(memregion("flash")->base());
+	m_spiflash->set_rom_size(memregion("flash")->bytes());
 	save_item(NAME(m_lcd_port));
+
+	m_maincpu->exint_w<0>(1);
+	m_maincpu->exint_w<7>(1);
 }
 
 void boutique_state::subcpu_control_w(u32 data)
@@ -118,8 +126,13 @@ void boutique_state::d05(machine_config &config)
 	m_maincpu->set_flash_tag("flash");
 	m_maincpu->gpio_out_cb<0>().set(FUNC(boutique_state::subcpu_control_w));
 	m_maincpu->gpio_out_cb<6>().set(FUNC(boutique_state::lcd_port_w));
-	m_maincpu->gpio_in_cb<6>().set_constant(1 << 21);
+	m_maincpu->gpio_in_cb<6>().set_constant((1 << 21) | (1 << 3));
 	m_maincpu->sot_cb<1>().set(FUNC(boutique_state::lcd_data_w));
+	m_maincpu->sfi_cs_cb().set(m_spiflash, FUNC(generic_spi_flash_device::cs_w));
+	m_maincpu->sfi_tx_cb().set(m_spiflash, FUNC(generic_spi_flash_device::write));
+	m_maincpu->sfi_rx_cb().set(m_spiflash, FUNC(generic_spi_flash_device::read));
+
+	GENERIC_SPI_FLASH(config, m_spiflash);
 
 	STM32F103(config, m_subcpu, 32'000'000);
 	m_subcpu->gpio_in_cb<4>().set_constant(0xfffb);
