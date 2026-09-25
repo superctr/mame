@@ -42,10 +42,6 @@ enum : u32 {
 	SCR_SLEEPONEXIT = 1 << 1, SCR_SEVONPEND = 1 << 4
 };
 
-enum : int {
-	SLEEP_NONE = 0, SLEEP_WFI, SLEEP_WFE
-};
-
 // Cortex-M3 r2p1 feature registers, 0xE000ED40-0xE000ED70
 const u32 cm3_id_regs[13] = {
 	0x00000030, 0x00000200, 0x00100000, 0x00000000,
@@ -71,6 +67,20 @@ armv7m_device::armv7m_device(const machine_config &mconfig, device_type type, co
 	, m_sysresetreq_cb(*this)
 	, m_lockup_cb(*this)
 	, m_itm_cb(*this)
+	, m_core(nullptr)
+	, m_local_core()
+	, m_drc(false)
+	, m_drc_dirty(false)
+	, m_drc_hook(0)
+	, m_drc_stamp(0)
+	, m_drc_outside(0)
+	, m_entry(nullptr)
+	, m_nocode(nullptr)
+	, m_exit_pc(nullptr)
+	, m_exit_pcset(nullptr)
+	, m_exit_resolve(nullptr)
+	, m_exit_interp(nullptr)
+	, m_exit_branch(nullptr)
 {
 }
 
@@ -118,20 +128,22 @@ void armv7m_device::device_start()
 	m_mpu_rasr = std::make_unique<u32[]>(std::max(m_mpu_regions, 1U));
 	m_prio_mask = u8(0xff << (8 - m_prio_bits));
 
-	std::fill_n(m_r, 16, 0);
+	m_core = &m_local_core;
+	drc_start();
+	std::fill_n(m_core->r, 16, 0);
 	m_sp_other = 0;
-	m_pc = 0;
-	m_n = m_z = m_c = m_v = m_q = 0;
-	m_it = 0;
+	m_core->pc = 0;
+	m_core->n = m_core->z = m_core->c = m_core->v = m_core->q = 0;
+	m_core->it = 0;
 	m_ipsr = 0;
-	m_tbit = true;
+	m_core->tbit = true;
 	m_handler = false;
 	m_primask = m_faultmask = m_basepri = m_control = 0;
 	m_excl = false;
 	m_event = false;
 	m_sleep = SLEEP_NONE;
 	m_lockup = false;
-	m_icount = 0;
+	m_core->icount = 0;
 	m_sys_pending = m_sys_active = 0;
 	std::fill_n(m_shpr, 12, 0);
 	std::fill_n(&m_irq_enable[0], m_irq_words, 0);
@@ -140,7 +152,7 @@ void armv7m_device::device_start()
 	std::fill_n(&m_irq_level[0], m_irq_words, 0);
 	std::fill_n(&m_irq_prio[0], m_num_irq, 0);
 	m_nmi_level = false;
-	m_check_irq = true;
+	m_core->check_irq = 1;
 	m_prio_dirty = true;
 	m_exec_prio = 256;
 	m_vtor = m_prigroup = m_scr = m_ccr = m_actlr = m_shcsr_ena = 0;
@@ -163,16 +175,16 @@ void armv7m_device::device_start()
 	m_cycles = 0;
 	m_xpsr_state = m_msp_state = m_psp_state = m_control_state = 0;
 
-	state_add(STATE_GENPC, "GENPC", m_pc).callimport().noshow();
-	state_add(STATE_GENPCBASE, "CURPC", m_pc).callimport().noshow();
+	state_add(STATE_GENPC, "GENPC", m_core->pc).callimport().noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_core->pc).callimport().noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_xpsr_state).formatstr("%13s").noshow();
 	static const char *const regnames[16] = {
 		"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 		"R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"
 	};
 	for (int i = 0; i < 15; i++)
-		state_add(ARMV7M_R0 + i, regnames[i], m_r[i]).callimport();
-	state_add(ARMV7M_PC, "PC", m_pc).callimport();
+		state_add(ARMV7M_R0 + i, regnames[i], m_core->r[i]).callimport();
+	state_add(ARMV7M_PC, "PC", m_core->pc).callimport();
 	state_add(ARMV7M_XPSR, "XPSR", m_xpsr_state).callimport().callexport();
 	state_add(ARMV7M_MSP, "MSP", m_msp_state).callimport().callexport();
 	state_add(ARMV7M_PSP, "PSP", m_psp_state).callimport().callexport();
@@ -181,17 +193,17 @@ void armv7m_device::device_start()
 	state_add(ARMV7M_FAULTMASK, "FAULTMASK", m_faultmask).mask(1).callimport();
 	state_add(ARMV7M_CONTROL, "CONTROL", m_control_state).mask(3).callimport().callexport();
 
-	save_item(NAME(m_r));
+	save_item(NAME(m_core->r));
 	save_item(NAME(m_sp_other));
-	save_item(NAME(m_pc));
-	save_item(NAME(m_n));
-	save_item(NAME(m_z));
-	save_item(NAME(m_c));
-	save_item(NAME(m_v));
-	save_item(NAME(m_q));
-	save_item(NAME(m_it));
+	save_item(NAME(m_core->pc));
+	save_item(NAME(m_core->n));
+	save_item(NAME(m_core->z));
+	save_item(NAME(m_core->c));
+	save_item(NAME(m_core->v));
+	save_item(NAME(m_core->q));
+	save_item(NAME(m_core->it));
 	save_item(NAME(m_ipsr));
-	save_item(NAME(m_tbit));
+	save_item(NAME(m_core->tbit));
 	save_item(NAME(m_handler));
 	save_item(NAME(m_primask));
 	save_item(NAME(m_faultmask));
@@ -240,12 +252,18 @@ void armv7m_device::device_start()
 	save_item(NAME(m_fpb_remap));
 	save_item(NAME(m_fpb_comp));
 
-	set_icountptr(m_icount);
+	set_icountptr(m_core->icount);
 }
 
 void armv7m_device::device_post_load()
 {
 	check_irq();
+	drc_flush();
+}
+
+void armv7m_device::device_stop()
+{
+	drc_stop();
 }
 
 void armv7m_device::device_reset()
@@ -284,18 +302,18 @@ void armv7m_device::device_reset()
 	if (m_lockup)
 		m_lockup_cb(CLEAR_LINE);
 	m_lockup = false;
-	m_it = 0;
+	m_core->it = 0;
 	m_ipsr = 0;
 	m_fault_exc = 0;
 	m_post_exc = 0;
 	m_exc_return_pending = false;
 
-	m_r[13] = m_program.read_dword(m_vtor) & ~3;
+	m_core->r[13] = m_program.read_dword(m_vtor) & ~3;
 	m_sp_other = 0;
-	m_r[14] = 0xffffffff;
+	m_core->r[14] = 0xffffffff;
 	const u32 entry = m_program.read_dword(m_vtor + 4);
-	m_tbit = entry & 1;
-	m_pc = entry & ~1;
+	m_core->tbit = entry & 1;
+	m_core->pc = entry & ~1;
 	check_irq();
 }
 
@@ -311,16 +329,16 @@ void armv7m_device::state_import(const device_state_entry &entry)
 	case STATE_GENPC:
 	case STATE_GENPCBASE:
 	case ARMV7M_PC:
-		m_pc &= ~1;
+		m_core->pc &= ~1;
 		break;
 	case ARMV7M_SP:
-		m_r[13] &= ~3;
+		m_core->r[13] &= ~3;
 		break;
 	case ARMV7M_XPSR:
 		set_nzcvq(m_xpsr_state);
 		m_ipsr = m_xpsr_state & 0x1ff;
-		m_tbit = BIT(m_xpsr_state, 24);
-		m_it = ((m_xpsr_state >> 25) & 3) | ((m_xpsr_state >> 8) & 0xfc);
+		m_core->tbit = BIT(m_xpsr_state, 24);
+		m_core->it = ((m_xpsr_state >> 25) & 3) | ((m_xpsr_state >> 8) & 0xfc);
 		break;
 	case ARMV7M_MSP:
 		set_msp(m_msp_state);
@@ -370,8 +388,8 @@ void armv7m_device::state_string_export(const device_state_entry &entry, std::st
 	{
 	case STATE_GENFLAGS:
 		str = util::string_format("%c%c%c%c%c %s%s IT%02X",
-				m_n ? 'N' : '.', m_z ? 'Z' : '.', m_c ? 'C' : '.', m_v ? 'V' : '.', m_q ? 'Q' : '.',
-				m_handler ? "H" : "T", m_tbit ? "t" : "a", m_it);
+				m_core->n ? 'N' : '.', m_core->z ? 'Z' : '.', m_core->c ? 'C' : '.', m_core->v ? 'V' : '.', m_core->q ? 'Q' : '.',
+				m_handler ? "H" : "T", m_core->tbit ? "t" : "a", m_core->it);
 		break;
 	}
 }
@@ -386,13 +404,13 @@ void armv7m_device::set_msp(u32 value)
 	if (psp_active())
 		m_sp_other = value & ~3;
 	else
-		m_r[13] = value & ~3;
+		m_core->r[13] = value & ~3;
 }
 
 void armv7m_device::set_psp(u32 value)
 {
 	if (psp_active())
-		m_r[13] = value & ~3;
+		m_core->r[13] = value & ~3;
 	else
 		m_sp_other = value & ~3;
 }
@@ -403,26 +421,26 @@ void armv7m_device::set_mode(bool handler, bool spsel)
 	m_handler = handler;
 	m_control = (m_control & ~2) | (spsel ? 2 : 0);
 	if (psp_active() != old_psp)
-		std::swap(m_r[13], m_sp_other);
+		std::swap(m_core->r[13], m_sp_other);
 }
 
 u32 armv7m_device::apsr() const
 {
-	return (m_n << 31) | (m_z << 30) | (m_c << 29) | (m_v << 28) | (m_q << 27);
+	return (m_core->n << 31) | (m_core->z << 30) | (m_core->c << 29) | (m_core->v << 28) | (m_core->q << 27);
 }
 
 u32 armv7m_device::xpsr() const
 {
-	return apsr() | (u32(m_tbit) << 24) | (u32(m_it & 3) << 25) | (u32(m_it & 0xfc) << 8) | m_ipsr;
+	return apsr() | (u32(m_core->tbit) << 24) | (u32(m_core->it & 3) << 25) | (u32(m_core->it & 0xfc) << 8) | m_ipsr;
 }
 
 void armv7m_device::set_nzcvq(u32 value)
 {
-	m_n = BIT(value, 31);
-	m_z = BIT(value, 30);
-	m_c = BIT(value, 29);
-	m_v = BIT(value, 28);
-	m_q = BIT(value, 27);
+	m_core->n = BIT(value, 31);
+	m_core->z = BIT(value, 30);
+	m_core->c = BIT(value, 29);
+	m_core->v = BIT(value, 28);
+	m_core->q = BIT(value, 27);
 }
 
 bool armv7m_device::condition(unsigned cond) const
@@ -430,13 +448,13 @@ bool armv7m_device::condition(unsigned cond) const
 	bool result;
 	switch (cond >> 1)
 	{
-	case 0: result = m_z; break;
-	case 1: result = m_c; break;
-	case 2: result = m_n; break;
-	case 3: result = m_v; break;
-	case 4: result = m_c && !m_z; break;
-	case 5: result = m_n == m_v; break;
-	case 6: result = (m_n == m_v) && !m_z; break;
+	case 0: result = m_core->z; break;
+	case 1: result = m_core->c; break;
+	case 2: result = m_core->n; break;
+	case 3: result = m_core->v; break;
+	case 4: result = m_core->c && !m_core->z; break;
+	case 5: result = m_core->n == m_core->v; break;
+	case 6: result = (m_core->n == m_core->v) && !m_core->z; break;
 	default: return true;
 	}
 	return (cond & 1) ? !result : result;
@@ -448,10 +466,10 @@ u32 armv7m_device::add_with_carry(u32 x, u32 y, u32 carry, bool setflags)
 	const u32 result = u32(sum);
 	if (setflags)
 	{
-		m_n = result >> 31;
-		m_z = result == 0;
-		m_c = u32(sum >> 32);
-		m_v = ((x ^ result) & (y ^ result)) >> 31;
+		m_core->n = result >> 31;
+		m_core->z = result == 0;
+		m_core->c = u32(sum >> 32);
+		m_core->v = ((x ^ result) & (y ^ result)) >> 31;
 	}
 	return result;
 }
@@ -479,7 +497,7 @@ u32 armv7m_device::thumb_expand_imm_c(u32 imm12, u32 &carry) const
 	{
 		if ((imm12 & 0x300) && !(imm12 & 0xff))
 			unpredictable();
-		carry = m_c;
+		carry = m_core->c;
 	}
 	else
 		carry = value >> 31;
@@ -533,7 +551,7 @@ u32 armv7m_device::shift_c(u32 value, int type, unsigned amount, u32 &carry) con
 
 void armv7m_device::unpredictable() const
 {
-	LOGMASKED(LOG_UNPREDICTABLE, "%08x: unpredictable instruction\n", m_pc);
+	LOGMASKED(LOG_UNPREDICTABLE, "%08x: unpredictable instruction\n", m_core->pc);
 }
 
 void armv7m_device::bx_write_pc(u32 address)
@@ -545,7 +563,7 @@ void armv7m_device::bx_write_pc(u32 address)
 	}
 	else
 	{
-		m_tbit = address & 1;
+		m_core->tbit = address & 1;
 		m_next_pc = address & ~1;
 	}
 }
@@ -577,25 +595,13 @@ void armv7m_device::data_fault(int exc, u32 cfsr_bits, u32 address)
 	fault(exc, cfsr_bits);
 }
 
-bool armv7m_device::mpu_check(u32 address, int acctype, bool write, bool priv)
+bool armv7m_device::mpu_permits(u32 address, bool ifetch, bool write, bool priv, bool enabled) const
 {
-	const bool ifetch = acctype == ACC_IFETCH;
 	if ((address >> 20) == 0xe00)
-	{
-		if (ifetch)
-			fault(EXC_MEMMANAGE, CFSR_IACCVIOL);
 		return !ifetch;
-	}
 
-	if (!(m_mpu_ctrl & 1) || (!(m_mpu_ctrl & 2) && execution_priority() < 0))
-	{
-		if (ifetch && BIT(0xe4, address >> 29))
-		{
-			fault(EXC_MEMMANAGE, CFSR_IACCVIOL);
-			return false;
-		}
-		return true;
-	}
+	if (!enabled)
+		return !(ifetch && BIT(0xe4, address >> 29));
 
 	bool hit = false;
 	u32 ap = 0;
@@ -641,7 +647,13 @@ bool armv7m_device::mpu_check(u32 address, int acctype, bool write, bool priv)
 		if (ifetch && xn)
 			denied = true;
 	}
-	if (!denied)
+	return !denied;
+}
+
+bool armv7m_device::mpu_check(u32 address, int acctype, bool write, bool priv)
+{
+	const bool enabled = (m_mpu_ctrl & 1) && ((m_mpu_ctrl & 2) || execution_priority() >= 0);
+	if (mpu_permits(address, acctype == ACC_IFETCH, write, priv, enabled))
 		return true;
 
 	switch (acctype)
@@ -725,6 +737,8 @@ bool armv7m_device::access_aligned(u32 address, int size, u32 &value, bool write
 
 bool armv7m_device::mem_read(u32 address, int size, u32 &value, u8 flags)
 {
+	if (m_drc_hook)
+		return drc_memory_hook(false, address, size, value, flags);
 	const int acctype = (flags & MEM_UNPRIV) ? ACC_UNPRIV : ACC_NORMAL;
 	if (!(address & (size - 1)))
 		return access_aligned(address, size, value, false, acctype);
@@ -747,6 +761,8 @@ bool armv7m_device::mem_read(u32 address, int size, u32 &value, u8 flags)
 
 bool armv7m_device::mem_write(u32 address, int size, u32 value, u8 flags)
 {
+	if (m_drc_hook)
+		return drc_memory_hook(true, address, size, value, flags);
 	const int acctype = (flags & MEM_UNPRIV) ? ACC_UNPRIV : ACC_NORMAL;
 	if (size < 4)
 		value &= (1U << (8 * size)) - 1;
@@ -804,7 +820,7 @@ bool armv7m_device::ppb_read(u32 address, int size, u32 &value, bool priv)
 		{
 		case 0x000: data = 0x40000000 | m_dwt_ctrl; break;
 		case 0x004: data = m_dwt_cyccnt; break;
-		case 0x01c: data = m_pc; break;
+		case 0x01c: data = m_core->pc; break;
 		default:
 			if ((offset & 0xfff) >= 0x020 && (offset & 0xfff) < 0x060 && (offset & 0xc) != 0xc)
 				data = m_dwt_comp[(((offset & 0xfff) - 0x20) >> 4) * 3 + ((offset >> 2) & 3)];
@@ -835,7 +851,7 @@ bool armv7m_device::ppb_read(u32 address, int size, u32 &value, bool priv)
 	default:
 		if (!priv)
 			return false;
-		LOGMASKED(LOG_PPB, "%08x: read from unmapped PPB address %08x\n", m_pc, address);
+		LOGMASKED(LOG_PPB, "%08x: read from unmapped PPB address %08x\n", m_core->pc, address);
 		break;
 	}
 
@@ -923,7 +939,7 @@ bool armv7m_device::ppb_write(u32 address, int size, u32 value, bool priv)
 	default:
 		if (!priv)
 			return false;
-		LOGMASKED(LOG_PPB, "%08x: write to unmapped PPB address %08x = %08x\n", m_pc, address, value);
+		LOGMASKED(LOG_PPB, "%08x: write to unmapped PPB address %08x = %08x\n", m_core->pc, address, value);
 		return true;
 	}
 }
@@ -1064,7 +1080,7 @@ u32 armv7m_device::scs_read(u32 offset)
 		return (m_demcr & ~DEMCR_MON_PEND) | (BIT(m_sys_pending, EXC_DEBUGMONITOR) ? u32(DEMCR_MON_PEND) : 0U);
 	}
 
-	LOGMASKED(LOG_PPB, "%08x: read from unmapped SCS offset %03x\n", m_pc, offset);
+	LOGMASKED(LOG_PPB, "%08x: read from unmapped SCS offset %03x\n", m_core->pc, offset);
 	return 0;
 }
 
@@ -1157,7 +1173,7 @@ void armv7m_device::scs_write(u32 offset, u32 data, u32 mask)
 			}
 			if (bits & 4)
 			{
-				LOGMASKED(LOG_EXCEPTION, "%08x: system reset request\n", m_pc);
+				LOGMASKED(LOG_EXCEPTION, "%08x: system reset request\n", m_core->pc);
 				if (m_sysresetreq_cb.isunset())
 					pulse_input_line(INPUT_LINE_RESET, attotime::zero);
 				else
@@ -1245,7 +1261,7 @@ void armv7m_device::scs_write(u32 offset, u32 data, u32 mask)
 		break;
 
 	default:
-		LOGMASKED(LOG_PPB, "%08x: write to unmapped SCS offset %03x = %08x & %08x\n", m_pc, offset, data, mask);
+		LOGMASKED(LOG_PPB, "%08x: write to unmapped SCS offset %03x = %08x & %08x\n", m_core->pc, offset, data, mask);
 		break;
 	}
 	check_irq();
@@ -1455,8 +1471,8 @@ void armv7m_device::execute_set_input(int inputnum, int state)
 
 void armv7m_device::enter_lockup(u32 address)
 {
-	LOGMASKED(LOG_EXCEPTION, "%08x: lockup at %08x\n", m_pc, address);
-	m_pc = address & ~1;
+	LOGMASKED(LOG_EXCEPTION, "%08x: lockup at %08x\n", m_core->pc, address);
+	m_core->pc = address & ~1;
 	m_lockup = true;
 	m_lockup_cb(ASSERT_LINE);
 }
@@ -1495,7 +1511,7 @@ bool armv7m_device::take_interrupt()
 		m_lockup_cb(CLEAR_LINE);
 	}
 	m_sleep = SLEEP_NONE;
-	exception_entry(exc, m_pc);
+	exception_entry(exc, m_core->pc);
 	return true;
 }
 
@@ -1549,14 +1565,14 @@ void armv7m_device::take_sync_exception(int exc, u32 return_address, u32 insn_ad
 bool armv7m_device::push_stack(u32 return_address)
 {
 	const bool forcealign = m_ccr & CCR_STKALIGN;
-	const u32 sp = m_r[13];
+	const u32 sp = m_core->r[13];
 	const u32 frameptralign = forcealign ? (sp >> 2) & 1 : 0;
 	const u32 frameptr = (sp - 0x20) & (forcealign ? ~7U : ~3U);
 	const bool thread_psp = psp_active();
-	m_r[13] = frameptr;
+	m_core->r[13] = frameptr;
 
 	const u32 frame[8] = {
-		m_r[0], m_r[1], m_r[2], m_r[3], m_r[12], m_r[14], return_address & ~1,
+		m_core->r[0], m_core->r[1], m_core->r[2], m_core->r[3], m_core->r[12], m_core->r[14], return_address & ~1,
 		(xpsr() & ~0x200) | (frameptralign << 9)
 	};
 	bool ok = true;
@@ -1567,22 +1583,22 @@ bool armv7m_device::push_stack(u32 return_address)
 	}
 
 	if (m_handler)
-		m_r[14] = 0xfffffff1;
+		m_core->r[14] = 0xfffffff1;
 	else
-		m_r[14] = thread_psp ? 0xfffffffd : 0xfffffff9;
+		m_core->r[14] = thread_psp ? 0xfffffffd : 0xfffffff9;
 	m_cycles += 12;
 	return ok;
 }
 
 void armv7m_device::exception_taken(int exc)
 {
-	LOGMASKED(LOG_EXCEPTION, "%08x: exception %d taken\n", m_pc, exc);
+	LOGMASKED(LOG_EXCEPTION, "%08x: exception %d taken\n", m_core->pc, exc);
 	const u32 vector = m_program.read_dword(m_vtor + 4 * exc);
-	m_pc = vector & ~1;
-	m_tbit = vector & 1;
+	m_core->pc = vector & ~1;
+	m_core->tbit = vector & 1;
 	set_mode(true, false);
 	m_ipsr = exc;
-	m_it = 0;
+	m_core->it = 0;
 	if (exc == EXC_DEBUGMONITOR)
 		m_demcr &= ~DEMCR_MON_PEND;
 	set_exception_pending(exc, false);
@@ -1592,9 +1608,9 @@ void armv7m_device::exception_taken(int exc)
 	check_irq();
 
 	if (exc == EXC_NMI)
-		standard_irq_callback(INPUT_LINE_NMI, m_pc);
+		standard_irq_callback(INPUT_LINE_NMI, m_core->pc);
 	else if (exc >= 16 && exc - 16 < INPUT_LINE_NMI)
-		standard_irq_callback(exc - 16, m_pc);
+		standard_irq_callback(exc - 16, m_core->pc);
 }
 
 void armv7m_device::exception_entry(int exc, u32 return_address)
@@ -1609,7 +1625,7 @@ void armv7m_device::exception_entry(int exc, u32 return_address)
 
 	int derived = m_fault_exc;
 	m_fault_exc = 0;
-	LOGMASKED(LOG_EXCEPTION, "%08x: fault %d stacking for exception %d\n", m_pc, derived, exc);
+	LOGMASKED(LOG_EXCEPTION, "%08x: fault %d stacking for exception %d\n", m_core->pc, derived, exc);
 	if (!fault_enabled(derived) || group_priority(exception_priority(derived)) >= preempted)
 	{
 		if (preempted < 0)
@@ -1654,8 +1670,8 @@ void armv7m_device::exception_return(u32 exc_return)
 	{
 		m_cfsr |= CFSR_INVPC;
 		if (push)
-			push_stack(m_pc);
-		m_r[14] = exc_return;
+			push_stack(m_core->pc);
+		m_core->r[14] = exc_return;
 		const int ep = execution_priority();
 		if (!fault_enabled(EXC_USAGEFAULT) || group_priority(exception_priority(EXC_USAGEFAULT)) >= ep)
 		{
@@ -1706,7 +1722,7 @@ void armv7m_device::exception_return(u32 exc_return)
 	const int chained = pending_exception(prio);
 	if (chained && group_priority(prio) < execution_priority())
 	{
-		m_r[14] = exc_return;
+		m_core->r[14] = exc_return;
 		m_cycles -= 6;
 		exception_taken(chained);
 		return;
@@ -1726,7 +1742,7 @@ void armv7m_device::exception_return(u32 exc_return)
 		{
 			const int derived = m_fault_exc;
 			m_fault_exc = 0;
-			m_r[14] = exc_return;
+			m_core->r[14] = exc_return;
 			const int ep = execution_priority();
 			if (!fault_enabled(derived) || group_priority(exception_priority(derived)) >= ep)
 			{
@@ -1748,18 +1764,18 @@ void armv7m_device::exception_return(u32 exc_return)
 	const u32 psr = frame[7];
 	const u32 new_sp = (frameptr + 0x20) | ((BIT(psr, 9) && forcealign) ? 4 : 0);
 	set_mode(to_handler, use_psp);
-	m_r[13] = new_sp;
+	m_core->r[13] = new_sp;
 	for (int i = 0; i < 4; i++)
-		m_r[i] = frame[i];
-	m_r[12] = frame[4];
-	m_r[14] = frame[5];
+		m_core->r[i] = frame[i];
+	m_core->r[12] = frame[4];
+	m_core->r[14] = frame[5];
 	if (frame[6] & 1)
 		unpredictable();
-	m_pc = frame[6] & ~1;
+	m_core->pc = frame[6] & ~1;
 	set_nzcvq(psr);
 	m_ipsr = psr & 0x1ff;
-	m_tbit = BIT(psr, 24);
-	m_it = ((psr >> 25) & 3) | ((psr >> 8) & 0xfc);
+	m_core->tbit = BIT(psr, 24);
+	m_core->it = ((psr >> 25) & 3) | ((psr >> 8) & 0xfc);
 
 	if ((to_handler && m_ipsr == 0) || (!to_handler && m_ipsr != 0))
 	{
@@ -1839,15 +1855,21 @@ void armv7m_device::advance_cycles(int cycles)
 
 void armv7m_device::execute_run()
 {
-	while (m_icount > 0)
+	if (m_drc)
 	{
-		if (m_check_irq)
+		execute_run_drc();
+		return;
+	}
+
+	while (m_core->icount > 0)
+	{
+		if (m_core->check_irq)
 		{
-			m_check_irq = false;
+			m_core->check_irq = 0;
 			m_cycles = 0;
 			if (take_interrupt())
 			{
-				m_icount -= m_cycles;
+				m_core->icount -= m_cycles;
 				advance_cycles(m_cycles);
 				continue;
 			}
@@ -1855,72 +1877,79 @@ void armv7m_device::execute_run()
 
 		if (m_sleep != SLEEP_NONE || m_lockup)
 		{
-			const int burn = int(std::min<u32>(m_icount, std::max<u32>(systick_cycles_to_event(), 1)));
-			m_icount -= burn;
+			const int burn = int(std::min<u32>(m_core->icount, std::max<u32>(systick_cycles_to_event(), 1)));
+			m_core->icount -= burn;
 			advance_cycles(burn);
 			continue;
 		}
 
-		debugger_instruction_hook(m_pc);
+		debugger_instruction_hook(m_core->pc);
 		step();
 	}
 }
 
 void armv7m_device::step()
 {
-	const u32 pc = m_pc;
+	const u32 pc = m_core->pc;
+	step_body();
+	step_resolve(pc);
+	m_core->icount -= m_cycles;
+	advance_cycles(m_cycles);
+}
+
+void armv7m_device::step_body()
+{
+	const u32 pc = m_core->pc;
 	m_cycles = 1;
 	m_fault_exc = 0;
 	m_post_exc = 0;
 	m_exc_return_pending = false;
 
 	if (!mpu_check(pc, ACC_IFETCH, false, privileged()))
-	{
-		take_sync_exception(m_fault_exc, pc, pc);
-	}
-	else if (!m_tbit)
+		return;
+	if (!m_core->tbit)
 	{
 		m_cfsr |= CFSR_INVSTATE;
-		take_sync_exception(EXC_USAGEFAULT, pc, pc);
+		m_fault_exc = EXC_USAGEFAULT;
+		return;
+	}
+
+	const u16 op = m_cache.read_word(pc);
+	m_it_next = (m_core->it & 7) ? ((m_core->it & 0xe0) | ((m_core->it << 1) & 0x1f)) : 0;
+	if ((op & 0xe000) == 0xe000 && (op & 0x1800))
+	{
+		m_next_pc = pc + 4;
+		if (!((pc + 2) & 0x1e) && !mpu_check(pc + 2, ACC_IFETCH, false, privileged()))
+			;
+		else
+		{
+			const u32 op32 = (u32(op) << 16) | m_cache.read_word(pc + 2);
+			if (!in_it() || condition(m_core->it >> 4))
+				execute_t32(op32);
+		}
 	}
 	else
 	{
-		const u16 op = m_cache.read_word(pc);
-		m_it_next = (m_it & 7) ? ((m_it & 0xe0) | ((m_it << 1) & 0x1f)) : 0;
-		if ((op & 0xe000) == 0xe000 && (op & 0x1800))
-		{
-			m_next_pc = pc + 4;
-			if (!((pc + 2) & 0x1e) && !mpu_check(pc + 2, ACC_IFETCH, false, privileged()))
-				;
-			else
-			{
-				const u32 op32 = (u32(op) << 16) | m_cache.read_word(pc + 2);
-				if (!in_it() || condition(m_it >> 4))
-					execute_t32(op32);
-			}
-		}
-		else
-		{
-			m_next_pc = pc + 2;
-			if (!in_it() || condition(m_it >> 4) || (op & 0xff00) == 0xbe00)
-				execute_t16(op);
-		}
-
-		if (m_fault_exc)
-			take_sync_exception(m_fault_exc, pc, pc);
-		else
-		{
-			m_pc = m_next_pc;
-			m_it = m_it_next;
-			if (m_exc_return_pending)
-				exception_return(m_exc_return);
-			else if (m_post_exc)
-				take_sync_exception(m_post_exc, m_pc, pc);
-		}
+		m_next_pc = pc + 2;
+		if (!in_it() || condition(m_core->it >> 4) || (op & 0xff00) == 0xbe00)
+			execute_t16(op);
 	}
 
-	m_icount -= m_cycles;
-	advance_cycles(m_cycles);
+	if (!m_fault_exc)
+	{
+		m_core->pc = m_next_pc;
+		m_core->it = m_it_next;
+	}
+}
+
+void armv7m_device::step_resolve(u32 pc)
+{
+	if (m_fault_exc)
+		take_sync_exception(m_fault_exc, pc, pc);
+	else if (m_exc_return_pending)
+		exception_return(m_exc_return);
+	else if (m_post_exc)
+		take_sync_exception(m_post_exc, m_core->pc, pc);
 }
 
 void armv7m_device::undefined()
@@ -2005,8 +2034,8 @@ void armv7m_device::dp_op(unsigned opc, int d, int n, int m, u32 op2, u32 carry,
 	case 3: result = rn | ~op2; break;
 	case 4: result = rn ^ op2; break;
 	case 8: result = add_with_carry(rn, op2, 0, setflags); logical = false; break;
-	case 10: result = add_with_carry(rn, op2, m_c, setflags); logical = false; break;
-	case 11: result = add_with_carry(rn, ~op2, m_c, setflags); logical = false; break;
+	case 10: result = add_with_carry(rn, op2, m_core->c, setflags); logical = false; break;
+	case 11: result = add_with_carry(rn, ~op2, m_core->c, setflags); logical = false; break;
 	case 13: result = add_with_carry(rn, ~op2, 1, setflags); logical = false; break;
 	case 14: result = add_with_carry(~rn, op2, 1, setflags); logical = false; break;
 	default:
@@ -2016,7 +2045,7 @@ void armv7m_device::dp_op(unsigned opc, int d, int n, int m, u32 op2, u32 carry,
 	if (logical && setflags)
 	{
 		set_nz(result);
-		m_c = carry;
+		m_core->c = carry;
 	}
 	if (d != 15)
 		set_reg(d, result);
@@ -2108,10 +2137,10 @@ void armv7m_device::execute_t16(u16 op)
 		if (op & 0x800)
 		{
 			// LDR (literal)
-			const u32 address = ((m_pc + 4) & ~3) + ((op & 0xff) << 2);
+			const u32 address = ((m_core->pc + 4) & ~3) + ((op & 0xff) << 2);
 			u32 value;
 			if (load(address, 4, false, 0, value))
-				m_r[(op >> 8) & 7] = value;
+				m_core->r[(op >> 8) & 7] = value;
 		}
 		else if (op & 0x400)
 			t16_special(op);
@@ -2123,9 +2152,9 @@ void armv7m_device::execute_t16(u16 op)
 		break;
 	case 0xa:
 		if (op & 0x800)
-			m_r[(op >> 8) & 7] = m_r[13] + ((op & 0xff) << 2);
+			m_core->r[(op >> 8) & 7] = m_core->r[13] + ((op & 0xff) << 2);
 		else
-			m_r[(op >> 8) & 7] = ((m_pc + 4) & ~3) + ((op & 0xff) << 2);
+			m_core->r[(op >> 8) & 7] = ((m_core->pc + 4) & ~3) + ((op & 0xff) << 2);
 		break;
 	case 0xb:
 		t16_misc(op);
@@ -2140,7 +2169,7 @@ void armv7m_device::execute_t16(u16 op)
 		// B T2
 		if (in_it() && !last_in_it())
 			unpredictable();
-		branch_write_pc(m_pc + 4 + util::sext(u32(op & 0x7ff) << 1, 12));
+		branch_write_pc(m_core->pc + 4 + util::sext(u32(op & 0x7ff) << 1, 12));
 		m_cycles += 2;
 		break;
 	}
@@ -2161,46 +2190,46 @@ void armv7m_device::t16_shift_add_sub(u16 op)
 			{
 				if (in_it())
 					unpredictable();
-				const u32 result = m_r[n];
-				m_r[d] = result;
+				const u32 result = m_core->r[n];
+				m_core->r[d] = result;
 				set_nz(result);
 				break;
 			}
-			u32 carry = m_c;
-			const u32 result = shift_c(m_r[n], type, imm5 ? imm5 : 32, carry);
-			m_r[d] = result;
+			u32 carry = m_core->c;
+			const u32 result = shift_c(m_core->r[n], type, imm5 ? imm5 : 32, carry);
+			m_core->r[d] = result;
 			if (setflags)
 			{
 				set_nz(result);
-				m_c = carry;
+				m_core->c = carry;
 			}
 			break;
 		}
 	case 3:
 		{
-			const u32 op2 = (op & 0x400) ? (op >> 6) & 7 : m_r[(op >> 6) & 7];
+			const u32 op2 = (op & 0x400) ? (op >> 6) & 7 : m_core->r[(op >> 6) & 7];
 			if (op & 0x200)
-				m_r[d] = add_with_carry(m_r[n], ~op2, 1, setflags);
+				m_core->r[d] = add_with_carry(m_core->r[n], ~op2, 1, setflags);
 			else
-				m_r[d] = add_with_carry(m_r[n], op2, 0, setflags);
+				m_core->r[d] = add_with_carry(m_core->r[n], op2, 0, setflags);
 			break;
 		}
 	case 4:
 		{
 			const u32 result = op & 0xff;
-			m_r[(op >> 8) & 7] = result;
+			m_core->r[(op >> 8) & 7] = result;
 			if (setflags)
 				set_nz(result);
 			break;
 		}
 	case 5:
-		add_with_carry(m_r[(op >> 8) & 7], ~u32(op & 0xff), 1, true);
+		add_with_carry(m_core->r[(op >> 8) & 7], ~u32(op & 0xff), 1, true);
 		break;
 	case 6:
-		m_r[(op >> 8) & 7] = add_with_carry(m_r[(op >> 8) & 7], op & 0xff, 0, setflags);
+		m_core->r[(op >> 8) & 7] = add_with_carry(m_core->r[(op >> 8) & 7], op & 0xff, 0, setflags);
 		break;
 	case 7:
-		m_r[(op >> 8) & 7] = add_with_carry(m_r[(op >> 8) & 7], ~u32(op & 0xff), 1, setflags);
+		m_core->r[(op >> 8) & 7] = add_with_carry(m_core->r[(op >> 8) & 7], ~u32(op & 0xff), 1, setflags);
 		break;
 	}
 }
@@ -2210,9 +2239,9 @@ void armv7m_device::t16_data_processing(u16 op)
 	const bool setflags = !in_it();
 	const int dn = op & 7;
 	const int m = (op >> 3) & 7;
-	const u32 a = m_r[dn];
-	const u32 b = m_r[m];
-	u32 carry = m_c;
+	const u32 a = m_core->r[dn];
+	const u32 b = m_core->r[m];
+	u32 carry = m_core->c;
 	u32 result;
 	switch ((op >> 6) & 0xf)
 	{
@@ -2221,28 +2250,28 @@ void armv7m_device::t16_data_processing(u16 op)
 	case 0x2: result = shift_c(a, 0, b & 0xff, carry); break;
 	case 0x3: result = shift_c(a, 1, b & 0xff, carry); break;
 	case 0x4: result = shift_c(a, 2, b & 0xff, carry); break;
-	case 0x5: m_r[dn] = add_with_carry(a, b, m_c, setflags); return;
-	case 0x6: m_r[dn] = add_with_carry(a, ~b, m_c, setflags); return;
+	case 0x5: m_core->r[dn] = add_with_carry(a, b, m_core->c, setflags); return;
+	case 0x6: m_core->r[dn] = add_with_carry(a, ~b, m_core->c, setflags); return;
 	case 0x7: result = shift_c(a, 3, b & 0xff, carry); break;
 	case 0x8: set_nz(a & b); return;
-	case 0x9: m_r[dn] = add_with_carry(~b, 0, 1, setflags); return;
+	case 0x9: m_core->r[dn] = add_with_carry(~b, 0, 1, setflags); return;
 	case 0xa: add_with_carry(a, ~b, 1, true); return;
 	case 0xb: add_with_carry(a, b, 0, true); return;
 	case 0xc: result = a | b; break;
 	case 0xd:
 		result = a * b;
-		m_r[dn] = result;
+		m_core->r[dn] = result;
 		if (setflags)
 			set_nz(result);
 		return;
 	case 0xe: result = a & ~b; break;
 	default: result = ~b; break;
 	}
-	m_r[dn] = result;
+	m_core->r[dn] = result;
 	if (setflags)
 	{
 		set_nz(result);
-		m_c = carry;
+		m_core->c = carry;
 	}
 }
 
@@ -2295,7 +2324,7 @@ void armv7m_device::t16_special(u16 op)
 			{
 				if (m == 15)
 					unpredictable();
-				m_r[14] = (m_pc + 2) | 1;
+				m_core->r[14] = (m_core->pc + 2) | 1;
 				blx_write_pc(target);
 			}
 			else
@@ -2318,7 +2347,7 @@ void armv7m_device::t16_load_store(u16 op)
 	switch (op >> 12)
 	{
 	case 0x5:
-		address = m_r[n] + m_r[(op >> 6) & 7];
+		address = m_core->r[n] + m_core->r[(op >> 6) & 7];
 		switch ((op >> 9) & 7)
 		{
 		case 0: size = 4; load_op = false; break;
@@ -2334,32 +2363,32 @@ void armv7m_device::t16_load_store(u16 op)
 	case 0x6:
 		size = 4;
 		load_op = op & 0x800;
-		address = m_r[n] + (((op >> 6) & 0x1f) << 2);
+		address = m_core->r[n] + (((op >> 6) & 0x1f) << 2);
 		break;
 	case 0x7:
 		size = 1;
 		load_op = op & 0x800;
-		address = m_r[n] + ((op >> 6) & 0x1f);
+		address = m_core->r[n] + ((op >> 6) & 0x1f);
 		break;
 	case 0x8:
 		size = 2;
 		load_op = op & 0x800;
-		address = m_r[n] + (((op >> 6) & 0x1f) << 1);
+		address = m_core->r[n] + (((op >> 6) & 0x1f) << 1);
 		break;
 	default:
 		{
 			size = 4;
 			load_op = op & 0x800;
-			address = m_r[13] + ((op & 0xff) << 2);
+			address = m_core->r[13] + ((op & 0xff) << 2);
 			const int rt = (op >> 8) & 7;
 			if (load_op)
 			{
 				u32 value;
 				if (load(address, 4, false, 0, value))
-					m_r[rt] = value;
+					m_core->r[rt] = value;
 			}
 			else
-				mem_write(address, 4, m_r[rt]);
+				mem_write(address, 4, m_core->r[rt]);
 			return;
 		}
 	}
@@ -2368,10 +2397,10 @@ void armv7m_device::t16_load_store(u16 op)
 	{
 		u32 value;
 		if (load(address, size, sign, 0, value))
-			m_r[t] = value;
+			m_core->r[t] = value;
 	}
 	else
-		mem_write(address, size, m_r[t]);
+		mem_write(address, size, m_core->r[t]);
 }
 
 void armv7m_device::t16_misc(u16 op)
@@ -2380,9 +2409,9 @@ void armv7m_device::t16_misc(u16 op)
 	{
 	case 0x0:
 		if (op & 0x80)
-			m_r[13] -= (op & 0x7f) << 2;
+			m_core->r[13] -= (op & 0x7f) << 2;
 		else
-			m_r[13] += (op & 0x7f) << 2;
+			m_core->r[13] += (op & 0x7f) << 2;
 		break;
 
 	case 0x1: case 0x3: case 0x9: case 0xb:
@@ -2390,9 +2419,9 @@ void armv7m_device::t16_misc(u16 op)
 			if (in_it())
 				unpredictable();
 			const u32 imm = ((op >> 2) & 0x3e) | ((op >> 3) & 0x40);
-			if ((m_r[op & 7] == 0) != bool(op & 0x800))
+			if ((m_core->r[op & 7] == 0) != bool(op & 0x800))
 			{
-				branch_write_pc(m_pc + 4 + imm);
+				branch_write_pc(m_core->pc + 4 + imm);
 				m_cycles += 2;
 			}
 			break;
@@ -2400,7 +2429,7 @@ void armv7m_device::t16_misc(u16 op)
 
 	case 0x2:
 		{
-			const u32 value = m_r[(op >> 3) & 7];
+			const u32 value = m_core->r[(op >> 3) & 7];
 			u32 result;
 			switch ((op >> 6) & 3)
 			{
@@ -2409,7 +2438,7 @@ void armv7m_device::t16_misc(u16 op)
 			case 2: result = value & 0xffff; break;
 			default: result = value & 0xff; break;
 			}
-			m_r[op & 7] = result;
+			m_core->r[op & 7] = result;
 			break;
 		}
 
@@ -2454,7 +2483,7 @@ void armv7m_device::t16_misc(u16 op)
 
 	case 0xa:
 		{
-			const u32 value = m_r[(op >> 3) & 7];
+			const u32 value = m_core->r[(op >> 3) & 7];
 			u32 result;
 			switch ((op >> 6) & 3)
 			{
@@ -2463,7 +2492,7 @@ void armv7m_device::t16_misc(u16 op)
 			case 3: result = u32(s32(s16(((value >> 8) & 0xff) | ((value & 0xff) << 8)))); break;
 			default: undefined(); return;
 			}
-			m_r[op & 7] = result;
+			m_core->r[op & 7] = result;
 			break;
 		}
 
@@ -2529,7 +2558,7 @@ void armv7m_device::t16_branch_svc(u16 op)
 			unpredictable();
 		if (condition(cond))
 		{
-			branch_write_pc(m_pc + 4 + util::sext(u32(op & 0xff) << 1, 9));
+			branch_write_pc(m_core->pc + 4 + util::sext(u32(op & 0xff) << 1, 9));
 			m_cycles += 2;
 		}
 	}
@@ -2642,7 +2671,7 @@ void armv7m_device::t32_dual_exclusive(u32 op)
 	if (p || w)
 	{
 		const u32 imm = (op & 0xff) << 2;
-		const u32 base = n == 15 ? m_pc + 4 : reg(n);
+		const u32 base = n == 15 ? m_core->pc + 4 : reg(n);
 		const u32 offset_addr = u ? base + imm : base - imm;
 		const u32 address = p ? offset_addr : base;
 		if (t == 13 || t == 15 || t2 == 13 || t2 == 15)
@@ -2653,7 +2682,7 @@ void armv7m_device::t32_dual_exclusive(u32 op)
 		{
 			if (t == t2)
 				unpredictable();
-			if (n == 15 && (w || ((m_pc + 4) & 3)))
+			if (n == 15 && (w || ((m_core->pc + 4) & 3)))
 				unpredictable();
 			u32 v1, v2;
 			if (!mem_read(address, 4, v1, MEM_ALIGNED) || !mem_read(address + 4, 4, v2, MEM_ALIGNED))
@@ -2730,7 +2759,7 @@ void armv7m_device::t32_dual_exclusive(u32 op)
 			const bool half = op3 == 1;
 			if (!mem_read(reg(n) + (half ? reg(m) << 1 : reg(m)), half ? 2 : 1, offset))
 				return;
-			branch_write_pc(m_pc + 4 + 2 * offset);
+			branch_write_pc(m_core->pc + 4 + 2 * offset);
 			m_cycles += 4;
 			break;
 		}
@@ -2798,7 +2827,7 @@ void armv7m_device::t32_dp_shifted(u32 op)
 	if (n == 13 && (opc == 8 || opc == 13) && (type != 0 || amount > 3))
 		unpredictable();
 
-	u32 carry = m_c;
+	u32 carry = m_core->c;
 	const u32 op2 = shift_c(reg(m), type, amount, carry);
 	dp_op(opc, d, n, m, op2, carry, setflags);
 }
@@ -2831,7 +2860,7 @@ void armv7m_device::t32_dp_plain_imm(u32 op)
 		{
 			if (d == 15 || (d == 13 && n != 13))
 				unpredictable();
-			const u32 base = n == 15 ? (m_pc + 4) & ~3 : rn;
+			const u32 base = n == 15 ? (m_core->pc + 4) & ~3 : rn;
 			set_reg(d, opc ? base - imm12 : base + imm12);
 			break;
 		}
@@ -2844,7 +2873,7 @@ void armv7m_device::t32_dp_plain_imm(u32 op)
 			if (opc == 0x04)
 				set_reg(d, imm16);
 			else
-				set_reg(d, (imm16 << 16) | (m_r[d] & 0xffff));
+				set_reg(d, (imm16 << 16) | (m_core->r[d] & 0xffff));
 			break;
 		}
 	case 0x10: case 0x12: case 0x18: case 0x1a:
@@ -2874,12 +2903,12 @@ void armv7m_device::t32_dp_plain_imm(u32 op)
 			if (operand > hi)
 			{
 				result = hi;
-				m_q = 1;
+				m_core->q = 1;
 			}
 			else if (operand < lo)
 			{
 				result = lo;
-				m_q = 1;
+				m_core->q = 1;
 			}
 			set_reg(d, u32(result));
 			break;
@@ -2911,7 +2940,7 @@ void armv7m_device::t32_dp_plain_imm(u32 op)
 			}
 			const u32 mask = (0xffffffffU >> (31 - msb + lsb)) << lsb;
 			const u32 source = n == 15 ? 0 : rn;
-			set_reg(d, (m_r[d] & ~mask) | ((source << lsb) & mask));
+			set_reg(d, (m_core->r[d] & ~mask) | ((source << lsb) & mask));
 			break;
 		}
 	default:
@@ -2935,7 +2964,7 @@ void armv7m_device::t32_branch_misc(u32 op)
 			const u32 imm = ((op >> 26) & 1) << 20 | ((op >> 11) & 1) << 19 | ((op >> 13) & 1) << 18 | ((op >> 16) & 0x3f) << 12 | (op & 0x7ff) << 1;
 			if (condition((op >> 22) & 0xf))
 			{
-				branch_write_pc(m_pc + 4 + util::sext(imm, 21));
+				branch_write_pc(m_core->pc + 4 + util::sext(imm, 21));
 				m_cycles += 2;
 			}
 			return;
@@ -2992,9 +3021,9 @@ void armv7m_device::t32_branch_misc(u32 op)
 	const u32 i1 = ~((op >> 13) ^ s) & 1;
 	const u32 i2 = ~((op >> 11) ^ s) & 1;
 	const u32 imm = s << 24 | i1 << 23 | i2 << 22 | ((op >> 16) & 0x3ff) << 12 | (op & 0x7ff) << 1;
-	const u32 target = m_pc + 4 + util::sext(imm, 25);
+	const u32 target = m_core->pc + 4 + util::sext(imm, 25);
 	if (op1 & 4)
-		m_r[14] = (m_pc + 4) | 1;
+		m_core->r[14] = (m_core->pc + 4) | 1;
 	else if (in_it() && !last_in_it())
 		unpredictable();
 	branch_write_pc(target);
@@ -3184,7 +3213,7 @@ void armv7m_device::t32_load(u32 op)
 	u8 flags = 0;
 	if (n == 15)
 	{
-		const u32 base = (m_pc + 4) & ~3;
+		const u32 base = (m_core->pc + 4) & ~3;
 		address = imm12_form ? base + (op & 0xfff) : base - (op & 0xfff);
 		if (t == 15 && size == 2 && !sign)
 			hint_unpredictable = true;
@@ -3258,13 +3287,13 @@ void armv7m_device::t32_dp_register(u32 op)
 	{
 		if (d == 13 || d == 15 || n == 13 || n == 15 || m == 13 || m == 15)
 			unpredictable();
-		u32 carry = m_c;
+		u32 carry = m_core->c;
 		const u32 result = shift_c(reg(n), op1 >> 1, reg(m) & 0xff, carry);
 		set_reg(d, result);
 		if (op1 & 1)
 		{
 			set_nz(result);
-			m_c = carry;
+			m_core->c = carry;
 		}
 		return;
 	}
@@ -3392,8 +3421,8 @@ void armv7m_device::t32_long_multiply(u32 op)
 	{
 	case 0: result = u64(s64(s32(rn)) * s64(s32(rm))); break;
 	case 2: result = u64(rn) * u64(rm); break;
-	case 4: result = u64(s64(s32(rn)) * s64(s32(rm))) + ((u64(m_r[dhi]) << 32) | m_r[dlo]); break;
-	default: result = u64(rn) * u64(rm) + ((u64(m_r[dhi]) << 32) | m_r[dlo]); break;
+	case 4: result = u64(s64(s32(rn)) * s64(s32(rm))) + ((u64(m_core->r[dhi]) << 32) | m_core->r[dlo]); break;
+	default: result = u64(rn) * u64(rm) + ((u64(m_core->r[dhi]) << 32) | m_core->r[dlo]); break;
 	}
 	set_reg(dlo, u32(result));
 	set_reg(dhi, u32(result >> 32));
