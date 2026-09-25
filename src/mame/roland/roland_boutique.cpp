@@ -60,7 +60,7 @@ private:
 	u32 m_lcd_port = 0;
 
 	void mem_map(address_map &map) ATTR_COLD;
-	void boutique(machine_config &config, u16 strap) ATTR_COLD;
+	void boutique(machine_config &config, u16 strap, const XTAL &audio) ATTR_COLD;
 
 	void subcpu_control_w(u32 data);
 	void lcd_port_w(u32 data);
@@ -127,7 +127,7 @@ static INPUT_PORTS_START(d05)
 	PORT_ADJUSTER(80, "Volume")
 INPUT_PORTS_END
 
-void boutique_state::boutique(machine_config &config, u16 strap)
+void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
 {
 	MB8AA4181(config, m_maincpu, 156'000'000);
 	m_maincpu->set_addrmap(AS_PROGRAM, &boutique_state::mem_map);
@@ -143,7 +143,7 @@ void boutique_state::boutique(machine_config &config, u16 strap)
 
 	SPEAKER(config, "speaker", 2).front();
 	mb8aa4181_dsp_device &dsp = *m_maincpu->subdevice<mb8aa4181_dsp_device>("dsp");
-	dsp.set_clock(24'576'000);
+	dsp.set_clock(audio);
 	dsp.add_route(0, "speaker", 1.0, 0);
 	dsp.add_route(1, "speaker", 1.0, 1);
 
@@ -161,7 +161,7 @@ void boutique_state::boutique(machine_config &config, u16 strap)
 
 void boutique_state::d05(machine_config &config)
 {
-	boutique(config, 0xfffb);
+	boutique(config, 0xfffb, 24.576_MHz_XTAL);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
@@ -180,12 +180,12 @@ void boutique_state::d05(machine_config &config)
 
 void boutique_state::sh01a(machine_config &config)
 {
-	boutique(config, 0xfff3);
+	boutique(config, 0xfff3, 22.5792_MHz_XTAL);
 }
 
 void boutique_state::tr08(machine_config &config)
 {
-	boutique(config, 0xfff7);
+	boutique(config, 0xfff7, 22.5792_MHz_XTAL);
 }
 
 ROM_START(d05)
