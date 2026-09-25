@@ -39,6 +39,8 @@ public:
 		, m_flash(*this, "flash")
 		, m_subflash(*this, "subcpu")
 		, m_volume(*this, "VOLUME")
+		, m_mux(*this, "MUX%u", 0U)
+		, m_knob(*this, "KNOB%u", 0U)
 	{
 	}
 
@@ -56,13 +58,18 @@ private:
 	required_region_ptr<u32> m_flash;
 	required_region_ptr<u32> m_subflash;
 	required_ioport m_volume;
+	optional_ioport_array<32> m_mux;
+	optional_ioport_array<4> m_knob;
 
 	u32 m_lcd_port = 0;
+	u8 m_mux_select = 0;
 
 	void mem_map(address_map &map) ATTR_COLD;
 	void boutique(machine_config &config, u16 strap, const XTAL &audio) ATTR_COLD;
 
 	void subcpu_control_w(u32 data);
+	void subcpu_porte_w(u16 data);
+	template <unsigned Ch> u16 panel_r();
 	void lcd_port_w(u32 data);
 	void lcd_data_w(u8 data);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -89,6 +96,7 @@ void boutique_state::machine_start()
 	m_spiflash->set_rom_ptr(memregion("flash")->base());
 	m_spiflash->set_rom_size(memregion("flash")->bytes());
 	save_item(NAME(m_lcd_port));
+	save_item(NAME(m_mux_select));
 
 	m_maincpu->exint_w<0>(1);
 	m_maincpu->exint_w<7>(1);
@@ -97,6 +105,22 @@ void boutique_state::machine_start()
 void boutique_state::subcpu_control_w(u32 data)
 {
 	m_subcpu->set_input_line(INPUT_LINE_RESET, BIT(data, 0) ? CLEAR_LINE : ASSERT_LINE);
+}
+
+void boutique_state::subcpu_porte_w(u16 data)
+{
+	m_mux_select = BIT(data, 4, 3);
+}
+
+template <unsigned Ch>
+u16 boutique_state::panel_r()
+{
+	ioport_port *port;
+	if constexpr (Ch < 10)
+		port = m_mux[(Ch - 6) * 8 + m_mux_select].target();
+	else
+		port = m_knob[Ch - 10].target();
+	return port ? ((255 - port->read()) << 4) | 8 : 0xfff;
 }
 
 void boutique_state::lcd_port_w(u32 data)
@@ -125,6 +149,102 @@ HD44780_PIXEL_UPDATE(boutique_state::lcd_pixel_update)
 static INPUT_PORTS_START(d05)
 	PORT_START("VOLUME")
 	PORT_ADJUSTER(80, "Volume")
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(sh01a)
+	PORT_INCLUDE(d05)
+
+	PORT_START("MUX1")
+	PORT_CONFNAME(0xff, 0xd5, "Switch 6.1")
+	PORT_CONFSETTING(0xd5, "1")
+	PORT_CONFSETTING(0x7f, "2")
+	PORT_CONFSETTING(0x2a, "3")
+	PORT_START("MUX2")
+	PORT_CONFNAME(0xff, 0xd5, "Switch 6.2")
+	PORT_CONFSETTING(0xd5, "1")
+	PORT_CONFSETTING(0x7f, "2")
+	PORT_CONFSETTING(0x2a, "3")
+	PORT_START("MUX3")
+	PORT_ADJUSTER(255, "Control 6.3") PORT_MINMAX(0, 255)
+	PORT_START("MUX4")
+	PORT_ADJUSTER(0, "Control 6.4") PORT_MINMAX(0, 255)
+	PORT_START("MUX5")
+	PORT_ADJUSTER(0, "Control 6.5") PORT_MINMAX(0, 255)
+	PORT_START("MUX6")
+	PORT_ADJUSTER(0, "Control 6.6") PORT_MINMAX(0, 255)
+	PORT_START("MUX7")
+	PORT_CONFNAME(0xff, 0xfe, "LFO Waveform")
+	PORT_CONFSETTING(0xfe, "1")
+	PORT_CONFSETTING(0xf4, "2")
+	PORT_CONFSETTING(0xdd, "3")
+	PORT_CONFSETTING(0xbd, "4")
+	PORT_CONFSETTING(0x9e, "5")
+	PORT_CONFSETTING(0x6f, "6")
+	PORT_START("MUX10")
+	PORT_ADJUSTER(128, "Control 7.2") PORT_MINMAX(0, 255)
+	PORT_START("MUX11")
+	PORT_ADJUSTER(32, "Envelope Release") PORT_MINMAX(0, 255)
+	PORT_START("MUX12")
+	PORT_ADJUSTER(255, "Envelope Sustain") PORT_MINMAX(0, 255)
+	PORT_START("MUX13")
+	PORT_ADJUSTER(128, "Envelope Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX14")
+	PORT_ADJUSTER(0, "Envelope Attack") PORT_MINMAX(0, 255)
+	PORT_START("MUX15")
+	PORT_CONFNAME(0xff, 0xd5, "Envelope Trigger")
+	PORT_CONFSETTING(0xd5, "1")
+	PORT_CONFSETTING(0x7f, "2")
+	PORT_CONFSETTING(0x2a, "3")
+	PORT_START("MUX16")
+	PORT_CONFNAME(0xff, 0xc0, "VCA Mode")
+	PORT_CONFSETTING(0x40, "1")
+	PORT_CONFSETTING(0xc0, "2")
+	PORT_START("MUX17")
+	PORT_ADJUSTER(0, "VCF Keyboard") PORT_MINMAX(0, 255)
+	PORT_START("MUX18")
+	PORT_ADJUSTER(0, "VCF Modulation") PORT_MINMAX(0, 255)
+	PORT_START("MUX19")
+	PORT_ADJUSTER(0, "VCF Envelope") PORT_MINMAX(0, 255)
+	PORT_START("MUX20")
+	PORT_ADJUSTER(0, "VCF Resonance") PORT_MINMAX(0, 255)
+	PORT_START("MUX21")
+	PORT_ADJUSTER(255, "VCF Cutoff") PORT_MINMAX(0, 255)
+	PORT_START("MUX22")
+	PORT_ADJUSTER(0, "Mixer Noise") PORT_MINMAX(0, 255)
+	PORT_START("MUX23")
+	PORT_CONFNAME(0xff, 0xd5, "Sub Oscillator Type")
+	PORT_CONFSETTING(0xd5, "1")
+	PORT_CONFSETTING(0x7f, "2")
+	PORT_CONFSETTING(0x2a, "3")
+	PORT_START("MUX24")
+	PORT_ADJUSTER(0, "Mixer Sub") PORT_MINMAX(0, 255)
+	PORT_START("MUX25")
+	PORT_ADJUSTER(255, "Mixer Saw") PORT_MINMAX(0, 255)
+	PORT_START("MUX26")
+	PORT_ADJUSTER(0, "Mixer Pulse") PORT_MINMAX(0, 255)
+	PORT_START("MUX27")
+	PORT_CONFNAME(0xff, 0xd5, "VCO PWM Source")
+	PORT_CONFSETTING(0xd5, "1")
+	PORT_CONFSETTING(0x7f, "2")
+	PORT_CONFSETTING(0x2a, "3")
+	PORT_START("MUX28")
+	PORT_ADJUSTER(128, "VCO Pulse Width") PORT_MINMAX(0, 255)
+	PORT_START("MUX29")
+	PORT_CONFNAME(0xff, 0xbd, "VCO Range")
+	PORT_CONFSETTING(0xfe, "64'")
+	PORT_CONFSETTING(0xf4, "32'")
+	PORT_CONFSETTING(0xdd, "16'")
+	PORT_CONFSETTING(0xbd, "8'")
+	PORT_CONFSETTING(0x9e, "4'")
+	PORT_CONFSETTING(0x6f, "2'")
+	PORT_START("MUX30")
+	PORT_ADJUSTER(0, "VCO Modulation") PORT_MINMAX(0, 255)
+	PORT_START("MUX31")
+	PORT_ADJUSTER(128, "LFO Rate") PORT_MINMAX(0, 255)
+	PORT_START("KNOB0")
+	PORT_ADJUSTER(128, "Knob 10") PORT_MINMAX(0, 255)
+	PORT_START("KNOB1")
+	PORT_ADJUSTER(128, "Knob 11") PORT_MINMAX(0, 255)
 INPUT_PORTS_END
 
 void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
@@ -181,6 +301,13 @@ void boutique_state::d05(machine_config &config)
 void boutique_state::sh01a(machine_config &config)
 {
 	boutique(config, 0xfff3, 22.5792_MHz_XTAL);
+	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
+	m_subcpu->adc_in_cb<6>().set(FUNC(boutique_state::panel_r<6>));
+	m_subcpu->adc_in_cb<7>().set(FUNC(boutique_state::panel_r<7>));
+	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::panel_r<8>));
+	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::panel_r<9>));
+	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::panel_r<10>));
+	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::panel_r<11>));
 }
 
 void boutique_state::tr08(machine_config &config)
@@ -216,5 +343,5 @@ ROM_END
 
 
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "Boutique D-05 Linear Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2016, sh01a, 0, 0, sh01a, d05, boutique_state, init_boutique, "Roland", "Boutique SH-01A Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "Boutique SH-01A Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(2016, tr08,  0, 0, tr08,  d05, boutique_state, init_boutique, "Roland", "Boutique TR-08 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
