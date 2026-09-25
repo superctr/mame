@@ -36,8 +36,6 @@ public:
 	u32 read(offs_t offset, u32 mem_mask);
 	void write(offs_t offset, u32 data, u32 mem_mask);
 
-	void rom_mode(u32 mode);
-	void rom_baud(u32 baud);
 
 protected:
 	virtual void device_start() override ATTR_COLD;
@@ -97,6 +95,7 @@ private:
 	bool tx_fifo_enabled() const;
 	bool rx_fifo_enabled() const;
 	void update_frame();
+	u32 baud_clock() const;
 	void update_rate();
 	void restart_rx();
 	void update_irq();
@@ -123,8 +122,13 @@ public:
 	auto sfi_cs_cb() { return m_sfi_cs_cb.bind(); }
 	auto sfi_tx_cb() { return m_sfi_tx_cb.bind(); }
 	auto sfi_rx_cb() { return m_sfi_rx_cb.bind(); }
+	auto usb_tx_cb() { return m_usb_tx_cb.bind(); }
+
+	void usb_host_w(int state);
+	void usb_rx_w(u32 packet);
 
 protected:
+	virtual const tiny_rom_entry *device_rom_region() const override ATTR_COLD;
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -142,6 +146,7 @@ private:
 	devcb_write_line m_sfi_cs_cb;
 	devcb_write8 m_sfi_tx_cb;
 	devcb_read8 m_sfi_rx_cb;
+	devcb_write32 m_usb_tx_cb;
 
 	u32 m_gpio_out[8];
 	u32 m_dma_flags;
@@ -165,14 +170,37 @@ private:
 
 	void internal_map(address_map &map) ATTR_COLD;
 
-	u32 bootrom_r(offs_t offset, u32 mem_mask);
-	u32 bootrom_call(u32 entry);
 	u32 flash_r(offs_t offset);
 	void sfi_start(u8 command);
 	void sfi_end();
-	u8 sfi_status();
 	u32 sfi_r(offs_t offset);
 	void sfi_w(offs_t offset, u32 data, u32 mem_mask);
+	u32 m_usbh_command = 0;
+	u32 m_dmac[0x40];
+	u32 m_remap;
+	bool m_system_reset;
+	emu_timer *m_sfi_timer;
+
+	static constexpr unsigned USB_RX_QUEUE = 256;
+	static constexpr unsigned USB_RX_BUFFER = 16;
+
+	u32 m_usb[0x100];
+	u32 m_usb_rx_queue[USB_RX_QUEUE];
+	u32 m_usb_rx_buffer[USB_RX_BUFFER];
+	u16 m_usb_rx_head;
+	u16 m_usb_rx_count;
+	u8 m_usb_rx_length;
+	u8 m_usb_rx_position;
+	bool m_usb_rx_pending;
+	bool m_usb_host = false;
+
+	u32 usb_r(offs_t offset);
+	void usb_w(offs_t offset, u32 data, u32 mem_mask);
+	u32 usb_irq_r();
+	void usb_irq_w(offs_t offset, u32 data, u32 mem_mask);
+	void usb_rx_load();
+	void usb_update_irq();
+
 	u32 unmapped_r(offs_t offset, u32 mem_mask);
 	void unmapped_w(offs_t offset, u32 data, u32 mem_mask);
 
@@ -182,10 +210,14 @@ private:
 	u32 adc_r(offs_t offset);
 	void adc_w(offs_t offset, u32 data, u32 mem_mask);
 	TIMER_CALLBACK_MEMBER(adc_done);
+	TIMER_CALLBACK_MEMBER(sfi_done);
+	void sfi_dma();
+	void sfi_irq_update();
 
 	u32 dmaflag_r(offs_t offset);
 	void dmaflag_w(offs_t offset, u32 data, u32 mem_mask);
 	void rom_dma(u32 desc);
+	void dma_start_w(u32 data);
 
 	void event_w(offs_t offset, u32 data, u32 mem_mask);
 
