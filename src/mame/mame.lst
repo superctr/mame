@@ -40359,6 +40359,7 @@ d550
 d70
 
 @source:roland/roland_esc2_cputest.cpp
+armv7mfuzz
 esc2cputest
 
 @source:roland/roland_jd800.cpp
