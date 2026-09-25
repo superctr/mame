@@ -213,6 +213,7 @@ private:
 	std::unordered_map<offs_t, u32> m_regs;
 	u32 m_field;
 	u32 m_flags;
+	bool m_short_moves;
 	u32 m_frames;
 	u8 m_switch_queued;
 	u8 m_switch_done;
@@ -251,7 +252,8 @@ private:
 	bool condition(const unit_state &u, u16 word) const;
 	double read_operand(unsigned unit, u16 address) const;
 	void write_operand(unsigned unit, u16 address, double value);
-	double shortmem(const unit_state &u, u32 address) const { return u.shortmem[address & (SHORT_WORDS - 1)]; }
+	u32 short_index(const unit_state &u, u32 address) const { return (address + (m_short_moves ? u.origin : 0)) & (SHORT_WORDS - 1); }
+	double shortmem(const unit_state &u, u32 address) const { return u.shortmem[short_index(u, address)]; }
 	float cell(u32 address) const { return std::bit_cast<float>(m_memory[address & (MEMORY_CELLS - 1)]); }
 	void set_cell(u32 address, double value) { m_memory[address & (MEMORY_CELLS - 1)] = std::bit_cast<u32>(float(value)); }
 	u32 token_cell(const unit_state &u, double token) const;

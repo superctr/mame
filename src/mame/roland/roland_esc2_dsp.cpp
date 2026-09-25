@@ -32,6 +32,7 @@ DEFINE_DEVICE_TYPE(MB8AA4181_DSP, mb8aa4181_dsp_device, "mb8aa4181_dsp", "Roland
 
 namespace {
 
+constexpr offs_t SHORT_MODE = 0x044 / 4;
 constexpr offs_t FRAME_COUNT = 0x048 / 4;
 constexpr offs_t MEMORY_ADDRESS = 0x050 / 4;
 constexpr offs_t SWITCH_REQUEST[2] = { 0x054 / 4, 0x05c / 4 };
@@ -178,6 +179,7 @@ void mb8aa4181_dsp_device::device_start()
 	save_item(NAME(m_port));
 	save_item(NAME(m_field));
 	save_item(NAME(m_flags));
+	save_item(NAME(m_short_moves));
 	save_item(NAME(m_frame_start));
 	save_item(NAME(m_frames));
 	save_item(NAME(m_switch_queued));
@@ -191,6 +193,7 @@ void mb8aa4181_dsp_device::device_reset()
 	std::fill_n(m_port, 0x100, 0.0);
 	m_field = 0;
 	m_flags = 0;
+	m_short_moves = true;
 	m_frames = 0;
 	m_switch_queued = m_switch_done = 0;
 	m_output_read = m_output_write = 0;
@@ -424,6 +427,8 @@ void mb8aa4181_dsp_device::host_write(offs_t offset, u32 data, u32 mem_mask)
 	COMBINE_DATA(&m_regs[offset]);
 	if (offset == FLAGS)
 		m_flags = m_regs[offset];
+	else if (offset == SHORT_MODE)
+		m_short_moves = !BIT(m_regs[offset], 0);
 }
 
 u32 mb8aa4181_dsp_device::native_number(u32 data, unsigned bits)
@@ -652,7 +657,7 @@ void mb8aa4181_dsp_device::write_operand(unsigned unit, u16 address, double valu
 	switch (address >> 12)
 	{
 	case 0x0: case 0x1:
-		u.shortmem[address & (SHORT_WORDS - 1)] = value;
+		u.shortmem[short_index(u, address)] = value;
 		return;
 	case 0x2:
 		if (address < 0x2200)
@@ -1458,7 +1463,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		switch (s.type)
 		{
 		case STORE_OPERAND: write_operand(unitnum, s.address, s.value); break;
-		case STORE_SHORT: u.shortmem[s.address & (SHORT_WORDS - 1)] = s.value; break;
+		case STORE_SHORT: u.shortmem[short_index(u, s.address)] = s.value; break;
 		case STORE_LOCAL: u.local[s.address & (SHORT_WORDS - 1)] = s.value; break;
 		case STORE_DIRECT: direct_store(u, s.address & (DIRECT_WORDS - 1), s.value); break;
 		case STORE_CELL: set_cell(s.address, s.value); break;
