@@ -342,6 +342,6 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "Boutique D-05 Linear Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "Boutique SH-01A Synthesizer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2016, tr08,  0, 0, tr08,  d05, boutique_state, init_boutique, "Roland", "Boutique TR-08 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
+SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
+SYST(2016, tr08,  0, 0, tr08,  d05, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)
