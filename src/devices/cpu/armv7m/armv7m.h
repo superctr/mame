@@ -13,6 +13,11 @@
 
 #pragma once
 
+class drc_cache;
+class drcuml_state;
+class drcuml_block;
+namespace uml { class code_handle; class parameter; }
+
 class armv7m_device : public cpu_device
 {
 public:
@@ -53,6 +58,7 @@ protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 	virtual void device_post_load() override ATTR_COLD;
+	virtual void device_stop() override ATTR_COLD;
 
 	// device_execute_interface overrides
 	virtual u32 execute_min_cycles() const noexcept override { return 1; }
@@ -70,6 +76,8 @@ protected:
 
 	// device_disasm_interface overrides
 	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
+
+	int &icount() { return m_core->icount; }
 
 private:
 	enum : int {
@@ -100,6 +108,44 @@ private:
 		MEM_ALIGNED = 1, MEM_UNPRIV = 2
 	};
 
+	struct internal_state
+	{
+		u32 r[16];
+		u32 pc;
+		u32 n, z, c, v, q;
+		u32 it;
+		u32 tbit;
+		int icount;
+		u32 check_irq;
+		int limit;
+		u32 arg0, arg1, arg2;
+		u32 status;
+		u32 exit_pc;
+		u32 vcount;
+		u32 privmode;
+		u32 code_lo, code_hi;
+		u32 smc;
+		u32 temp[16];
+	};
+
+	enum : int {
+		SLEEP_NONE = 0, SLEEP_WFI, SLEEP_WFE
+	};
+
+	class frontend;
+	class opcode_desc;
+	struct compiler_state;
+	struct verify_state;
+	struct c_funcs;
+
+	struct drc_deleter
+	{
+		void operator()(drc_cache *ptr) const;
+		void operator()(drcuml_state *ptr) const;
+		void operator()(frontend *ptr) const;
+		void operator()(verify_state *ptr) const;
+	};
+
 	// configuration
 	address_space_config m_program_config;
 	u32 m_cpuid;
@@ -118,20 +164,16 @@ private:
 	memory_access<32, 2, 0, ENDIANNESS_LITTLE>::specific m_program;
 
 	// architectural state
-	u32 m_r[16];
+	internal_state *m_core;
+	internal_state m_local_core;
 	u32 m_sp_other;
-	u32 m_pc;
-	u32 m_n, m_z, m_c, m_v, m_q;
-	u8 m_it;
 	u16 m_ipsr;
-	bool m_tbit;
 	bool m_handler;
 	u32 m_primask, m_faultmask, m_basepri, m_control;
 	bool m_excl;
 	bool m_event;
 	int m_sleep;
 	bool m_lockup;
-	int m_icount;
 
 	// exception state
 	u16 m_sys_pending;
@@ -144,7 +186,6 @@ private:
 	std::unique_ptr<u32[]> m_irq_level;
 	std::unique_ptr<u8[]> m_irq_prio;
 	bool m_nmi_level;
-	bool m_check_irq;
 	bool m_prio_dirty;
 	int m_exec_prio;
 	u8 m_prio_mask;
@@ -177,15 +218,36 @@ private:
 	int m_cycles;
 	u32 m_xpsr_state, m_msp_state, m_psp_state, m_control_state;
 
+	// recompiler
+	bool m_drc;
+	bool m_drc_dirty;
+	int m_drc_hook;
+	u64 m_drc_stamp;
+	u64 m_drc_outside;
+	std::unique_ptr<u8[]> m_drc_perm;
+	std::vector<u32> m_drc_mpu;
+	util::notifier_subscription m_drc_notifier;
+	std::unique_ptr<drc_cache, drc_deleter> m_drccache;
+	std::unique_ptr<drcuml_state, drc_deleter> m_drcuml;
+	std::unique_ptr<frontend, drc_deleter> m_drcfe;
+	std::unique_ptr<verify_state, drc_deleter> m_verify;
+	uml::code_handle *m_entry;
+	uml::code_handle *m_nocode;
+	uml::code_handle *m_exit_pc;
+	uml::code_handle *m_exit_pcset;
+	uml::code_handle *m_exit_resolve;
+	uml::code_handle *m_exit_interp;
+	uml::code_handle *m_exit_branch;
+
 	// registers and flags
-	u32 reg(int n) const { return n == 15 ? m_pc + 4 : m_r[n]; }
-	void set_reg(int n, u32 value) { m_r[n] = n == 13 ? value & ~3 : value; }
-	bool in_it() const { return m_it & 0xf; }
-	bool last_in_it() const { return (m_it & 0xf) == 0x8; }
+	u32 reg(int n) const { return n == 15 ? m_core->pc + 4 : m_core->r[n]; }
+	void set_reg(int n, u32 value) { m_core->r[n] = n == 13 ? value & ~3 : value; }
+	bool in_it() const { return m_core->it & 0xf; }
+	bool last_in_it() const { return (m_core->it & 0xf) == 0x8; }
 	bool privileged() const { return m_handler || !(m_control & 1); }
 	bool psp_active() const { return !m_handler && (m_control & 2); }
-	u32 get_msp() const { return psp_active() ? m_sp_other : m_r[13]; }
-	u32 get_psp() const { return psp_active() ? m_r[13] : m_sp_other; }
+	u32 get_msp() const { return psp_active() ? m_sp_other : m_core->r[13]; }
+	u32 get_psp() const { return psp_active() ? m_core->r[13] : m_sp_other; }
 	void set_msp(u32 value);
 	void set_psp(u32 value);
 	void set_mode(bool handler, bool spsel);
@@ -193,23 +255,24 @@ private:
 	u32 xpsr() const;
 	void set_nzcvq(u32 value);
 	bool condition(unsigned cond) const;
-	void set_nz(u32 result) { m_n = result >> 31; m_z = result == 0; }
+	void set_nz(u32 result) { m_core->n = result >> 31; m_core->z = result == 0; }
 	u32 add_with_carry(u32 x, u32 y, u32 carry, bool setflags);
 	static u32 thumb_expand_imm(u32 imm12);
 	u32 thumb_expand_imm_c(u32 imm12, u32 &carry) const;
 	u32 shift_c(u32 value, int type, unsigned amount, u32 &carry) const;
-	u32 shift(u32 value, int type, unsigned amount) const { u32 c = m_c; return shift_c(value, type, amount, c); }
+	u32 shift(u32 value, int type, unsigned amount) const { u32 c = m_core->c; return shift_c(value, type, amount, c); }
 	void unpredictable() const;
 
 	// program counter writes
 	void branch_write_pc(u32 address) { m_next_pc = address & ~1; }
 	void bx_write_pc(u32 address);
-	void blx_write_pc(u32 address) { m_tbit = address & 1; m_next_pc = address & ~1; }
+	void blx_write_pc(u32 address) { m_core->tbit = address & 1; m_next_pc = address & ~1; }
 
 	// memory
 	bool mem_read(u32 address, int size, u32 &value, u8 flags = 0);
 	bool mem_write(u32 address, int size, u32 value, u8 flags = 0);
 	bool access_aligned(u32 address, int size, u32 &value, bool write, int acctype);
+	bool mpu_permits(u32 address, bool ifetch, bool write, bool priv, bool enabled) const;
 	bool mpu_check(u32 address, int acctype, bool write, bool priv);
 	u32 bus_read(u32 address, int size);
 	void bus_write(u32 address, int size, u32 value);
@@ -230,7 +293,7 @@ private:
 	void set_exception_active(int exc, bool state);
 	unsigned active_count() const;
 	bool fault_enabled(int exc) const;
-	void check_irq() { m_check_irq = true; m_prio_dirty = true; }
+	void check_irq() { m_core->check_irq = 1; m_prio_dirty = true; }
 	bool take_interrupt();
 	void take_sync_exception(int exc, u32 return_address, u32 insn_address);
 	void exception_entry(int exc, u32 return_address);
@@ -248,6 +311,8 @@ private:
 
 	// execution
 	void step();
+	void step_body();
+	void step_resolve(u32 pc);
 	void execute_t16(u16 op);
 	void execute_t32(u32 op);
 	void undefined();
@@ -287,6 +352,60 @@ private:
 	void do_bkpt();
 	void do_wfi();
 	void do_wfe();
+
+	// recompiler
+	void drc_start() ATTR_COLD;
+	void drc_stop() ATTR_COLD;
+	void drc_flush();
+	void execute_run_drc();
+	u64 drc_stamp() const;
+	void drc_sync();
+	void drc_update_limit();
+	u32 drc_cycles_to_event() const;
+	bool drc_fetchable(u32 pc, bool priv) const;
+	void drc_check_mpu();
+	bool drc_mpu_unchanged() const;
+	bool drc_can_continue();
+	void drc_irq_check();
+	void drc_interpret();
+	void drc_bx_high();
+	void drc_mem_read(int size, u8 flags);
+	void drc_mem_write(int size, u8 flags);
+	void drc_compile(u32 mode, offs_t pc);
+	void drc_generate_invariant();
+	void drc_generate_sequence(drcuml_block &block, compiler_state &compiler, const opcode_desc *seqhead, const opcode_desc *seqlast);
+	void drc_generate_checksum(drcuml_block &block, const opcode_desc *seqhead, const opcode_desc *seqlast);
+	bool drc_generate_instruction(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	void drc_generate_interpret(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	bool drc_generate_native(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	bool drc_generate_t16(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	bool drc_generate_t32(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	void drc_generate_begin(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	void drc_generate_end(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc);
+	void drc_generate_condition(drcuml_block &block, unsigned cond, u32 false_label);
+	void drc_generate_epilogue(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc, int cycles, bool check_irq);
+	void drc_generate_goto(drcuml_block &block, compiler_state &compiler, u8 it, u32 pc);
+	void drc_generate_branch(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc, u32 target, int cycles);
+	void drc_generate_dynamic_branch(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc, int cycles, int kind);
+	void drc_load_reg(drcuml_block &block, const uml::parameter &dst, int n, const opcode_desc *desc);
+	void drc_generate_set_reg(drcuml_block &block, int d, const uml::parameter &value);
+	void drc_generate_nz(drcuml_block &block, const uml::parameter &value);
+	void drc_generate_flags(drcuml_block &block, bool subtract);
+	void drc_generate_fast_check(drcuml_block &block, compiler_state &compiler, const uml::parameter &address, int size, bool write, u32 slow);
+	void drc_generate_read(drcuml_block &block, compiler_state &compiler, int size, u8 flags);
+	void drc_generate_write(drcuml_block &block, compiler_state &compiler, int size, u8 flags);
+	void drc_generate_code_write_check(drcuml_block &block, compiler_state &compiler, const uml::parameter &address, u32 bytes);
+	void drc_generate_ldm(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc, int n, u32 registers, bool wback, bool decrement);
+	void drc_generate_stm(drcuml_block &block, compiler_state &compiler, const opcode_desc *desc, int n, u32 registers, bool wback, bool decrement);
+	void drc_generate_shift_reg(drcuml_block &block, int type, const uml::parameter &value, const uml::parameter &amount, int d, bool setflags);
+	void drc_generate_shift_imm(drcuml_block &block, int type, unsigned amount, bool want_carry);
+	static bool drc_dp_valid(unsigned opc, int d, int n, int m, bool setflags);
+	void drc_generate_dp(drcuml_block &block, const opcode_desc *desc, unsigned opc, int d, int n, int carry, bool setflags);
+	void drc_verify_begin();
+	void drc_verify_end(int result);
+	void drc_verify_log(bool write, u32 address, int size, u8 flags, u32 value);
+	bool drc_memory_hook(bool write, u32 address, int size, u32 &value, u8 flags);
+	std::string drc_disassemble(u32 pc, int count);
 };
 
 class cortex_m3_device : public armv7m_device

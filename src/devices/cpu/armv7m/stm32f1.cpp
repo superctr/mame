@@ -729,6 +729,13 @@ void stm32f103_device::internal_map(address_map &map)
 
 void stm32f103_device::device_start()
 {
+	const offs_t length = std::min<offs_t>(m_flash.bytes(), 0x80000);
+	if (length >= 4)
+	{
+		space(AS_PROGRAM).install_rom(0x00000000, length - 1, &m_flash[0]);
+		space(AS_PROGRAM).install_rom(0x08000000, 0x08000000 + length - 1, &m_flash[0]);
+	}
+
 	cortex_m3_device::device_start();
 
 	save_item(NAME(m_rcc_cr));
