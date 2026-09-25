@@ -41,6 +41,9 @@ public:
 		, m_volume(*this, "VOLUME")
 		, m_mux(*this, "MUX%u", 0U)
 		, m_knob(*this, "KNOB%u", 0U)
+		, m_steps(*this, "STEPS")
+		, m_keys(*this, "KEYS")
+		, m_select(*this, "SELECT")
 	{
 	}
 
@@ -60,9 +63,13 @@ private:
 	required_ioport m_volume;
 	optional_ioport_array<32> m_mux;
 	optional_ioport_array<4> m_knob;
+	optional_ioport m_steps;
+	optional_ioport m_keys;
+	optional_ioport m_select;
 
 	u32 m_lcd_port = 0;
 	u8 m_mux_select = 0;
+	u16 m_key_rows = 0xffff;
 
 	void mem_map(address_map &map) ATTR_COLD;
 	void boutique(machine_config &config, u16 strap, const XTAL &audio) ATTR_COLD;
@@ -70,6 +77,10 @@ private:
 	void subcpu_control_w(u32 data);
 	void subcpu_porte_w(u16 data);
 	template <unsigned Ch> u16 panel_r();
+	template <unsigned Ch> u16 panel_level_r();
+	u16 tr08_porta_r();
+	u32 tr08_port6_r();
+	u16 tr08_portd_r();
 	void lcd_port_w(u32 data);
 	void lcd_data_w(u8 data);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -97,6 +108,7 @@ void boutique_state::machine_start()
 	m_spiflash->set_rom_size(memregion("flash")->bytes());
 	save_item(NAME(m_lcd_port));
 	save_item(NAME(m_mux_select));
+	save_item(NAME(m_key_rows));
 
 	m_maincpu->exint_w<0>(1);
 	m_maincpu->exint_w<7>(1);
@@ -121,6 +133,46 @@ u16 boutique_state::panel_r()
 	else
 		port = m_knob[Ch - 10].target();
 	return port ? ((255 - port->read()) << 4) | 8 : 0xfff;
+}
+
+template <unsigned Ch>
+u16 boutique_state::panel_level_r()
+{
+	ioport_port *port;
+	if constexpr (Ch < 10)
+		port = m_mux[(Ch - 6) * 8 + m_mux_select].target();
+	else
+		port = m_knob[Ch - 10].target();
+	return port ? (port->read() << 4) | 8 : 0;
+}
+
+u16 boutique_state::tr08_porta_r()
+{
+	return 0xfff0 | m_select->read();
+}
+
+u32 boutique_state::tr08_port6_r()
+{
+	return (1 << 3) | (BIT(m_keys->read(), 10) << 21);
+}
+
+u16 boutique_state::tr08_portd_r()
+{
+	const u32 steps = m_steps->read();
+	const u32 keys = m_keys->read();
+	u16 data = 0xfc0c | (keys >> 8 & 3);
+	for (unsigned row = 0; row < 4; row++)
+	{
+		if (!BIT(m_key_rows, 15 - row))
+			continue;
+		for (unsigned col = 0; col < 4; col++)
+			if (!BIT(steps, col * 4 + row))
+				data |= 1 << (9 - col);
+		for (unsigned col = 4; col < 6; col++)
+			if (!BIT(keys, (col - 4) * 4 + row))
+				data |= 1 << (9 - col);
+	}
+	return data;
 }
 
 void boutique_state::lcd_port_w(u32 data)
@@ -247,6 +299,141 @@ static INPUT_PORTS_START(sh01a)
 	PORT_ADJUSTER(128, "Knob 11") PORT_MINMAX(0, 255)
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(tr08)
+	PORT_INCLUDE(d05)
+
+	PORT_START("MUX6")
+	PORT_CONFNAME(0xff, 0xc0, "I/F Variation")
+	PORT_CONFSETTING(0xc0, "A")
+	PORT_CONFSETTING(0x40, "B")
+	PORT_START("MUX7")
+	PORT_CONFNAME(0xff, 0x2a, "Basic Variation")
+	PORT_CONFSETTING(0x2a, "A")
+	PORT_CONFSETTING(0x80, "AB")
+	PORT_CONFSETTING(0xd5, "B")
+	PORT_START("MUX8")
+	PORT_CONFNAME(0xff, 0xf2, "Auto Fill In")
+	PORT_CONFSETTING(0xf2, "Manual")
+	PORT_CONFSETTING(0xcc, "2")
+	PORT_CONFSETTING(0x99, "4")
+	PORT_CONFSETTING(0x66, "8")
+	PORT_CONFSETTING(0x33, "12")
+	PORT_CONFSETTING(0x0d, "16")
+	PORT_START("MUX9")
+	PORT_CONFNAME(0xff, 0x66, "Mode Selector")
+	PORT_CONFSETTING(0xf2, "Pattern Clear")
+	PORT_CONFSETTING(0xcc, "Pattern Write 1st Part")
+	PORT_CONFSETTING(0x99, "Pattern Write 2nd Part")
+	PORT_CONFSETTING(0x66, "Manual Play")
+	PORT_CONFSETTING(0x33, "Play Rhythm Track")
+	PORT_CONFSETTING(0x0d, "Compose Rhythm Track")
+	PORT_START("MUX10")
+	PORT_ADJUSTER(128, "Cymbal Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX11")
+	PORT_ADJUSTER(128, "Snare Drum Snappy") PORT_MINMAX(0, 255)
+	PORT_START("MUX12")
+	PORT_ADJUSTER(128, "Bass Drum Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX13")
+	PORT_ADJUSTER(128, "Accent") PORT_MINMAX(0, 255)
+	PORT_START("MUX14")
+	PORT_ADJUSTER(128, "Open Hi-Hat Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX15")
+	PORT_ADJUSTER(128, "Cymbal Tone") PORT_MINMAX(0, 255)
+	PORT_START("MUX16")
+	PORT_ADJUSTER(128, "High Tom Tuning") PORT_MINMAX(0, 255)
+	PORT_START("MUX17")
+	PORT_ADJUSTER(128, "Mid Tom Tuning") PORT_MINMAX(0, 255)
+	PORT_START("MUX18")
+	PORT_ADJUSTER(128, "Low Tom Tuning") PORT_MINMAX(0, 255)
+	PORT_START("MUX19")
+	PORT_ADJUSTER(128, "Snare Drum Tone") PORT_MINMAX(0, 255)
+	PORT_START("MUX20")
+	PORT_ADJUSTER(128, "Bass Drum Tone") PORT_MINMAX(0, 255)
+	PORT_START("MUX21")
+	PORT_ADJUSTER(160, "Closed Hi-Hat Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX22")
+	PORT_ADJUSTER(160, "Open Hi-Hat Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX23")
+	PORT_ADJUSTER(160, "Cymbal Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX24")
+	PORT_ADJUSTER(160, "Cowbell Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX25")
+	PORT_ADJUSTER(160, "Hand Clap Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX26")
+	PORT_ADJUSTER(160, "Rim Shot Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX27")
+	PORT_ADJUSTER(160, "High Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX28")
+	PORT_ADJUSTER(160, "Mid Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX29")
+	PORT_ADJUSTER(160, "Low Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX30")
+	PORT_ADJUSTER(160, "Snare Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX31")
+	PORT_ADJUSTER(160, "Bass Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("KNOB0")
+	PORT_CONFNAME(0xff, 0x13, "Pre-Scale")
+	PORT_CONFSETTING(0x13, "1")
+	PORT_CONFSETTING(0x46, "2")
+	PORT_CONFSETTING(0x93, "3")
+	PORT_CONFSETTING(0xdf, "4")
+	PORT_START("KNOB1")
+	PORT_ADJUSTER(91, "Tempo") PORT_MINMAX(0, 255)
+	PORT_START("STEPS")
+	PORT_BIT(0x0001, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 1")
+	PORT_BIT(0x0002, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 2")
+	PORT_BIT(0x0004, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 3")
+	PORT_BIT(0x0008, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 4")
+	PORT_BIT(0x0010, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 5")
+	PORT_BIT(0x0020, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 6")
+	PORT_BIT(0x0040, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 7")
+	PORT_BIT(0x0080, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 8")
+	PORT_BIT(0x0100, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 9")
+	PORT_BIT(0x0200, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 10")
+	PORT_BIT(0x0400, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 11")
+	PORT_BIT(0x0800, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 12")
+	PORT_BIT(0x1000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 13")
+	PORT_BIT(0x2000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 14")
+	PORT_BIT(0x4000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 15")
+	PORT_BIT(0x8000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 16")
+	PORT_START("KEYS")
+	PORT_CONFNAME(0x0001, 0x0001, "Low Tom / Low Conga")
+	PORT_CONFSETTING(0x0001, "Low Tom")
+	PORT_CONFSETTING(0x0000, "Low Conga")
+	PORT_CONFNAME(0x0002, 0x0002, "Mid Tom / Mid Conga")
+	PORT_CONFSETTING(0x0002, "Mid Tom")
+	PORT_CONFSETTING(0x0000, "Mid Conga")
+	PORT_CONFNAME(0x0004, 0x0004, "High Tom / High Conga")
+	PORT_CONFSETTING(0x0004, "High Tom")
+	PORT_CONFSETTING(0x0000, "High Conga")
+	PORT_CONFNAME(0x0008, 0x0008, "Rim Shot / Claves")
+	PORT_CONFSETTING(0x0008, "Rim Shot")
+	PORT_CONFSETTING(0x0000, "Claves")
+	PORT_CONFNAME(0x0010, 0x0010, "Hand Clap / Maracas")
+	PORT_CONFSETTING(0x0010, "Hand Clap")
+	PORT_CONFSETTING(0x0000, "Maracas")
+	PORT_BIT(0x0020, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Clear")
+	PORT_BIT(0x0040, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Trigger")
+	PORT_BIT(0x0080, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Menu")
+	PORT_BIT(0x0100, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Start/Stop")
+	PORT_BIT(0x0200, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Shift")
+	PORT_BIT(0x0400, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Tap")
+	PORT_START("SELECT")
+	PORT_CONFNAME(0x0f, 0x8, "Instrument Select")
+	PORT_CONFSETTING(0x9, "Accent")
+	PORT_CONFSETTING(0x8, "Bass Drum")
+	PORT_CONFSETTING(0xc, "Snare Drum")
+	PORT_CONFSETTING(0xd, "Low Tom / Low Conga")
+	PORT_CONFSETTING(0x5, "Mid Tom / Mid Conga")
+	PORT_CONFSETTING(0x4, "High Tom / High Conga")
+	PORT_CONFSETTING(0x0, "Rim Shot / Claves")
+	PORT_CONFSETTING(0x1, "Hand Clap / Maracas")
+	PORT_CONFSETTING(0x3, "Cowbell")
+	PORT_CONFSETTING(0xe, "Cymbal")
+	PORT_CONFSETTING(0xa, "Open Hi-Hat")
+	PORT_CONFSETTING(0xb, "Closed Hi-Hat")
+INPUT_PORTS_END
+
 void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
 {
 	MB8AA4181(config, m_maincpu, 156'000'000);
@@ -313,6 +500,17 @@ void boutique_state::sh01a(machine_config &config)
 void boutique_state::tr08(machine_config &config)
 {
 	boutique(config, 0xfff7, 11.2896_MHz_XTAL);
+	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
+	m_subcpu->adc_in_cb<6>().set(FUNC(boutique_state::panel_level_r<6>));
+	m_subcpu->adc_in_cb<7>().set(FUNC(boutique_state::panel_level_r<7>));
+	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::panel_level_r<8>));
+	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::panel_level_r<9>));
+	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::panel_level_r<10>));
+	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::panel_level_r<11>));
+	m_subcpu->gpio_in_cb<0>().set(FUNC(boutique_state::tr08_porta_r));
+	m_maincpu->gpio_in_cb<6>().set(FUNC(boutique_state::tr08_port6_r));
+	m_subcpu->gpio_in_cb<3>().set(FUNC(boutique_state::tr08_portd_r));
+	m_subcpu->gpio_out_cb<3>().set([this] (u16 data) { m_key_rows = data; });
 }
 
 ROM_START(d05)
@@ -344,4 +542,4 @@ ROM_END
 
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
-SYST(2016, tr08,  0, 0, tr08,  d05, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)
+SYST(2016, tr08,  0, 0, tr08,  tr08, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)
