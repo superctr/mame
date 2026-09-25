@@ -142,6 +142,7 @@ void mb8aa4181_dsp_device::device_start()
 		save_item(NAME(u.drp), i);
 		save_item(NAME(u.r), i);
 		save_item(NAME(u.shadow), i);
+		save_item(NAME(u.reciprocal), i);
 		save_item(NAME(u.sel), i);
 		save_item(NAME(u.shortmem), i);
 		save_item(NAME(u.local), i);
@@ -209,6 +210,7 @@ void mb8aa4181_dsp_device::device_reset()
 		std::fill_n(&u.drp[0][0], DRP_ENTRIES * 2, 0);
 		std::fill_n(u.r, 8, 0.0);
 		std::fill_n(u.shadow, 8, 0.0);
+		u.reciprocal = 0.0;
 		std::fill_n(u.sel, 4, 0.0);
 		std::fill_n(u.shortmem, SHORT_WORDS, 0.0);
 		std::fill_n(u.local, SHORT_WORDS, 0.0);
@@ -1160,7 +1162,10 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 
 		case OP_B_SUM: value = r[y] + r[x] + get(op.s, r); break;
 		case OP_B_SQUARE: value = r[y] * r[y] / 4.0; break;
-		case OP_B_NEWTON: value = r[d] * (2.0 - r[y] * r[d]); break;
+		case OP_B_NEWTON:
+			value = r[d] * (2.0 - r[y] * u.reciprocal);
+			u.reciprocal *= 2.0 - r[y] * u.reciprocal;
+			break;
 		case OP_B_MOVE: value = get(op.s, r); break;
 		case OP_B_DOUBLE: value = 2.0 * r[d] + get(op.t, r); break;
 		case OP_B_MUL: value = r[x] * get(op.s, r); break;
@@ -1213,8 +1218,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			compare = value;
 			break;
 		case OP_C_SET: value = get(op.s, r); break;
-		case OP_C_RECIPROCAL: value = 1.0 / get(op.s, r); break;
-		case OP_C_SEED: value = 1.0 / r[y]; is_function = true; break;
+		case OP_C_RECIPROCAL: u.reciprocal = 1.0 / get(op.s, r); value = r[d] * u.reciprocal; break;
+		case OP_C_SEED: value = u.reciprocal = 1.0 / r[y]; is_function = true; break;
 		case OP_C_EXPONENT:
 		{
 			const double k2 = std::floor(r[y] / std::numbers::ln2);

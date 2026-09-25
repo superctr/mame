@@ -159,6 +159,7 @@ private:
 
 		double r[8];
 		double shadow[8];
+		double reciprocal;
 		double sel[4];
 		double shortmem[SHORT_WORDS];
 		double local[SHORT_WORDS];
