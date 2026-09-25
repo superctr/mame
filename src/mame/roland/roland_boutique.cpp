@@ -300,7 +300,7 @@ void boutique_state::d05(machine_config &config)
 
 void boutique_state::sh01a(machine_config &config)
 {
-	boutique(config, 0xfff3, 22.5792_MHz_XTAL);
+	boutique(config, 0xfff3, 11.2896_MHz_XTAL);
 	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
 	m_subcpu->adc_in_cb<6>().set(FUNC(boutique_state::panel_r<6>));
 	m_subcpu->adc_in_cb<7>().set(FUNC(boutique_state::panel_r<7>));
@@ -312,7 +312,7 @@ void boutique_state::sh01a(machine_config &config)
 
 void boutique_state::tr08(machine_config &config)
 {
-	boutique(config, 0xfff7, 22.5792_MHz_XTAL);
+	boutique(config, 0xfff7, 11.2896_MHz_XTAL);
 }
 
 ROM_START(d05)
