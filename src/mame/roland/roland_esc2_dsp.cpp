@@ -141,6 +141,7 @@ void mb8aa4181_dsp_device::device_start()
 		save_item(NAME(u.target), i);
 		save_item(NAME(u.drp), i);
 		save_item(NAME(u.r), i);
+		save_item(NAME(u.shadow), i);
 		save_item(NAME(u.sel), i);
 		save_item(NAME(u.shortmem), i);
 		save_item(NAME(u.local), i);
@@ -207,6 +208,7 @@ void mb8aa4181_dsp_device::device_reset()
 		std::fill_n(&u.target[0][0], TARGETS * 4, 0);
 		std::fill_n(&u.drp[0][0], DRP_ENTRIES * 2, 0);
 		std::fill_n(u.r, 8, 0.0);
+		std::fill_n(u.shadow, 8, 0.0);
 		std::fill_n(u.sel, 4, 0.0);
 		std::fill_n(u.shortmem, SHORT_WORDS, 0.0);
 		std::fill_n(u.local, SHORT_WORDS, 0.0);
@@ -635,14 +637,10 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 			return std::bit_cast<float>(u.target[address & (TARGETS - 1)][2]);
 		break;
 	case 0xe:
-		switch (address)
-		{
-		case 0xe000: return 0.0;
-		case 0xe013: return 1.0 / 16384.0;
-		case 0xe018: return 1.0 / 512.0;
-		case 0xe020: return 0.5;
-		case 0xe021: return 1.0;
-		}
+		if (address == 0xe000)
+			return 0.0;
+		if (address <= 0xe021)
+			return std::ldexp(1.0, int(address & 0xff) - 0x21);
 		break;
 	}
 	if (!m_unsupported.count(0x10000000 | address))
@@ -873,7 +871,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		else if ((w & 0x8fc0) == 0x8e80)
 		{
 			op.type = OP_C_RECIPROCAL;
-			op.s = make_source(p, w & 63, false);
+			op.s = source{ 0.0, u8(w & 7), 0 };
 		}
 		else if ((w & 0x8fc0) == 0x8f00)
 		{
@@ -895,6 +893,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_SELECTOR;
 			op.y = w & 3;
 		}
+		else if ((w & 0x8ffe) == 0x8f60)
+			op.type = (w & 1) ? OP_C_RESTORE : OP_C_SAVE;
 		else if ((w & 0x8ffc) == 0x8f6c)
 		{
 			op.type = OP_C_ADD_SELECTOR;
@@ -1097,11 +1097,11 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 
 	struct write { u8 reg; double value; };
 	struct store { u8 type; u32 address; double value; };
-	write loads[MAX_OPS], sets[MAX_OPS * 2];
+	write loads[MAX_OPS], sets[MAX_OPS * 2], shadows[MAX_OPS];
 	store stores[MAX_OPS];
 	write selector_sets[MAX_OPS];
 	store requests[MAX_OPS];
-	unsigned nloads = 0, nsets = 0, nstores = 0, nselectors = 0, nrequests = 0;
+	unsigned nloads = 0, nsets = 0, nshadows = 0, nstores = 0, nselectors = 0, nrequests = 0;
 	double results[MAX_OPS];
 	u8 has_result = 0;
 	double arithmetic[2] = { 0.0, 0.0 };
@@ -1254,6 +1254,14 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		}
 		case OP_C_SELECTOR: value = u.sel[y] / 16384.0; break;
 		case OP_C_ADD_SELECTOR: value = r[d] + u.sel[y] / 16384.0; break;
+		case OP_C_SAVE:
+			shadows[nshadows++] = { u8(d), r[d] };
+			has = false;
+			break;
+		case OP_C_RESTORE:
+			sets[nsets++] = { u8(d), u.shadow[d] };
+			has = false;
+			break;
 		case OP_C_ADD:
 			value = r[d] + get(op.s, r);
 			is_test = true;
@@ -1514,6 +1522,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		u.r[loads[i].reg] = loads[i].value;
 	for (unsigned i = 0; i < nsets; i++)
 		u.r[sets[i].reg] = sets[i].value;
+	for (unsigned i = 0; i < nshadows; i++)
+		u.shadow[shadows[i].reg] = shadows[i].value;
 
 	bool has_c_published = false, has_f_published = false;
 	double c_published = 0.0, f_published = 0.0;
