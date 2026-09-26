@@ -197,6 +197,7 @@ protected:
 	uint8_t fifo[16];
 	uint32_t tcount;
 	uint32_t tcounter, tcounter_mask;
+	uint32_t dma_in_left;
 	int mode, fifo_pos, command_pos;
 	int state, xfr_phase;
 

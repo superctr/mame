@@ -231,6 +231,7 @@ void ncr53c90_device::device_start()
 	save_item(NAME(tcount));
 	save_item(NAME(tcounter));
 	save_item(NAME(tcounter_mask));
+	save_item(NAME(dma_in_left));
 	save_item(NAME(mode));
 	save_item(NAME(fifo_pos));
 	save_item(NAME(command_pos));
@@ -272,6 +273,7 @@ void ncr53c90_device::device_reset()
 	tcount = 0;
 	tcounter = 0;
 	tcounter_mask = 0xffff;
+	dma_in_left = 0;
 
 	reset_disconnect();
 }
@@ -689,8 +691,9 @@ void ncr53c90_device::step(bool timeout)
 
 	case INIT_XFR_BUS_COMPLETE:
 		// wait for dma transfer to complete and fifo to drain
-		// (FIFO may still contain one residual byte if enabled for 16-bit DMA)
-		if (dma_command && drq)
+		// (FIFO may still contain one residual byte if enabled for 16-bit DMA);
+		// bytes left once the host has taken the whole count are residue
+		if (dma_command && drq && !(dma_dir == DMA_IN && !dma_in_left))
 			break;
 		bus_complete();
 		break;
@@ -923,6 +926,7 @@ void ncr53c90_device::load_tcounter()
 {
 	LOGMASKED(LOG_COMMAND, "DMA command: tcounter reloaded to %d\n", tcount & tcounter_mask);
 	tcounter = tcount & tcounter_mask;
+	dma_in_left = tcounter ? tcounter : tcounter_mask + 1;
 
 	// clear transfer count zero flag when counter is reloaded
 	status &= ~S_TC0;
@@ -1198,6 +1202,8 @@ uint8_t ncr53c90_device::dma_r()
 		return fifo[0];
 
 	uint8_t r = fifo_pop();
+	if (dma_in_left)
+		dma_in_left--;
 
 	if ((sync_offset != 0) || ((m_scsi_bus->ctrl_r() & S_PHASE_MASK) != S_PHASE_DATA_IN))
 	{
@@ -1339,6 +1345,7 @@ u16 ncr53c94_device::dma16_r()
 	{
 		fifo_pos -= 2;
 		memmove(fifo, fifo + 2, fifo_pos);
+		dma_in_left -= std::min<u32>(dma_in_left, 2);
 
 		// update drq
 		if ((sync_offset != 0) || ((m_scsi_bus->ctrl_r() & S_PHASE_MASK) != S_PHASE_DATA_IN))
