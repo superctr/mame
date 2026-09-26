@@ -36,6 +36,7 @@
     - IC53 SYM53CF92 SCSI controller, 25 MHz
     - IC107 M38881M2 sub-CPU (undumped)
     - two 72-pin SIMM slots for sample RAM, 16, 32 or 64 MB each
+    - the MEMORY CARD slot, a SmartMedia of 2 to 128 MB
 
     XV-5080 tone-generator clock (service notes, page 23): IC24's PLL
     locks its VCO to 768*fs using IC23's divide-by-three feedback from
@@ -50,8 +51,11 @@
     at 0x00800000 (CS2), the program flash at 0x00d00000 (CS3) and the DRAM
     at 0x01000000.  IRQ0 is the gate array, IRQ1 and IRQ2 the two chips.
     The XV-5080 adds the SCSI controller at 0x00680000 on IRQ3, its DMA
-    port at 0x00500000 on DMA channel 0, and the sub-CPU's window at
-    0x00540000, which nothing answers yet.
+    port at 0x00500000 on DMA channel 0, the sub-CPU's window at
+    0x00540000, which nothing answers yet, and the memory card: the
+    SmartMedia's I/O pins at 0x00640000, its ALE, /CE, CLE and /WP from
+    gate array register 0x39, and card detect, write enable and ready on
+    PE6, PE7 and PE8.  A read-only card image is a write-protected card.
 
     Both machines boot their firmware: the XV-3080 to its PERFORM/PLAY
     screen, the XV-5080 through its splash to the expansion board status
@@ -86,6 +90,7 @@
 #include "machine/ncr53c90.h"
 #include "machine/nscsi_bus.h"
 #include "machine/nvram.h"
+#include "machine/smartmed.h"
 #include "sound/roland_xp.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
@@ -193,6 +198,7 @@ public:
 		, m_xv(*this, "xv%u", 0U)
 		, m_lcdc(*this, "lcdc")
 		, m_scsi(*this, "scsic")
+		, m_card(*this, "card")
 		, m_simm(*this, "SIMM")
 	{
 	}
@@ -213,10 +219,14 @@ protected:
 	void scsi_dma_w(u8 data);
 	void scsi_drq_w(int state);
 	void scsi_dack();
+	u8 card_r();
+	void card_w(u8 data);
+	u16 porte_r();
 
 	required_device_array<roland_xv_device, 2> m_xv;
 	required_device<sed1330_device> m_lcdc;
 	required_device<ncr53cf94_device> m_scsi;
+	required_device<smartmedia_image_device> m_card;
 	required_ioport m_simm;
 
 	std::unique_ptr<u16[]> m_simm_ram[2];
@@ -241,6 +251,7 @@ static constexpr int DISPLAY_REQUEST_US = 40;
 static constexpr u8 GA_LEDS = 0x10;         // 0x10-0x13
 static constexpr u8 GA_LCD_COMMAND = 0x38;  // XV-3080: the character LCD's instruction and data registers
 static constexpr u8 GA_LCD_DATA = 0x39;
+static constexpr u8 GA_CARD = 0x39;         // XV-5080: the memory card's ALE (bit 0), /CE (bit 1), CLE (bit 2) and /WP (bit 3)
 static constexpr u8 GA_DIRECT_ROW = 0x3a;
 static constexpr u8 GA_SWITCHES = 0x3b;
 static constexpr u8 GA_ENABLE_LOW = 0x3e;
@@ -367,6 +378,48 @@ void xv5080_state::scsi_dack()
 		m_maincpu->dreq_w(0, 0);
 		m_maincpu->dreq_w(0, 1);
 	}
+}
+
+
+//-------------------------------------------------
+//  the memory card slot: the SmartMedia's I/O pins at 0x00640000, its
+//  control lines driven from a gate array register, and card detect,
+//  write enable and ready on PE6, PE7 and PE8
+//-------------------------------------------------
+
+u8 xv5080_state::card_r()
+{
+	const u8 lines = m_ga_regs[GA_CARD];
+	if (machine().side_effects_disabled() || BIT(lines, 1))
+		return 0xff;
+	return m_card->data_r();
+}
+
+void xv5080_state::card_w(u8 data)
+{
+	const u8 lines = m_ga_regs[GA_CARD];
+	if (BIT(lines, 1))
+		return;
+	if (BIT(lines, 2))
+		m_card->command_w(data);
+	else if (BIT(lines, 0))
+		m_card->address_w(data);
+	else
+		m_card->data_w(data);
+}
+
+u16 xv5080_state::porte_r()
+{
+	u16 data = 0xc000 | 0x0100;
+	if (m_card->is_present())
+	{
+		data |= 0x0040;
+		if (!m_card->is_protected())
+			data |= 0x0080;
+		if (m_card->is_busy())
+			data &= ~0x0100;
+	}
+	return data;
 }
 
 
@@ -675,6 +728,7 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x00500000, 0x00500000).rw(FUNC(xv5080_state::scsi_dma_r), FUNC(xv5080_state::scsi_dma_w));
 	map(0x005c0000, 0x005c0000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
 	map(0x005c0001, 0x005c0001).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
+	map(0x00640000, 0x00640000).rw(FUNC(xv5080_state::card_r), FUNC(xv5080_state::card_w));
 	map(0x00680000, 0x0068000f).m(m_scsi, FUNC(ncr53cf94_device::map));
 	map(0x01000000, 0x013fffff).ram();
 }
@@ -962,6 +1016,7 @@ void xv5080_state::xv5080(machine_config &config)
 	SH7042A(config, m_maincpu, 8.25_MHz_XTAL * 4);
 	m_maincpu->set_addrmap(AS_PROGRAM, &xv5080_state::xv5080_map);
 	common(config);
+	m_maincpu->read_porte().set(FUNC(xv5080_state::porte_r));
 	m_display_channel = 1;
 
 	// EXP E to EXP H, one 32 MB SRX board each
@@ -1018,6 +1073,8 @@ void xv5080_state::xv5080(machine_config &config)
 	scsi.set_external_device(7, m_scsi);
 	m_scsi->irq_handler_cb().set_inputline(m_maincpu, 3);
 	m_scsi->drq_handler_cb().set(FUNC(xv5080_state::scsi_drq_w));
+
+	SMARTMEDIA(config, m_card);
 }
 
 
