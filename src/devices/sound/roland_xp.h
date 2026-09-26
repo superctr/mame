@@ -111,6 +111,7 @@ protected:
 		u8 format = 0;
 		u8 fade_entry = 0;
 		u8 launched = 0;
+		s32 sample = 0;
 	};
 
 	struct address_step
@@ -145,6 +146,7 @@ protected:
 		u16 cram;
 		s32 coefficient;
 		s32 raw;
+		s32 logic;
 
 		bool special(dsp_special which) const { return function == 0 && input == which; }
 	};
@@ -226,6 +228,10 @@ protected:
 	address_step advance(int voice, u32 control, address_step s) const;
 	bool at_marker(int voice, u32 control, address_step s) const;
 	void deposit(int voice, int bank);
+	s32 filter(int voice, int mode, s32 in);
+	s32 amplify(int voice, s32 value) const;
+	bool pairs(int voice) const;
+	void run_pair(int owner);
 	void run_voice(int voice);
 
 	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x800000, 0x7fffff)); }
@@ -234,6 +240,7 @@ protected:
 	static constexpr s32 wrap24(s32 value) { return util::sext(value, 24); }
 	static constexpr s32 wrap20(s32 value) { return util::sext(value, 20); }
 	static constexpr s32 wrap18(s32 value) { return util::sext(value, 18); }
+	static s32 clamp16(s64 value) { return s32(std::clamp<s64>(value, -0x8000, 0x7fff)); }
 	static s32 fold24(s32 value);
 	static s32 multiply(s32 operand, s32 coefficient) { return clamp29((s64(operand) * coefficient) / 8192); }
 	static s32 multiply_q15(s32 operand, s32 factor, int shift) { return clamp29(((s64(operand) * factor) << shift) / 32768); }
@@ -250,7 +257,7 @@ protected:
 	static const char *unimplemented(const dsp_slot &s);
 	s32 operand(const dsp_slot &s) const;
 	s32 factor(int select, bool complement) const;
-	bool alu(int function, int mode, s32 immediate);
+	bool alu(int function, int mode, const dsp_slot &s);
 	void parallel_op(const dsp_slot &s);
 	void execute(const dsp_slot &s);
 	void strobe(const dsp_slot &s);
