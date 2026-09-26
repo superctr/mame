@@ -168,6 +168,7 @@ public:
 		, m_waverom(*this, "waverom")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
+		, m_leds(*this, "led%u", 0U)
 	{
 	}
 
@@ -179,6 +180,7 @@ protected:
 private:
 	u8 port9_r();
 	u8 port11_r();
+	void port6_w(u8 data);
 
 	void isp_reset_w(int state);
 	void isp_dr_w(offs_t offset, u8 data);
@@ -206,6 +208,7 @@ private:
 	required_region_ptr<u8> m_waverom;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
+	output_finder<20> m_leds;
 
 	static constexpr int FXM_VOICES = 24;
 	static constexpr attotime FXM_PERIOD = attotime::from_usec(100);
@@ -214,6 +217,8 @@ private:
 	emu_timer *m_isp_fxm = nullptr;
 	u8 m_isp_control = 0;
 	u8 m_scan_column = 0;
+	bool m_scan_held = false;
+	u8 m_resume_ticks = 0;
 	u8 m_scan_state[8] = {};
 	u8 m_encoder_last = 0;
 	u16 m_sense_ticks = 0;
@@ -252,6 +257,8 @@ void roland_jd990_state::machine_start()
 	m_isp_fxm = timer_alloc(FUNC(roland_jd990_state::isp_fxm), this);
 	save_item(NAME(m_isp_control));
 	save_item(NAME(m_scan_column));
+	save_item(NAME(m_scan_held));
+	save_item(NAME(m_resume_ticks));
 	save_item(NAME(m_scan_state));
 	save_item(NAME(m_encoder_last));
 	save_item(NAME(m_sense_ticks));
@@ -271,6 +278,17 @@ u8 roland_jd990_state::port9_r()
 u8 roland_jd990_state::port11_r()
 {
 	return m_exp->sense_r() ? 0xff : 0x7f;
+}
+
+void roland_jd990_state::port6_w(u8 data)
+{
+	const bool held = BIT(data, 0);
+	if (m_scan_held && !held)
+	{
+		m_maincpu->dr_w(0x18, 0x01);
+		m_resume_ticks = 2;
+	}
+	m_scan_held = held;
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
@@ -348,10 +366,20 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 			}
 	}
 
+	if (m_resume_ticks && !--m_resume_ticks)
+		m_maincpu->dr_w(0x18, 0x00);
+
+	for (int column = 0; column < 5; column++)
+	{
+		const u8 lamps = space.read_byte(0x8ff80 + column);
+		for (int row = 0; row < 4; row++)
+			m_leds[column * 4 + row] = BIT(lamps, row);
+	}
+
 	const u8 column = m_scan_column;
 	m_scan_column = (m_scan_column + 1) & 7;
 	const u8 keys = m_keys[column]->read();
-	if (keys != m_scan_state[column])
+	if (!m_scan_held && keys != m_scan_state[column])
 	{
 		space.write_byte(0x8ff98 + column, m_scan_state[column]);
 		m_scan_state[column] = keys;
@@ -448,20 +476,20 @@ void roland_jd990_state::lcd_palette(palette_device &palette) const
 
 static INPUT_PORTS_START(jd990)
 	PORT_START("KEY0")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Perform")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rhythm")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/3")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/4")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/6")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 0/7")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preview")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value Push")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_UNUSED)
 
 	PORT_START("KEY1")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Undo")
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System Setup")
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects On/Off")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 1/3")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F4")
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F5")
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F6")
@@ -484,8 +512,8 @@ static INPUT_PORTS_START(jd990)
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Switch 4")
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Dec")
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inc")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 3/6")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 3/7")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_UNUSED)
 
 	PORT_START("KEY4")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 1")
@@ -493,9 +521,9 @@ static INPUT_PORTS_START(jd990)
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 3")
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Tone Select 4")
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("SW 4/5")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("ROM Play")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left")
 
 	PORT_START("KEY5")
 	PORT_BIT(0xff, IP_ACTIVE_HIGH, IPT_UNUSED)
@@ -523,6 +551,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	// the card and board sense lines in bit 7, low with an empty slot
 	m_maincpu->read_port<h8570_device::PORT_9>().set(FUNC(roland_jd990_state::port9_r));
 	m_maincpu->read_port<h8570_device::PORT_11>().set(FUNC(roland_jd990_state::port11_r));
+	m_maincpu->write_port6().set(FUNC(roland_jd990_state::port6_w));
 
 	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
 	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
