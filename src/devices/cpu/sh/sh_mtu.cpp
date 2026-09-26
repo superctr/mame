@@ -28,6 +28,9 @@ sh_mtu_device::sh_mtu_device(const machine_config &mconfig, const char *tag, dev
 
 void sh_mtu_device::device_start()
 {
+	for(int i = 0; i != m_timer_count; i++)
+		m_timer_channel[i]->set_unit(this, i);
+
 	save_item(NAME(m_tstr));
 	save_item(NAME(m_tsyr));
 	save_item(NAME(m_toer));
@@ -80,6 +83,44 @@ void sh_mtu_device::tsyr_w(u8 data)
 {
 	m_tsyr = data;
 	logerror("tsyr_w %02x\n", m_tsyr);
+	for(int i = 0; i != m_timer_count; i++)
+		m_timer_channel[i]->sync_changed();
+}
+
+// TSYR carries channels 0-2 in bits 0-2 and channels 3/4 in bits 6/7, as TSTR does
+bool sh_mtu_device::synchronized(int index) const
+{
+	return BIT(m_tsyr, index < 3 ? index : index + 3);
+}
+
+// a channel clearing in synchronization is cleared when a synchronized channel
+// clears itself on its own compare-match
+int sh_mtu_device::sync_clearing_cycle(int index) const
+{
+	if(synchronized(index))
+		for(int i = 0; i != m_timer_count; i++)
+			if(i != index && synchronized(i)) {
+				int cycle = m_timer_channel[i]->own_clearing_cycle();
+				if(cycle >= 0)
+					return cycle;
+			}
+	return 0x10000;
+}
+
+void sh_mtu_device::sync_changed(int index)
+{
+	if(synchronized(index))
+		for(int i = 0; i != m_timer_count; i++)
+			if(i != index && synchronized(i))
+				m_timer_channel[i]->sync_changed();
+}
+
+void sh_mtu_device::sync_preset(int index, u16 data)
+{
+	if(synchronized(index))
+		for(int i = 0; i != m_timer_count; i++)
+			if(i != index && synchronized(i))
+				m_timer_channel[i]->sync_preset(data);
 }
 
 u8 sh_mtu_device::toer_r()
@@ -288,6 +329,8 @@ void sh_mtu_channel_device::tcr_w(u8 data)
 		if(V>=1) logerror("counting input %c\n", 'a'+count_type-INPUT_A);
 	}
 	recalc_event();
+	if(m_mtu)
+		m_mtu->sync_changed(m_index);
 }
 
 u8 sh_mtu_channel_device::tmdr_r()
@@ -358,6 +401,35 @@ void sh_mtu_channel_device::tcnt_w(offs_t, u16 data, u16 mem_mask)
 	update_counter();
 	COMBINE_DATA(&m_tcnt);
 	recalc_event();
+	if(m_mtu)
+		m_mtu->sync_preset(m_index, m_tcnt);
+}
+
+void sh_mtu_channel_device::sync_preset(u16 data)
+{
+	update_counter();
+	m_tcnt = data;
+	recalc_event();
+}
+
+void sh_mtu_channel_device::sync_changed()
+{
+	update_counter();
+	recalc_event();
+}
+
+u32 sh_mtu_channel_device::clearing_cycle() const
+{
+	if(m_tgr_clearing >= 0)
+		return m_tgr[m_tgr_clearing] + 1;
+	if(m_tgr_clearing == TGR_CLEAR_EXT && m_mtu)
+		return m_mtu->sync_clearing_cycle(m_index);
+	return 0x10000;
+}
+
+int sh_mtu_channel_device::own_clearing_cycle() const
+{
+	return m_tgr_clearing >= 0 ? m_tgr[m_tgr_clearing] + 1 : -1;
 }
 
 u16 sh_mtu_channel_device::tgr_r(offs_t reg)
@@ -370,6 +442,8 @@ void sh_mtu_channel_device::tgr_w(offs_t reg, u16 data, u16 mem_mask)
 	update_counter();
 	COMBINE_DATA(&m_tgr[reg]);
 	recalc_event();
+	if(m_mtu)
+		m_mtu->sync_changed(m_index);
 }
 
 u16 sh_mtu_channel_device::tgrc_r(offs_t reg)
@@ -426,10 +500,7 @@ void sh_mtu_channel_device::recalc_event(u64 cur_time)
 
 	if(m_counter_incrementing) {
 		u32 event_delay = 0xffffffff;
-		if(m_tgr_clearing >= 0)
-			m_counter_cycle = m_tgr[m_tgr_clearing] + 1;
-		else
-			m_counter_cycle = 0x10000;
+		m_counter_cycle = clearing_cycle();
 		if((m_tier & IRQ_V && m_interrupt[4] != -1) && (m_counter_cycle == 0x10000 || m_tcnt >= m_counter_cycle))
 			event_delay = 0x10000 - m_tcnt;
 
