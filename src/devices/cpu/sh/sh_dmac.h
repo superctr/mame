@@ -99,6 +99,7 @@ protected:
 	int m_id;
 	u32 m_sar, m_dar, m_dmatcr, m_chcr;
 	bool m_dreq;
+	bool m_edge;
 	emu_timer *m_timer;
 
 	virtual void device_start() override ATTR_COLD;
