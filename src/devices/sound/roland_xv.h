@@ -26,7 +26,8 @@ public:
 	static constexpr int BUS_CHORUS = 6;
 	static constexpr int BUS_REVERB = 7;
 	static constexpr int SENDS = 6;
-	static constexpr u32 SAMPLE_RATE = 44100;
+	static constexpr u32 CLOCKS_PER_SAMPLE = 768;
+	static constexpr int RATE_CODES = 16;
 	static constexpr int RAMP_FRACTION_BITS = 12;
 	static constexpr int OUTPUT_BITS = 18;
 	static constexpr int DSP_FRACTION_BITS = 23;
@@ -210,6 +211,10 @@ public:
 	// the chip whose transport block this one's is linked to; the linked chip is run from this one's stream
 	template <typename T> void set_link(T &&tag) { m_link.set_tag(std::forward<T>(tag)); }
 
+	// the clock on the CKI pin is doubled inside the chip, and a sample takes 768 of those
+	u32 internal_clock() const { return clock() * 2; }
+	u32 sample_rate() const { return internal_clock() / CLOCKS_PER_SAMPLE; }
+
 	// the 512 byte window, byte wide
 	u8 read(offs_t offset);
 	void write(offs_t offset, u8 data);
@@ -218,6 +223,7 @@ protected:
 	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_clock_changed() override;
 
 	// device_memory_interface implementation
 	virtual space_config_vector memory_space_config() const override;
@@ -364,6 +370,7 @@ private:
 	sound_stream *m_stream;
 	emu_timer *m_scan_timer;
 	emu_timer *m_stream_timer;
+	u16 m_ramp_samples[RATE_CODES];
 
 	u16 m_regs[0x100];
 	u16 m_object_regs[OBJECTS][OBJECT_END - OBJECT_BASE];
