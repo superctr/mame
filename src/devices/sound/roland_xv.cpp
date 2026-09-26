@@ -10,8 +10,8 @@
     per-voice longs), the FIFO transfer engine onto the chip's own wave and
     sample memory, the object-indexed voice file and the interrupt path.
 
-    A voice reads the XP's 8-bit sample format, or a 16-bit differential
-    one, at a 28-bit address - a memory bank in bits 27:25, a 1 Mi-sample
+    A voice reads the XP's 8-bit sample format, or a 16-bit linear one,
+    at a 28-bit address - a memory bank in bits 27:25, a 1 Mi-sample
     page in it and a 20-bit index the loop points share - and steps it by
     a linear 18-bit pitch (0x10000 = one sample an output sample),
     scaled by word 0x76/77 from its first loop crossing on, runs its
@@ -43,8 +43,7 @@
     - the filter's state width, rounding and saturation; the BPF and PKG taps
     - the DSP's widths, its clamp sites, the ERAM's service order, condition
       codes 4/5/e/f and multiplier selector e, which are unobserved
-    - the 16-bit format's accumulator width, and the bank widths the
-      configuration words 0x12-0x19 presumably carry
+    - the bank widths the configuration words 0x12-0x19 presumably carry
     - paired structures (word 0xc4 bits 11:8, word 0xc3)
     - reason 8
 
@@ -485,6 +484,8 @@ void roland_xv_device::word_w(int word, u16 data)
 			m_led_select = data & 15;
 		else if ((data & 0xffc0) == 0x0200)
 			m_fifo_write = m_fifo_read = data & 0x3f;   // 0x200+n selects the word, as 0x240+n and 0x260+n do
+		else if (data < 0x0200)
+			m_fifo_write = m_fifo_read = data;
 		else
 			fifo_rewind();
 		break;
@@ -958,11 +959,11 @@ void roland_xv_device::service_ramp(int n, int kind)
 //-------------------------------------------------
 //  the wave reader: word 0x60 bits 13:12 pick the XP's 8-bit format (1),
 //  two samples a cell with the low byte first and each 1 Mi-sample page's
-//  first 32 Ki its exponent-nibble table, or a 16-bit differential one
-//  (0), a signed cell a sample.  Bits 27:25 of the address are the bank:
-//  the internal set, the SR-JV80 slots (a byte-wide device, one sample a
-//  cell), the four SRX slots and the two SIMMs; the loop points keep only
-//  their 20-bit index.  Word 0x60 bit 7 gives the loop points a
+//  first 32 Ki its exponent-nibble table, or a 16-bit one (0), a signed
+//  cell a sample, which the predictor holds rather than sums.  Bits 27:25
+//  of the address are the bank: the internal set, the SR-JV80 slots (a
+//  byte-wide device, one sample a cell), the four SRX slots and the two
+//  SIMMs; the loop points keep only their 20-bit index.  Word 0x60 bit 7 gives the loop points a
 //  sub-sample fraction each, the two bytes of word 0x74/75, which the
 //  forward loop takes.  Bits 11:10 are the loop mode; the end (word 0x84)
 //  is where a loop rewinds or a ping-pong turns in either direction, the
@@ -1145,9 +1146,17 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 
 	address_step s{ v.address, v.backward, false };
 	s32 sum = 4 * v.predictor;
+	s32 previous = v.predictor;
 	for (int i = 0; i < 3; i++)
 	{
-		sum += tap(interp_weights[i][v.phase >> 9], cell_at(s.address, wide));
+		wave_cell c = cell_at(s.address, wide);
+		if (wide)
+		{
+			const s32 value = c.mantissa;
+			c.mantissa -= previous;
+			previous = value;
+		}
+		sum += tap(interp_weights[i][v.phase >> 9], c);
 		s = advance(n, s, v.phase);
 	}
 	s32 sample = wrap20(sum) >> (3 - std::min(3, (control >> 1) & 3));
@@ -1164,8 +1173,8 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		while (carry)
 		{
 			carry--;
-			const s32 predictor = v.predictor + delta_of(cell_at(current.address, wide));
-			v.predictor = wide ? wrap16(predictor) : wrap18(predictor);
+			const wave_cell c = cell_at(current.address, wide);
+			v.predictor = wide ? c.mantissa : wrap18(v.predictor + delta_of(c));
 			cross(n, current.address);
 			if (mode == LOOP_NONE && v.region == REGION_END)
 			{

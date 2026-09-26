@@ -20,7 +20,7 @@ public:
 	enum { AS_WAVE = 0 };
 
 	static constexpr int OBJECTS = 64;
-	static constexpr int FIFO_DEPTH = 256;
+	static constexpr int FIFO_DEPTH = 512;
 	static constexpr int IRQ_REASONS = 16;
 	static constexpr int BUSES = 16;
 	static constexpr int BUS_CHORUS = 6;
@@ -338,7 +338,6 @@ private:
 	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x800000, 0x7fffff)); }
 	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
 	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
-	static s32 wrap16(s32 value) { return s16(value); }
 	static s32 wrap24(s32 value) { return s32(u32(value) << 8) >> 8; }
 
 	address_space_config m_wave_config;
