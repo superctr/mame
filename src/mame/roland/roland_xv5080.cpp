@@ -33,7 +33,9 @@
     - IC51 SED1335F0B LCD controller with a 32 kB TC55257 (IC52) of its
       own, driving a 320 x 80 graphic LCD (RCM6048T-A)
     - IC71/IC74/IC79/IC82 AK4324 DACs
-    - IC107 M38881M2 for the SmartMedia, SCSI and R-BUS side (undumped)
+    - IC53 SYM53CF92 SCSI controller, 25 MHz
+    - IC107 M38881M2 sub-CPU (undumped)
+    - two 72-pin SIMM slots for sample RAM, 16, 32 or 64 MB each
 
     XV-5080 tone-generator clock (service notes, page 23): IC24's PLL
     locks its VCO to 768*fs using IC23's divide-by-three feedback from
@@ -47,6 +49,9 @@
     at 0x005c0000 and the gate array at 0x006c0000 (CS1), the battery SRAM
     at 0x00800000 (CS2), the program flash at 0x00d00000 (CS3) and the DRAM
     at 0x01000000.  IRQ0 is the gate array, IRQ1 and IRQ2 the two chips.
+    The XV-5080 adds the SCSI controller at 0x00680000 on IRQ3, its DMA
+    port at 0x00500000 on DMA channel 0, and the sub-CPU's window at
+    0x00540000, which nothing answers yet.
 
     Both machines boot their firmware: the XV-3080 to its PERFORM/PLAY
     screen, the XV-5080 through its splash to the expansion board status
@@ -76,7 +81,10 @@
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
+#include "bus/nscsi/devices.h"
 #include "cpu/sh/sh7042.h"
+#include "machine/ncr53c90.h"
+#include "machine/nscsi_bus.h"
 #include "machine/nvram.h"
 #include "sound/roland_xp.h"
 #include "sound/roland_xv.h"
@@ -184,6 +192,8 @@ public:
 		: xv3080_state(mconfig, type, tag)
 		, m_xv(*this, "xv%u", 0U)
 		, m_lcdc(*this, "lcdc")
+		, m_scsi(*this, "scsic")
+		, m_simm(*this, "SIMM")
 	{
 	}
 
@@ -198,8 +208,19 @@ protected:
 	void xv_wave_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 
+	void simm_install();
+	u8 scsi_dma_r();
+	void scsi_dma_w(u8 data);
+	void scsi_drq_w(int state);
+	void scsi_dack();
+
 	required_device_array<roland_xv_device, 2> m_xv;
 	required_device<sed1330_device> m_lcdc;
+	required_device<ncr53cf94_device> m_scsi;
+	required_ioport m_simm;
+
+	std::unique_ptr<u16[]> m_simm_ram[2];
+	bool m_scsi_drq = false;
 };
 
 
@@ -266,14 +287,86 @@ void xv3080_state::machine_reset()
 	m_display_timer->adjust(attotime::from_usec(DISPLAY_REQUEST_US), 0, attotime::from_usec(DISPLAY_REQUEST_US));
 }
 
+// a SIMM slot's window is 32 Mi cells, 64 MB
+static constexpr offs_t SIMM_BASE = 0x0c000000;
+static constexpr offs_t SIMM_WINDOW = 0x02000000;
+
 void xv5080_state::machine_start()
 {
 	xv3080_state::machine_start();
+
+	for (int slot = 0; slot < 2; slot++)
+	{
+		m_simm_ram[slot] = make_unique_clear<u16[]>(SIMM_WINDOW);
+		save_pointer(NAME(m_simm_ram[slot]), SIMM_WINDOW, slot);
+	}
+	save_item(NAME(m_scsi_drq));
 }
 
 void xv5080_state::machine_reset()
 {
 	xv3080_state::machine_reset();
+	simm_install();
+}
+
+
+//-------------------------------------------------
+//  the two SIMM slots, 16, 32 or 64 MB of FP or EDO DRAM each, in both
+//  chips' wave space; a module smaller than its slot repeats through it,
+//  which is how the firmware's size test finds it
+//-------------------------------------------------
+
+void xv5080_state::simm_install()
+{
+	const ioport_value sizes = m_simm->read();
+	for (int slot = 0; slot < 2; slot++)
+	{
+		const int size = BIT(sizes, slot * 2, 2);
+		const offs_t base = SIMM_BASE + slot * SIMM_WINDOW;
+		const offs_t cells = size ? (0x00400000 << size) : 0;
+		for (auto &xv : m_xv)
+		{
+			address_space &space = xv->space(roland_xv_device::AS_WAVE);
+			space.unmap_readwrite(base, base + SIMM_WINDOW - 1);
+			if (cells)
+				space.install_ram(base, base + cells - 1, (SIMM_WINDOW - 1) & ~(cells - 1), m_simm_ram[slot].get());
+		}
+	}
+}
+
+
+//-------------------------------------------------
+//  the SYM53CF92 (IC53) moves its data by DMA channel 0, which samples
+//  DREQ0 on its edge: each byte taken while the chip still asks for more
+//  is a new request
+//-------------------------------------------------
+
+u8 xv5080_state::scsi_dma_r()
+{
+	const u8 data = m_scsi->dma_r();
+	scsi_dack();
+	return data;
+}
+
+void xv5080_state::scsi_dma_w(u8 data)
+{
+	m_scsi->dma_w(data);
+	scsi_dack();
+}
+
+void xv5080_state::scsi_drq_w(int state)
+{
+	m_scsi_drq = state;
+	m_maincpu->dreq_w(0, state);
+}
+
+void xv5080_state::scsi_dack()
+{
+	if (!machine().side_effects_disabled() && m_scsi_drq)
+	{
+		m_maincpu->dreq_w(0, 0);
+		m_maincpu->dreq_w(0, 1);
+	}
 }
 
 
@@ -579,8 +672,10 @@ void xv5080_state::xv5080_map(address_map &map)
 	common_map(map);
 	map(0x00200000, 0x002001ff).mirror(0x0007fe00).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x00280000, 0x002801ff).mirror(0x0007fe00).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	map(0x00500000, 0x00500000).rw(FUNC(xv5080_state::scsi_dma_r), FUNC(xv5080_state::scsi_dma_w));
 	map(0x005c0000, 0x005c0000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
 	map(0x005c0001, 0x005c0001).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
+	map(0x00680000, 0x0068000f).m(m_scsi, FUNC(ncr53cf94_device::map));
 	map(0x01000000, 0x013fffff).ram();
 }
 
@@ -757,6 +852,18 @@ static INPUT_PORTS_START(xv5080)
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Phrase Preview (Volume push)") PORT_CODE(KEYCODE_P)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Sound List (Value push)") PORT_CODE(KEYCODE_ENTER_PAD)
 	PORT_BIT(0xfc, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("SIMM")
+	PORT_CONFNAME(0x03, 0x00, "SIMM A")
+	PORT_CONFSETTING(0x00, "None")
+	PORT_CONFSETTING(0x01, "16 MB")
+	PORT_CONFSETTING(0x02, "32 MB")
+	PORT_CONFSETTING(0x03, "64 MB")
+	PORT_CONFNAME(0x0c, 0x00, "SIMM B")
+	PORT_CONFSETTING(0x00, "None")
+	PORT_CONFSETTING(0x04, "16 MB")
+	PORT_CONFSETTING(0x08, "32 MB")
+	PORT_CONFSETTING(0x0c, "64 MB")
 INPUT_PORTS_END
 
 
@@ -898,6 +1005,19 @@ void xv5080_state::xv5080(machine_config &config)
 	ROLAND_XV(config, m_xv[1], 0);
 	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
 	m_xv[1]->int_callback().set_inputline(m_maincpu, 2);
+
+	nscsi_bus_device &scsi(NSCSI_BUS(config, "scsi"));
+	NSCSI_CONNECTOR(config, "scsi:0", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:1", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:2", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:3", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:4", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:5", default_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsi:6", default_scsi_devices, nullptr);
+	NCR53CF94(config, m_scsi, 25_MHz_XTAL); // SYM53CF92
+	scsi.set_external_device(7, m_scsi);
+	m_scsi->irq_handler_cb().set_inputline(m_maincpu, 3);
+	m_scsi->drq_handler_cb().set(FUNC(xv5080_state::scsi_drq_w));
 }
 
 
