@@ -16,6 +16,7 @@
 // To generalize eventually
 class sh_mcu_device;
 class sh_intc_device;
+class sh_mtu_device;
 
 class sh_mtu_channel_device : public device_t {
 public:
@@ -106,10 +107,17 @@ public:
 	void set_enable(bool enable);
 	u64 internal_update(u64 current_time);
 
+	void set_unit(sh_mtu_device *mtu, int index) { m_mtu = mtu; m_index = index; }
+	int own_clearing_cycle() const;
+	void sync_changed();
+	void sync_preset(u16 data);
+
 protected:
 	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	optional_device<sh_mtu_channel_device> m_chained_timer;
+	sh_mtu_device *m_mtu = nullptr;
+	int m_index = 0;
 	int m_interrupt[6];
 	u8 m_tier_mask;
 
@@ -129,6 +137,7 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 	void update_counter(u64 cur_time = 0);
 	void recalc_event(u64 cur_time = 0);
+	u32 clearing_cycle() const;
 };
 
 class sh_mtu_device : public device_t {
@@ -162,6 +171,11 @@ public:
 	void tcnts_w(offs_t, u16 data, u16 mem_mask);
 	u16 tcbr_r();
 	void tcbr_w(offs_t, u16 data, u16 mem_mask);
+
+	bool synchronized(int index) const;
+	int sync_clearing_cycle(int index) const;
+	void sync_changed(int index);
+	void sync_preset(int index, u16 data);
 
 protected:
 	required_device<sh_mcu_device> m_cpu;
