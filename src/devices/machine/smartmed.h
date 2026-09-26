@@ -13,8 +13,6 @@
 #include "imagedev/memcard.h"
 #include "machine/nandflash.h"
 
-//#define SMARTMEDIA_IMAGE_SAVE
-
 
 /***************************************************************************
     TYPE DEFINITIONS
@@ -48,6 +46,7 @@ protected:
 	int detect_geometry(uint8_t id1, uint8_t id2);
 
 	uint8_t m_mp_opcode;                  // multi-plane operation code
+	int m_image_format;
 };
 
 
