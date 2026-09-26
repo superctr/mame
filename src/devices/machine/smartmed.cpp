@@ -122,9 +122,7 @@ std::error_condition smartmedia_image_device::smartmedia_format_1()
 	if (err || (bytes_read != (m_page_total_size * m_num_pages)))
 		return err ? err : std::errc::io_error;
 
-#ifdef SMARTMEDIA_IMAGE_SAVE
 	m_image_format = 1;
-#endif
 
 	return std::error_condition();
 }
@@ -221,9 +219,7 @@ std::error_condition smartmedia_image_device::smartmedia_format_2(bool read_head
 	if (err || (bytes_read != (m_page_total_size * m_num_pages)))
 		return err ? err : std::errc::io_error;
 
-#ifdef SMARTMEDIA_IMAGE_SAVE
 	m_image_format = 2;
-#endif
 
 	return std::error_condition();
 }
@@ -268,7 +264,6 @@ std::pair<std::error_condition, std::string> smartmedia_image_device::call_load(
 */
 void smartmedia_image_device::call_unload()
 {
-#ifdef SMARTMEDIA_IMAGE_SAVE
 	if (!is_readonly())
 	{
 		if (m_image_format == 1)
@@ -281,22 +276,21 @@ void smartmedia_image_device::call_unload()
 				if (custom_header.version == 0)
 				{
 					fseek(2 + 1, SEEK_CUR);
-					fwrite(m_feeprom_data, m_page_total_size * m_num_pages);
+					fwrite(m_feeprom_data.get(), m_page_total_size * m_num_pages);
 				}
 				else if (custom_header.version == 1)
 				{
 					fseek(3 + 1 + 256 + 16, SEEK_CUR);
-					fwrite(m_feeprom_data, m_page_total_size * m_num_pages);
+					fwrite(m_feeprom_data.get(), m_page_total_size * m_num_pages);
 				}
 			}
 		}
 		else if (m_image_format == 2)
 		{
 			fseek(sizeof(disk_image_format_2_header), SEEK_SET);
-			fwrite(m_feeprom_data, m_page_total_size * m_num_pages);
+			fwrite(m_feeprom_data.get(), m_page_total_size * m_num_pages);
 		}
 	}
-#endif
 
 	m_page_data_size = 0;
 	m_page_total_size = 0;
@@ -319,9 +313,7 @@ void smartmedia_image_device::call_unload()
 	m_row_address_cycles = 0;
 	m_sequential_row_read = 0;
 
-#ifdef SMARTMEDIA_IMAGE_SAVE
 	m_image_format = 0;
-#endif
 
 	return;
 }
@@ -331,6 +323,7 @@ DEFINE_DEVICE_TYPE(SMARTMEDIA, smartmedia_image_device, "smartmedia", "SmartMedi
 smartmedia_image_device::smartmedia_image_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: nand_device(mconfig, SMARTMEDIA, tag, owner, clock)
 	, device_memcard_image_interface(mconfig, *this)
+	, m_image_format(0)
 {
 	// SmartMedia images have been read only so keep it that way until someone puts more thought into this device
 	nvram_enable_backup(false);
