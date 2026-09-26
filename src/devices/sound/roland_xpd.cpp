@@ -65,6 +65,15 @@ std::string roland_xp_disassembler::constant(offs_t pc) const
 	return util::string_format("%d", BIT(c, 15) ? (s32(c & 0x3fff) << 13) : s32(util::sext(c, 14)));
 }
 
+std::string roland_xp_disassembler::logic(offs_t pc) const
+{
+	if (!has_coefficient())
+		return "K";
+
+	const u16 c = coefficient_word(pc);
+	return util::string_format("$%06x", BIT(c, 15) ? (u32(c & 0x7fff) << 13) : (u32(util::sext(c, 15)) & 0xffffff));
+}
+
 // an external RAM access spans two slots, so the second slot's field is address, not command
 bool roland_xp_disassembler::continuation(offs_t pc, const data_buffer &opcodes)
 {
@@ -98,10 +107,10 @@ void roland_xp_disassembler::function(std::string &r, int fn, int mode, const st
 	case 0xd:
 		switch (mode)
 		{
-		case 0: append(r, util::string_format("acc &= #%s", k)); break;
-		case 1: append(r, util::string_format("acc |= #%s", k)); break;
-		case 2: append(r, util::string_format("acc ^= #%s", k)); break;
-		default: append(r, "?"); break;
+		case 1: append(r, util::string_format("acc &= #%s", k)); break;
+		case 2: append(r, util::string_format("acc |= #%s", k)); break;
+		case 3: append(r, util::string_format("acc ^= #%s", k)); break;
+		default: break;
 		}
 		break;
 	case 0xe:
@@ -109,7 +118,8 @@ void roland_xp_disassembler::function(std::string &r, int fn, int mode, const st
 		{
 		case 0: append(r, util::string_format("acc = min(acc, #%s)", k)); break;
 		case 1: append(r, util::string_format("acc = max(acc, #%s)", k)); break;
-		default: append(r, "?"); break;
+		case 2: append(r, util::string_format("acc = min(acc, #%s) if signs agree else max", k)); break;
+		default: append(r, util::string_format("acc = max(acc, #%s) if signs agree else min", k)); break;
 		}
 		break;
 	case 0xf:
@@ -225,7 +235,7 @@ offs_t roland_xp_disassembler::disassemble(std::ostream &stream, offs_t pc, cons
 				append(r, util::string_format("branch %s $%02x", condition_name((cram >> 10) & 0xf), cram & 0xff));
 			break;
 		case 2: append(r, "eread [acc>>12]"); break;
-		default: function(r, fn, input, constant(pc)); break;
+		default: function(r, fn, input, (fn == 0xd) ? logic(pc) : constant(pc)); break;
 		}
 	}
 

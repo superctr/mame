@@ -32,6 +32,7 @@ private:
 	int ramp_base() const { return m_info ? m_info->xpd_ramp_base() : 0xf0; }
 	std::string coefficient(offs_t pc) const;
 	std::string constant(offs_t pc) const;
+	std::string logic(offs_t pc) const;
 
 	static bool continuation(offs_t pc, const data_buffer &opcodes);
 	static void function(std::string &r, int fn, int mode, const std::string &k);

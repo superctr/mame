@@ -40,7 +40,11 @@
  *  multiplies the result into page 2A, from which the four sends (10-bit level, 0x200 =
  *  unity, 6-bit destination) deposit on the voice's own four DSP slots into the mixer bank,
  *  the first send to name a word clearing it - for every voice up to the highest, a parked
- *  voice depositing zero. Every product in the voice path divides towards zero.
+ *  voice depositing zero. An even voice with FILTER bit 4 and a structure of 1 to 9 pairs
+ *  with the next one: the two samples go through one of nine arrangements of the two
+ *  filters, a booster shift and a ring modulator, with 16-bit saturation between the stages,
+ *  and the pair's output lands in the owner's page 2A and zero in the partner's. Every
+ *  product in the voice path divides towards zero.
  *
  *  DSP: 288 instruction slots, of which (highest voice + 1) x 4 run a frame, over three RAMs -
  *  IRAM1 and IRAM2, 64 x 24 bits, which words 00-7f address with bit 6 XOR the frame parity,
@@ -87,8 +91,6 @@
  *  TODO:
  *  - the sample FIFO and the fetch-overload interrupt (reason 7)
  *  - the 16-bit wave bus and the alternate decoding of 0x3908
- *  - paired voice structures and ring modulation (FILTER bits 15..12)
- *  - the sign-aware immediate min/max variants
  *  - wait states
  */
 #include "emu.h"
@@ -340,6 +342,7 @@ void roland_xp_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, format));
 	save_item(STRUCT_MEMBER(m_voices, fade_entry));
 	save_item(STRUCT_MEMBER(m_voices, launched));
+	save_item(STRUCT_MEMBER(m_voices, sample));
 }
 
 void roland_xp_device::device_reset()
@@ -1050,24 +1053,94 @@ void roland_xp_device::run_voice(int n)
 	if (halted)
 		return;
 
+	if (pairs(n & ~1))
+	{
+		v.sample = sample;
+		return;
+	}
+
+	set_page(n, OUTPUT, u32(amplify(n, filter(n, (page(n, FILTER) >> 10) & 3, sample))) & 0xffffff);
+}
+
+s32 roland_xp_device::filter(int n, int mode, s32 in)
+{
 	const s32 f = page(n, CUTOFF) & 0xfffff;
 	const s32 q = page(n, RESO_SEED) & 0xfffff;
 	s32 low = wrap24(s32(page(n, FILTER_LOW)));
 	s32 band = wrap24(s32(page(n, FILTER_BAND)));
 	low = clamp24(low + (s64(f) * band) / (1 << 19));
-	const s32 high = clamp24(sample - (s32((s64(q) * band) / (1 << 19)) + low));
+	const s32 high = clamp24(in - (s32((s64(q) * band) / (1 << 19)) + low));
 	band = clamp24(band + (s64(f) * high) / (1 << 19));
 	set_page(n, FILTER_LOW, u32(low) & 0xffffff);
 	set_page(n, FILTER_BAND, u32(band) & 0xffffff);
-	switch ((page(n, FILTER) >> 10) & 3)
+	switch (mode)
 	{
-	case 0: sample = low; break;
-	case 1: sample = band; break;
-	case 2: sample = high; break;
-	case 3: sample = clamp24(s64(high) - low); break;
+	case 0: return low;
+	case 1: return band;
+	case 2: return high;
+	default: return clamp24(s64(high) - low);
+	}
+}
+
+s32 roland_xp_device::amplify(int n, s32 value) const
+{
+	return clamp24((s64(value) * ((page(n, SMOOTH) & 0xffff) << 4)) / (1 << 19));
+}
+
+bool roland_xp_device::pairs(int n) const
+{
+	const u32 control = page(n, FILTER);
+	const int structure = (control >> 12) & 15;
+	return !BIT(n, 0) && BIT(control, 4) && structure >= 1 && structure <= 9;
+}
+
+void roland_xp_device::run_pair(int n)
+{
+	const int m = n + 1;
+	set_page(m, OUTPUT, 0);
+
+	const auto sounding = [this] (int k) { return m_voices[k].phase == RUNNING && !BIT(page(k, CONTROL), 10); };
+	if (!running(n) || !sounding(n) || (running(m) && !sounding(m)))
+		return;
+
+	const u32 control = page(n, FILTER);
+	const int booster = (control >> 6) & 3;
+	const int mode1 = (control >> 10) & 3;
+	const int mode2 = (control >> 8) & 3;
+	const s32 w1 = m_voices[n].sample;
+	const s32 w2 = running(m) ? m_voices[m].sample : 0;
+
+	const auto boost = [booster] (s32 x) { return clamp16(s64(x) << booster); };
+	const auto ring = [] (s32 modulator, s32 carrier) { return clamp24((s64(clamp16(modulator)) * carrier) / 32768); };
+	const auto f1 = [this, n, mode1] (s32 x) { return filter(n, mode1, x); };
+	const auto f2 = [this, m, mode2] (s32 x) { return filter(m, mode2, x); };
+
+	s32 out;
+	switch ((control >> 12) & 15)
+	{
+	case 1: out = f2(f1(clamp16(s64(amplify(n, w1)) + w2))); break;
+	case 2: out = f2(boost(f1(clamp16(s64(amplify(n, w1)) + w2)))); break;
+	case 3: out = f2(f1(boost(clamp16(s64(amplify(n, w1)) + w2)))); break;
+	case 4: out = f2(f1(ring(amplify(n, w1), w2))); break;
+	case 5: out = f2(f1(clamp16(s64(ring(amplify(n, w1), w2)) + w2))); break;
+	case 6: out = f2(ring(amplify(n, f1(w1)), w2)); break;
+	case 7: out = f2(clamp16(s64(ring(amplify(n, f1(w1)), w2)) + w2)); break;
+	case 8:
+	{
+		const s32 modulator = amplify(n, f1(w1));
+		out = ring(modulator, f2(w2));
+		break;
+	}
+	default:
+	{
+		const s32 modulator = amplify(n, f1(w1));
+		const s32 carrier = f2(w2);
+		out = clamp16(s64(ring(modulator, carrier)) + carrier);
+		break;
+	}
 	}
 
-	set_page(n, OUTPUT, u32(clamp24((s64(sample) * (smooth << 4)) / (1 << 19))) & 0xffffff);
+	set_page(n, OUTPUT, u32(amplify(m, out)) & 0xffffff);
 }
 
 
@@ -1200,6 +1273,7 @@ void roland_xp_device::decode_program()
 		s.cram = c;
 		s.coefficient = mantissa << shift_select[c >> 14];
 		s.raw = BIT(c, 15) ? s32((c & 0x3fff) << 13) : mantissa;
+		s.logic = BIT(c, 15) ? s32((c & 0x7fff) << 13) : (util::sext(c, 15) & 0xffffff);
 	}
 
 	for (int i = 0; i < DSP_SLOTS - 1; )
@@ -1249,7 +1323,7 @@ s32 roland_xp_device::factor(int select, bool complement) const
 }
 
 // the ALU functions both encodings share; returns whether the function is one of them
-bool roland_xp_device::alu(int function, int mode, s32 immediate)
+bool roland_xp_device::alu(int function, int mode, const dsp_slot &s)
 {
 	dsp_state &d = m_dsp;
 	const s32 p = d.product;
@@ -1282,29 +1356,26 @@ bool roland_xp_device::alu(int function, int mode, s32 immediate)
 	case 0xd:
 		switch (mode)
 		{
-		case 0: result = d.acc & immediate; break;
-		case 1: result = d.acc | immediate; break;
-		case 2: result = d.acc ^ immediate; break;
+		case 1: result = d.acc & s.logic; break;
+		case 2: result = d.acc | s.logic; break;
+		case 3: result = d.acc ^ s.logic; break;
 		default: return true;
 		}
 		break;
 
 	case 0xe:
-		if (mode == 0)
-			result = std::min(d.acc, immediate);
-		else if (mode == 1)
-			result = std::max(d.acc, immediate);
-		else
-			return true;
+		if (mode >= 2 && ((d.acc < 0) != (s.raw < 0)))
+			mode ^= 1;
+		result = BIT(mode, 0) ? std::max(d.acc, s.raw) : std::min(d.acc, s.raw);
 		break;
 
 	case 0xf:
 		switch (mode)
 		{
-		case 0: result = s64(d.acc) + immediate; break;
-		case 1: result = s64(r) + immediate; break;
-		case 2: result = s64(p) + immediate; break;
-		default: result = s64(immediate) - d.acc; break;
+		case 0: result = s64(d.acc) + s.raw; break;
+		case 1: result = s64(r) + s.raw; break;
+		case 2: result = s64(p) + s.raw; break;
+		default: result = s64(s.raw) - d.acc; break;
 		}
 		break;
 
@@ -1357,7 +1428,7 @@ void roland_xp_device::parallel_op(const dsp_slot &s)
 	case 0xe: result = s64(p) - r - d.acc; break;
 	case 0xf: result = s64(p) - r; break;
 	default:
-		alu(function, input_select, s.raw);
+		alu(function, input_select, s);
 		result = d.acc;
 		break;
 	}
@@ -1425,7 +1496,7 @@ void roland_xp_device::execute(const dsp_slot &s)
 		product = multiply(input, s.coefficient);
 	}
 
-	alu(s.function, s.input, s.raw);
+	alu(s.function, s.input, s);
 
 	if (s.special(SPECIAL_BRANCH))
 	{
@@ -1614,6 +1685,8 @@ void roland_xp_device::cycle()
 		case 3:
 			deposit(n, 3);
 			run_voice(n);
+			if (BIT(n, 0) && pairs(n - 1))
+				run_pair(n - 1);
 			break;
 		default:
 			break;
