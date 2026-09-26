@@ -45,7 +45,7 @@
     - the DSP's widths, its clamp sites, the ERAM's service order, condition
       codes 4/5/e/f and multiplier selector e, which are unobserved
     - the bank widths the configuration words 0x12-0x19 presumably carry
-    - paired structures (word 0xc4 bits 11:8, word 0xc3)
+    - paired structures 4-6, which the firmware never writes
     - reason 8
 
 ***************************************************************************/
@@ -198,6 +198,8 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, scaled));
 	save_item(STRUCT_MEMBER(m_voices, filter_low));
 	save_item(STRUCT_MEMBER(m_voices, filter_band));
+	save_item(STRUCT_MEMBER(m_voices, pair_smooth));
+	save_item(STRUCT_MEMBER(m_voices, pair_ceiling));
 	save_item(STRUCT_MEMBER(m_voices, ramp_current));
 	save_item(STRUCT_MEMBER(m_voices, ramp_target));
 	save_item(STRUCT_MEMBER(m_voices, ramp_position));
@@ -318,7 +320,16 @@ void roland_xv_device::frame()
 {
 	s32 buses[BUSES] = { 0 };
 	for (int n = 0; n < OBJECTS; n++)
-		run_voice(n, buses);
+	{
+		const int kind = structure(n);
+		if (kind != STRUCTURE_NONE)
+		{
+			run_pair(n, kind, buses);
+			n++;
+		}
+		else
+			run_voice(n, buses);
+	}
 	for (int bus = 0; bus < BUSES; bus++)
 		m_bus[bus] = clamp24(buses[bus]);
 	run_dsp();
@@ -580,6 +591,22 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 
 	case FILTER_LOW + 1:
 		m_voices[voice].filter_low = wrap24(value);
+		break;
+
+	case PAIR_SMOOTH + 1:
+		m_voices[voice].pair_smooth = wrap24(value);
+		break;
+
+	case FILTER_TYPE:
+		switch (data >> 12)
+		{
+		case 0x9: case 0xa: case 0xb: break;
+		case 0xc: m_voices[voice].pair_ceiling = 1 << 14; break;
+		case 0xd: m_voices[voice].pair_ceiling = 1 << 15; break;
+		case 0xe: m_voices[voice].pair_ceiling = 1 << 16; break;
+		case 0xf: m_voices[voice].pair_ceiling = 1 << 23; break;
+		default: m_voices[voice].pair_ceiling = 1 << 19; break;
+		}
 		break;
 
 	case CUTOFF:
@@ -1086,10 +1113,9 @@ void roland_xv_device::cross(int n, u32 address)
 //  high tap with both coefficients at zero
 //-------------------------------------------------
 
-s32 roland_xv_device::filter(int n, s32 sample)
+s32 roland_xv_device::filter(int n, int type, s32 sample)
 {
 	voice &v = m_voices[n];
-	const int type = object_word(n, FILTER_TYPE) & 0xf;
 	if (type >= FILTER_TYPES)
 		return sample;
 
@@ -1123,14 +1149,16 @@ s32 roland_xv_device::filter(int n, s32 sample)
 	return clamp24(sample + 2 * ((s64(q) * tap) / (1 << 15)));
 }
 
-void roland_xv_device::run_voice(int n, s32 *buses)
+// a voice's sample before its filter: false while it is stopped, and zero
+// while its format is none the reader knows
+bool roland_xv_device::advance(int n, s32 &out)
 {
 	voice &v = m_voices[n];
-	const bool run = running(n);
-	if (!run)
+	out = 0;
+	if (!running(n))
 	{
 		v.was_running = false;
-		return;
+		return false;
 	}
 	if (v.launch || !v.was_running)
 		launch(n);
@@ -1141,7 +1169,7 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 
 	const u16 control = object_word(n, VOICE_CONTROL);
 	if (BIT(control, 13))
-		return;
+		return true;
 	const bool wide = !BIT(control, 12);
 	const int mode = (control >> 10) & 3;
 
@@ -1197,10 +1225,17 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		v.address = current.address;
 		v.backward = current.backward;
 	}
+	out = sample;
+	return true;
+}
 
-	sample = filter(n, sample);
-	const s32 output = clamp24((s64(sample) * v.ramp_current[RAMP_AMPLITUDE]) / (1 << 15));
+s32 roland_xv_device::amplitude(int n, s32 sample) const
+{
+	return clamp24((s64(sample) * m_voices[n].ramp_current[RAMP_AMPLITUDE]) / (1 << 15));
+}
 
+void roland_xv_device::emit(int n, s32 output, s32 *buses)
+{
 	for (int slot = 0; slot < SENDS; slot++)
 	{
 		const int bus = object_word(n, SEND_BASE + slot * 2) & 0x3f;
@@ -1208,6 +1243,95 @@ void roland_xv_device::run_voice(int n, s32 *buses)
 		if (bus < BUSES && level)
 			buses[bus] += s32((s64(output) * level) / (1 << 15));
 	}
+}
+
+void roland_xv_device::run_voice(int n, s32 *buses)
+{
+	s32 sample;
+	if (advance(n, sample) && !BIT(object_word(n, VOICE_CONTROL), 13))
+		emit(n, amplitude(n, filter(n, object_word(n, FILTER_TYPE) & 0xf, sample)), buses);
+}
+
+
+//-------------------------------------------------
+//  paired structures: a running master whose word 0xc4 bits 11:8 name a
+//  case takes the next voice's wave into its own path and the pair leaves
+//  through the master's sends.  The partner's filter type is the master's
+//  bits 7:4, the booster's gain the master's word 0xc3 and its clip level
+//  the master's bits 15:12; the partner's word 0xc3 is the rate of a
+//  one-pole the combined signal leaves as the difference from, whose state
+//  is the partner's word 0xb4/b5.  The booster multiplies by word 0xc3
+//  over 0x100 before its clip, sixteen times the level the firmware takes
+//  back off the partner's amplitude on those two cases, and a ring
+//  product of two voice words is shifted down by fifteen bits.
+//-------------------------------------------------
+
+int roland_xv_device::structure(int n) const
+{
+	if (n + 1 >= OBJECTS || !running(n))
+		return STRUCTURE_NONE;
+	const int kind = (object_word(n, FILTER_TYPE) >> 8) & 0xf;
+	switch (kind)
+	{
+	case STRUCTURE_SUM: case STRUCTURE_BOOST: case STRUCTURE_BOOST_FILTERED:
+	case STRUCTURE_RING: case STRUCTURE_RING_CARRIER: case STRUCTURE_RING_FILTERED: case STRUCTURE_RING_FILTERED_CARRIER:
+	case STRUCTURE_RING_BOTH: case STRUCTURE_RING_BOTH_CARRIER:
+		return kind;
+	}
+	return STRUCTURE_NONE;
+}
+
+void roland_xv_device::run_pair(int n, int kind, s32 *buses)
+{
+	s32 w1, w2;
+	advance(n, w1);
+	advance(n + 1, w2);
+
+	const u16 types = object_word(n, FILTER_TYPE);
+	const int type1 = types & 0xf, type2 = (types >> 4) & 0xf;
+	voice &partner = m_voices[n + 1];
+	const s32 ceiling = m_voices[n].pair_ceiling;
+	const s32 rate = object_word(n + 1, PAIR_BOOST);
+	const s32 gain = object_word(n, PAIR_BOOST);
+
+	auto smooth = [&](s32 x)
+	{
+		const s32 d = clamp24(s64(x) - partner.pair_smooth);
+		partner.pair_smooth = clamp24(partner.pair_smooth + (s64(d) * rate) / (1 << 15));
+		return d;
+	};
+	auto boost = [&](s32 x) { return s32(std::clamp<s64>((s64(x) * gain) / (1 << 8), -ceiling, ceiling)); };
+	auto ring = [](s32 a, s32 b) { return clamp24((s64(a) * b) / (1 << 15)); };
+
+	s32 out;
+	switch (kind)
+	{
+	case STRUCTURE_SUM:
+		out = filter(n, type1, smooth(clamp24(s64(amplitude(n, w1)) + w2)));
+		break;
+	case STRUCTURE_BOOST:
+		out = filter(n, type1, smooth(boost(clamp24(s64(amplitude(n, w1)) + w2))));
+		break;
+	case STRUCTURE_BOOST_FILTERED:
+		out = smooth(boost(filter(n, type1, clamp24(s64(amplitude(n, w1)) + w2))));
+		break;
+	case STRUCTURE_RING:
+	case STRUCTURE_RING_CARRIER:
+		out = filter(n, type1, smooth(clamp24(s64(ring(amplitude(n, w1), w2)) + (kind == STRUCTURE_RING_CARRIER ? w2 : 0))));
+		break;
+	case STRUCTURE_RING_FILTERED:
+	case STRUCTURE_RING_FILTERED_CARRIER:
+		out = smooth(clamp24(s64(ring(amplitude(n, filter(n, type1, w1)), w2)) + (kind == STRUCTURE_RING_FILTERED_CARRIER ? w2 : 0)));
+		break;
+	default:
+	{
+		const s32 y2 = filter(n + 1, type2, w2);
+		out = clamp24(s64(ring(amplitude(n, filter(n, type1, w1)), y2)) + (kind == STRUCTURE_RING_BOTH_CARRIER ? y2 : 0));
+		emit(n, amplitude(n + 1, out), buses);
+		return;
+	}
+	}
+	emit(n, amplitude(n + 1, filter(n + 1, type2, out)), buses);
 }
 
 

@@ -57,7 +57,7 @@ public:
 	{
 		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
 		PITCH_INCREMENT = 0x7c, START = 0x80, LOOP_START = 0x82, END = 0x84,
-		FILTER_BAND = 0xb0, FILTER_LOW = 0xb2,
+		FILTER_BAND = 0xb0, FILTER_LOW = 0xb2, PAIR_SMOOTH = 0xb4,
 		CUTOFF_RAMP = 0x90, RESONANCE_RAMP = 0x92, AMPLITUDE_RAMP = 0x94, BLOCK_CONTROL = 0x96,
 		SEND_PORT_A = 0x98, SEND_PORT_B = 0x9a, PITCH_RAMP = 0x9c,
 		CUTOFF_INCREMENT = 0xa0, RESONANCE_INCREMENT = 0xa2, AMPLITUDE_INCREMENT = 0xa4,
@@ -80,6 +80,14 @@ public:
 		FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_NOTCH = 4,
 		FILTER_LOW_SHELF = 5, FILTER_PEAK = 6, FILTER_HIGH_SHELF = 7,
 		FILTER_HIGH_POLE = 8, FILTER_LOW_POLE = 9, FILTER_TYPES = 10
+	};
+
+	// word 0xc4 bits 11:8 on a pair's master; the partner is the next voice
+	enum structure_case
+	{
+		STRUCTURE_NONE = 0, STRUCTURE_SUM = 1, STRUCTURE_BOOST = 2, STRUCTURE_BOOST_FILTERED = 3,
+		STRUCTURE_RING = 7, STRUCTURE_RING_CARRIER = 8, STRUCTURE_RING_FILTERED = 9, STRUCTURE_RING_FILTERED_CARRIER = 10,
+		STRUCTURE_RING_BOTH = 11, STRUCTURE_RING_BOTH_CARRIER = 12
 	};
 
 	// word 0x60 bits 13:12
@@ -234,6 +242,8 @@ protected:
 		bool scaled = false;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
+		s32 pair_smooth = 0;
+		s32 pair_ceiling = 1 << 19;
 		s32 ramp_current[RAMPS] = { 0 };
 		s32 ramp_target[RAMPS] = { 0 };
 		s32 ramp_position[RAMPS] = { 0 };
@@ -315,8 +325,13 @@ private:
 	u32 loop_fraction(int n, bool at_loop) const;
 	address_step advance(int n, address_step s, u32 phase) const;
 	void cross(int n, u32 address);
-	s32 filter(int n, s32 sample);
+	s32 filter(int n, int type, s32 sample);
+	bool advance(int n, s32 &sample);
+	s32 amplitude(int n, s32 sample) const;
+	void emit(int n, s32 output, s32 *buses);
+	int structure(int n) const;
 	void run_voice(int n, s32 *buses);
+	void run_pair(int n, int kind, s32 *buses);
 
 	int object() const { return m_regs[MODE] & (OBJECTS - 1); }
 
