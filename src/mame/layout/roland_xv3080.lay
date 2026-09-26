@@ -1,0 +1,332 @@
+<?xml version="1.0"?>
+<!--
+license:CC0-1.0
+copyright-holders:superctr
+
+The XV-3080 front panel.  The lamps are led<8 * strobe + data> of the panel's 4 x 8 LED
+matrix (LEDS3 on key columns 1 and 5 down to LEDS0 on 4 and 8; the data lines are the rows).
+Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
+-->
+<mamelayout version="2">
+
+	<element name="panel"><rect><color red="0.129" green="0.137" blue="0.149"/></rect></element>
+	<element name="band"><rect><color red="0.090" green="0.094" blue="0.106"/></rect></element>
+	<element name="rule_6a6c70"><rect><color red="0.416" green="0.424" blue="0.439"/></rect></element>
+	<element name="rule_5a5c60"><rect><color red="0.353" green="0.361" blue="0.376"/></rect></element>
+	<element name="hole"><rect><color red="0.149" green="0.149" blue="0.165"/></rect></element>
+	<element name="t5"><text string="Roland" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t6"><text string="XV-3080" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t7"><text string="128 VOICES" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t8"><text string="6× EXPANSION" align="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t9"><text string="VOLUME"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="knob"><disk><color red="0.055" green="0.055" blue="0.063"/></disk><disk><bounds x="0.1" y="0.1" width="0.8" height="0.8"/><color red="0.165" green="0.165" blue="0.180"/></disk><disk><bounds x="0.2" y="0.2" width="0.12" height="0.12"/><color red="0.925" green="0.925" blue="0.925"/></disk></element>
+	<element name="t11"><text string="MIN"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t12"><text string="MAX"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t13"><text string="(PUSH) PHRASE PREVIEW"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="bezel"><rect><color red="0.055" green="0.059" blue="0.067"/></rect></element>
+	<element name="glass"><rect><color red="0.173" green="0.204" blue="0.169"/></rect></element>
+	<element name="t16"><text string="VALUE" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="dial"><disk><color red="0.047" green="0.047" blue="0.055"/></disk><disk><bounds x="0.09" y="0.09" width="0.82" height="0.82"/><color red="0.137" green="0.137" blue="0.149"/></disk></element>
+	<element name="t18"><text string="(PUSH)" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t19"><text string="SOUND LIST" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t20"><text string="PATCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t21"><text string="FINDER"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="lens" defstate="0"><disk state="0"><color red="0.557" green="0.596" blue="0.596"/></disk><disk state="1"><color red="0.722" green="0.753" blue="0.753"/></disk></element>
+	<element name="glow_orange" defstate="0"><disk state="0"><color red="0.000" green="0.000" blue="0.000" alpha="0"/></disk><disk state="1"><color red="1.000" green="0.627" blue="0.157" alpha="0.85"/></disk></element>
+	<element name="t24"><text string="MODE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t25"><text string="PERFORM"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="key" defstate="0"><rect><color red="0.271" green="0.278" blue="0.302"/></rect><rect state="0"><bounds x="0.02" y="0.05" width="0.96" height="0.9"/><color red="0.071" green="0.075" blue="0.086"/></rect><rect state="1"><bounds x="0.02" y="0.05" width="0.96" height="0.9"/><color red="0.204" green="0.212" blue="0.235"/></rect></element>
+	<element name="win_red" defstate="0"><rect state="0"><color red="0.078" green="0.075" blue="0.078"/></rect><rect state="1"><color red="1.000" green="0.231" blue="0.165"/></rect></element>
+	<element name="t28"><text string="RHYTHM"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t29"><text string="GM"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t30"><text string="(SHIFT) PART"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t31"><text string="SOUND LIBRARY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t32"><text string="USER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t33"><text string="CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t34"><text string="PRESET"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t35"><text string="EXP"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t36"><text string="MIDI"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t37"><text string="MESSAGE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="glow_green" defstate="0"><disk state="0"><color red="0.000" green="0.000" blue="0.000" alpha="0"/></disk><disk state="1"><color red="0.298" green="1.000" blue="0.361" alpha="0.85"/></disk></element>
+	<element name="rx"><rect><color red="0.914" green="0.914" blue="0.898"/></rect><text string="RX"><color red="0.129" green="0.137" blue="0.149"/></text></element>
+	<element name="t40"><text string="1/9"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t41"><text string="2/10"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t42"><text string="3/11"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t43"><text string="4/12"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t44"><text string="5/13"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t45"><text string="6/14"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t46"><text string="7/15"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t47"><text string="8/16"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="rule_5cb6ee"><rect><color red="0.361" green="0.714" blue="0.933"/></rect></element>
+	<element name="t49"><text string="PART SELECT" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t50"><text string="A"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t51"><text string="B"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t52"><text string="C"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t53"><text string="D"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t54"><text string="E"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t55"><text string="F"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t56"><text string="G"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t57"><text string="H"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t58"><text string="1-8" align="2"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t59"><text string="*"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t60"><text string="9-16" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t61"><text string="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="rule_f39a32"><rect><color red="0.953" green="0.604" blue="0.196"/></rect></element>
+	<element name="t63"><text string="2"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t64"><text string="3"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t65"><text string="4"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t66"><text string="TONE SWITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t67"><text string="TONE SELECT"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="jack"><disk><color red="0.769" green="0.773" blue="0.761"/></disk><disk><bounds x="0.19" y="0.19" width="0.62" height="0.62"/><color red="0.102" green="0.102" blue="0.118"/></disk><disk><bounds x="0.32" y="0.32" width="0.36" height="0.36"/><color red="0.020" green="0.020" blue="0.020"/></disk></element>
+	<element name="t69"><text string="PHONES"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t70"><text string="SYSTEM"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="glow_red" defstate="0"><disk state="0"><color red="0.000" green="0.000" blue="0.000" alpha="0"/></disk><disk state="1"><color red="1.000" green="0.231" blue="0.165" alpha="0.85"/></disk></element>
+	<element name="t72"><text string="UTILITY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t73"><text string="COMMON"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t74"><text string="EFFECTS"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t75"><text string="MIDI"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t76"><text string="PART"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t77"><text string="—"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t78"><text string="INFO"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t79"><text string="COMMON"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t80"><text string="EFFECTS"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t81"><text string="CONTROL"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t82"><text string="WAVE"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t83"><text string="LFO"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t84"><text string="PITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t85"><text string="TVF"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t86"><text string="TVA"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="t87"><text string="SETUP"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t88"><text string="—"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t89"><text string="CONTROL"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t90"><text string="MIDI"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t91"><text string="PREVIEW"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t92"><text string="TUNE"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t93"><text string="INFO"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="t94"><text string="PALETTE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t95"><text string="EXIT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="rule_e9e9e5"><rect><color red="0.914" green="0.914" blue="0.898"/></rect></element>
+	<element name="t97"><text string="DEMO"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t98"><text string="DEC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t99"><text string="▲"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t100"><text string="INC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t101"><text string="&lt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t102"><text string="▼"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t103"><text string="&gt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t104"><text string="SHIFT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t105"><text string="ENTER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t106"><text string="UNDO"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t107"><text string="EFFECTS"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t108"><text string="ON/OFF"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="recess"></element>
+	<element name="mouth"><rect><color red="0.000" green="0.000" blue="0.000"/></rect></element>
+	<element name="t111"><text string="MEMORY CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t112"><text string="POWER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+
+	<view name="Front Panel">
+		<bounds x="0" y="0" width="4820" height="881"/>
+		<element ref="panel"><bounds x="0" y="0" width="4820" height="881"/></element>
+		<element ref="band"><bounds x="0" y="380" width="4820" height="90"/></element>
+		<element ref="rule_6a6c70"><bounds x="0" y="378.75" width="4820" height="2.5"/></element>
+		<element ref="rule_5a5c60"><bounds x="0" y="472" width="4820" height="2"/></element>
+		<element ref="hole"><bounds x="40" y="35" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4670" y="35" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="40" y="785" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4670" y="785" width="110" height="65"/></element>
+		<element ref="t5"><bounds x="310" y="40.56" width="308.2" height="65.78"/></element>
+		<element ref="t6"><bounds x="660" y="36" width="382.5" height="71.5"/></element>
+		<element ref="t7"><bounds x="1120" y="70.2" width="210" height="28.6"/></element>
+		<element ref="t8"><bounds x="1390" y="63.36" width="322.4" height="37.18"/></element>
+		<element ref="t9"><bounds x="379.7" y="135.48" width="120.6" height="25.74"/></element>
+		<element ref="knob" inputtag="PANEL" inputmask="0x01"><bounds x="384" y="190" width="112" height="112"/></element>
+		<element ref="t11"><bounds x="349.9" y="322.32" width="46.2" height="17.16"/></element>
+		<element ref="t12"><bounds x="485.9" y="322.32" width="46.2" height="17.16"/></element>
+		<element ref="t13"><bounds x="303.825" y="347.18" width="272.35" height="18.59"/></element>
+		<element ref="bezel"><bounds x="660" y="105" width="1640" height="250"/></element>
+		<element ref="glass"><bounds x="740" y="175" width="1487" height="115"/></element>
+		<screen index="0"><bounds x="740" y="176.737" width="1487" height="111.525"/></screen>
+		<element ref="t16"><bounds x="2300" y="81.48" width="103.5" height="25.74"/></element>
+		<element ref="dial" inputtag="PANEL" inputmask="0x02"><bounds x="2400" y="95" width="250" height="250"/></element>
+		<element ref="t18"><bounds x="2320" y="317.18" width="87.1" height="18.59"/></element>
+		<element ref="t19"><bounds x="2320" y="342.18" width="136.5" height="18.59"/></element>
+		<element ref="t20"><bounds x="2724" y="80.76" width="92" height="22.88"/></element>
+		<element ref="t21"><bounds x="2716.4" y="106.76" width="107.2" height="22.88"/></element>
+		<element ref="lens" inputtag="KEY3" inputmask="0x80"><bounds x="2715" y="165" width="110" height="110"/></element>
+		<element name="led30" ref="glow_orange"><bounds x="2717" y="167" width="106" height="106"/></element>
+		<element ref="t24"><bounds x="3186.6" y="77.76" width="76.8" height="22.88"/></element>
+		<element ref="t25"><bounds x="2931.45" y="122.04" width="107.1" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x80"><bounds x="2910" y="155" width="150" height="90"/></element>
+		<element name="led24" ref="win_red"><bounds x="2976" y="162" width="18" height="28"/></element>
+		<element ref="t20"><bounds x="3104.75" y="122.04" width="80.5" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x40"><bounds x="3070" y="155" width="150" height="90"/></element>
+		<element name="led16" ref="win_red"><bounds x="3136" y="162" width="18" height="28"/></element>
+		<element ref="t28"><bounds x="3258.1" y="122.04" width="93.8" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x20"><bounds x="3230" y="155" width="150" height="90"/></element>
+		<element name="led8" ref="win_red"><bounds x="3296" y="162" width="18" height="28"/></element>
+		<element ref="t29"><bounds x="3444.7" y="122.04" width="40.6" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x10"><bounds x="3390" y="155" width="150" height="90"/></element>
+		<element name="led0" ref="win_red"><bounds x="3456" y="162" width="18" height="28"/></element>
+		<element ref="t30"><bounds x="2923" y="272.6" width="124" height="14.3"/></element>
+		<element ref="t31"><bounds x="3798.2" y="77.76" width="213.6" height="22.88"/></element>
+		<element ref="t32"><bounds x="3631.4" y="122.04" width="67.2" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x08"><bounds x="3590" y="155" width="150" height="90"/></element>
+		<element name="led25" ref="win_red"><bounds x="3656" y="162" width="18" height="28"/></element>
+		<element ref="t33"><bounds x="3791.4" y="122.04" width="67.2" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x04"><bounds x="3750" y="155" width="150" height="90"/></element>
+		<element name="led17" ref="win_red"><bounds x="3816" y="162" width="18" height="28"/></element>
+		<element ref="t34"><bounds x="3938.1" y="122.04" width="93.8" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x02"><bounds x="3910" y="155" width="150" height="90"/></element>
+		<element name="led9" ref="win_red"><bounds x="3976" y="162" width="18" height="28"/></element>
+		<element ref="t35"><bounds x="4118.05" y="122.04" width="53.9" height="20.02"/></element>
+		<element ref="key" inputtag="KEY0" inputmask="0x01"><bounds x="4070" y="155" width="150" height="90"/></element>
+		<element name="led1" ref="win_red"><bounds x="4136" y="162" width="18" height="28"/></element>
+		<element ref="t36"><bounds x="4308.8" y="108.18" width="62.4" height="18.59"/></element>
+		<element ref="t37"><bounds x="4290.275" y="133.18" width="99.45" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY3" inputmask="0x02"><bounds x="4308" y="166" width="64" height="64"/></element>
+		<element name="led14" ref="glow_green"><bounds x="4310" y="168" width="60" height="60"/></element>
+		<element ref="rx"><bounds x="4312" y="246" width="56" height="32"/></element>
+		<element ref="t40"><bounds x="2951.9" y="329.32" width="46.2" height="17.16"/></element>
+		<element ref="t41"><bounds x="3109.5" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t42"><bounds x="3272.8" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t43"><bounds x="3436.1" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t44"><bounds x="3644.2" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t45"><bounds x="3804.2" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t46"><bounds x="3964.2" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="t47"><bounds x="4124.2" y="329.32" width="57.6" height="17.16"/></element>
+		<element ref="rule_5cb6ee"><bounds x="2975" y="360.25" width="1270" height="3.5"/></element>
+		<element ref="t49"><bounds x="4255" y="354.32" width="137.4" height="17.16"/></element>
+		<element ref="t50"><bounds x="2910.375" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x80"><bounds x="2943" y="398" width="64" height="64"/></element>
+		<element name="led26" ref="glow_green"><bounds x="2945" y="400" width="60" height="60"/></element>
+		<element ref="t51"><bounds x="3073.675" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x40"><bounds x="3106.3" y="398" width="64" height="64"/></element>
+		<element name="led18" ref="glow_green"><bounds x="3108.3" y="400" width="60" height="60"/></element>
+		<element ref="t52"><bounds x="3236.975" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x20"><bounds x="3269.6" y="398" width="64" height="64"/></element>
+		<element name="led10" ref="glow_green"><bounds x="3271.6" y="400" width="60" height="60"/></element>
+		<element ref="t53"><bounds x="3400.275" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x10"><bounds x="3432.9" y="398" width="64" height="64"/></element>
+		<element name="led2" ref="glow_green"><bounds x="3434.9" y="400" width="60" height="60"/></element>
+		<element ref="t54"><bounds x="3608.375" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x08"><bounds x="3641" y="398" width="64" height="64"/></element>
+		<element name="led27" ref="glow_green"><bounds x="3643" y="400" width="60" height="60"/></element>
+		<element ref="t55"><bounds x="3768.375" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x04"><bounds x="3801" y="398" width="64" height="64"/></element>
+		<element name="led19" ref="glow_green"><bounds x="3803" y="400" width="60" height="60"/></element>
+		<element ref="t56"><bounds x="3928.375" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x02"><bounds x="3961" y="398" width="64" height="64"/></element>
+		<element name="led11" ref="glow_green"><bounds x="3963" y="400" width="60" height="60"/></element>
+		<element ref="t57"><bounds x="4088.375" y="424.9" width="29.25" height="21.45"/></element>
+		<element ref="lens" inputtag="KEY1" inputmask="0x01"><bounds x="4121" y="398" width="64" height="64"/></element>
+		<element name="led3" ref="glow_green"><bounds x="4123" y="400" width="60" height="60"/></element>
+		<element ref="t58"><bounds x="4223.95" y="427.18" width="50.05" height="18.59"/></element>
+		<element ref="t59"><bounds x="4375.45" y="418.48" width="35.1" height="25.74"/></element>
+		<element ref="t60"><bounds x="4414" y="427.18" width="62.4" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY3" inputmask="0x01"><bounds x="4308" y="398" width="64" height="64"/></element>
+		<element name="led6" ref="glow_green"><bounds x="4310" y="400" width="60" height="60"/></element>
+		<element ref="t61"><bounds x="2963.3" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="2997" y="508.75" width="119.3" height="3.5"/></element>
+		<element ref="t63"><bounds x="3126.6" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="3160.3" y="508.75" width="119.3" height="3.5"/></element>
+		<element ref="t64"><bounds x="3289.9" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="3323.6" y="508.75" width="119.3" height="3.5"/></element>
+		<element ref="t65"><bounds x="3453.2" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="t66"><bounds x="3145.525" y="531.18" width="148.85" height="18.59"/></element>
+		<element ref="t61"><bounds x="3661.3" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="3695" y="508.75" width="116" height="3.5"/></element>
+		<element ref="t63"><bounds x="3821.3" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="3855" y="508.75" width="116" height="3.5"/></element>
+		<element ref="t64"><bounds x="3981.3" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="rule_f39a32"><bounds x="4015" y="508.75" width="116" height="3.5"/></element>
+		<element ref="t65"><bounds x="4141.3" y="502.32" width="23.4" height="17.16"/></element>
+		<element ref="t67"><bounds x="3838.575" y="531.18" width="148.85" height="18.59"/></element>
+		<element ref="jack"><bounds x="395" y="599" width="90" height="90"/></element>
+		<element ref="t69"><bounds x="379.7" y="735.48" width="120.6" height="25.74"/></element>
+		<element ref="t70"><bounds x="706.45" y="502.18" width="87.1" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY2" inputmask="0x40"><bounds x="718" y="530" width="64" height="64"/></element>
+		<element name="led31" ref="glow_red"><bounds x="720" y="532" width="60" height="60"/></element>
+		<element ref="t72"><bounds x="700.275" y="674.18" width="99.45" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY2" inputmask="0x80"><bounds x="718" y="702" width="64" height="64"/></element>
+		<element name="led23" ref="glow_red"><bounds x="720" y="704" width="60" height="60"/></element>
+		<element ref="t73"><bounds x="884.8" y="603.32" width="80.4" height="17.16"/></element>
+		<element ref="t74"><bounds x="1039.1" y="603.32" width="91.8" height="17.16"/></element>
+		<element ref="t75"><bounds x="1216.2" y="603.32" width="57.6" height="17.16"/></element>
+		<element ref="t76"><bounds x="1376.2" y="603.32" width="57.6" height="17.16"/></element>
+		<element ref="t77"><bounds x="1570.3" y="603.32" width="23.4" height="17.16"/></element>
+		<element ref="t77"><bounds x="1730.3" y="603.32" width="23.4" height="17.16"/></element>
+		<element ref="t77"><bounds x="1890.3" y="603.32" width="23.4" height="17.16"/></element>
+		<element ref="t78"><bounds x="2033.2" y="603.32" width="57.6" height="17.16"/></element>
+		<element ref="t79"><bounds x="884.8" y="635.32" width="80.4" height="17.16"/></element>
+		<element ref="t80"><bounds x="1039.1" y="635.32" width="91.8" height="17.16"/></element>
+		<element ref="t81"><bounds x="1199.1" y="635.32" width="91.8" height="17.16"/></element>
+		<element ref="t82"><bounds x="1376.2" y="635.32" width="57.6" height="17.16"/></element>
+		<element ref="t83"><bounds x="1558.9" y="635.32" width="46.2" height="17.16"/></element>
+		<element ref="t84"><bounds x="1707.5" y="635.32" width="69" height="17.16"/></element>
+		<element ref="t85"><bounds x="1878.9" y="635.32" width="46.2" height="17.16"/></element>
+		<element ref="t86"><bounds x="2038.9" y="635.32" width="46.2" height="17.16"/></element>
+		<element ref="t87"><bounds x="890.5" y="667.32" width="69" height="17.16"/></element>
+		<element ref="t88"><bounds x="1073.3" y="667.32" width="23.4" height="17.16"/></element>
+		<element ref="t89"><bounds x="1199.1" y="667.32" width="91.8" height="17.16"/></element>
+		<element ref="t90"><bounds x="1376.2" y="667.32" width="57.6" height="17.16"/></element>
+		<element ref="t91"><bounds x="1536.1" y="667.32" width="91.8" height="17.16"/></element>
+		<element ref="t92"><bounds x="1713.2" y="667.32" width="57.6" height="17.16"/></element>
+		<element ref="t88"><bounds x="1890.3" y="667.32" width="23.4" height="17.16"/></element>
+		<element ref="t93"><bounds x="2033.2" y="667.32" width="57.6" height="17.16"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x80"><bounds x="850" y="700" width="150" height="100"/></element>
+		<element name="led28" ref="win_red"><bounds x="916" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x40"><bounds x="1010" y="700" width="150" height="100"/></element>
+		<element name="led20" ref="win_red"><bounds x="1076" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x20"><bounds x="1170" y="700" width="150" height="100"/></element>
+		<element name="led12" ref="win_red"><bounds x="1236" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x10"><bounds x="1330" y="700" width="150" height="100"/></element>
+		<element name="led4" ref="win_red"><bounds x="1396" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x08"><bounds x="1507" y="700" width="150" height="100"/></element>
+		<element name="led29" ref="win_red"><bounds x="1573" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x04"><bounds x="1667" y="700" width="150" height="100"/></element>
+		<element name="led21" ref="win_red"><bounds x="1733" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x02"><bounds x="1827" y="700" width="150" height="100"/></element>
+		<element name="led13" ref="win_red"><bounds x="1893" y="707" width="18" height="28"/></element>
+		<element ref="key" inputtag="KEY5" inputmask="0x01"><bounds x="1987" y="700" width="150" height="100"/></element>
+		<element name="led5" ref="win_red"><bounds x="2053" y="707" width="18" height="28"/></element>
+		<element ref="t94"><bounds x="2170.275" y="502.18" width="99.45" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY2" inputmask="0x02"><bounds x="2188" y="530" width="64" height="64"/></element>
+		<element name="led7" ref="glow_red"><bounds x="2190" y="532" width="60" height="60"/></element>
+		<element ref="t95"><bounds x="2188.8" y="674.18" width="62.4" height="18.59"/></element>
+		<element ref="lens" inputtag="KEY2" inputmask="0x01"><bounds x="2188" y="702" width="64" height="64"/></element>
+		<element ref="rule_e9e9e5"><bounds x="2219" y="770" width="2" height="56"/></element>
+		<element ref="rule_e9e9e5"><bounds x="2220" y="825" width="70" height="2"/></element>
+		<element ref="rule_e9e9e5"><bounds x="2405" y="825" width="50" height="2"/></element>
+		<element ref="rule_e9e9e5"><bounds x="2454" y="809" width="2" height="17"/></element>
+		<element ref="t97"><bounds x="2318.2" y="822.32" width="57.6" height="17.16"/></element>
+		<element ref="t98"><bounds x="2428.05" y="511.04" width="53.9" height="20.02"/></element>
+		<element ref="key" inputtag="KEY3" inputmask="0x04"><bounds x="2380" y="545" width="150" height="90"/></element>
+		<element ref="t99"><bounds x="2601.35" y="511.04" width="27.3" height="20.02"/></element>
+		<element ref="key" inputtag="KEY3" inputmask="0x08"><bounds x="2540" y="545" width="150" height="90"/></element>
+		<element ref="t100"><bounds x="2748.05" y="511.04" width="53.9" height="20.02"/></element>
+		<element ref="key" inputtag="KEY3" inputmask="0x20"><bounds x="2700" y="545" width="150" height="90"/></element>
+		<element ref="t101"><bounds x="2421.4" y="683.04" width="67.2" height="20.02"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x04"><bounds x="2380" y="715" width="150" height="90"/></element>
+		<element ref="t102"><bounds x="2601.35" y="683.04" width="27.3" height="20.02"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x08"><bounds x="2540" y="715" width="150" height="90"/></element>
+		<element ref="t103"><bounds x="2741.4" y="683.04" width="67.2" height="20.02"/></element>
+		<element ref="key" inputtag="KEY3" inputmask="0x10"><bounds x="2700" y="715" width="150" height="90"/></element>
+		<element ref="t104"><bounds x="2949.75" y="683.04" width="80.5" height="20.02"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x80"><bounds x="2915" y="715" width="150" height="90"/></element>
+		<element ref="t105"><bounds x="3109.75" y="683.04" width="80.5" height="20.02"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x40"><bounds x="3075" y="715" width="150" height="90"/></element>
+		<element ref="t106"><bounds x="3276.4" y="683.04" width="67.2" height="20.02"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x20"><bounds x="3235" y="715" width="150" height="90"/></element>
+		<element ref="t107"><bounds x="3424.1" y="655.32" width="91.8" height="17.16"/></element>
+		<element ref="t108"><bounds x="3429.8" y="685.32" width="80.4" height="17.16"/></element>
+		<element ref="key" inputtag="KEY4" inputmask="0x10"><bounds x="3395" y="715" width="150" height="90"/></element>
+		<element name="led22" ref="win_red"><bounds x="3461" y="722" width="18" height="28"/></element>
+		<element ref="recess"><bounds x="3660" y="665" width="450" height="110"/></element>
+		<element ref="mouth"><bounds x="3685" y="704.6" width="400" height="24.2"/></element>
+		<element ref="t111"><bounds x="3799.125" y="823.9" width="171.75" height="21.45"/></element>
+		<element ref="bezel"><bounds x="4210" y="570" width="280" height="220"/></element>
+		<element ref="recess"><bounds x="4226" y="586" width="248" height="188"/></element>
+		<element ref="key"><bounds x="4244" y="593" width="212" height="175"/></element>
+		<element ref="t112"><bounds x="4306.875" y="823.9" width="86.25" height="21.45"/></element>
+	</view>
+
+</mamelayout>

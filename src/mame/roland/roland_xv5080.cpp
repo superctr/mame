@@ -89,6 +89,9 @@
 #include "softlist_dev.h"
 #include "speaker.h"
 
+#include "roland_xv3080.lh"
+#include "roland_xv5080.lh"
+
 #include <algorithm>
 
 #define LOG_GA      (1U << 1)
@@ -814,6 +817,7 @@ void xv3080_state::xv3080(machine_config &config)
 	screen.set_size(6 * 40, 9 * 2);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
+	config.set_default_layout(layout_roland_xv3080);
 
 	HD44780(config, m_lcd, 270'000);
 	m_lcd->set_lcd_size(2, 40);
@@ -862,6 +866,7 @@ void xv5080_state::xv5080(machine_config &config)
 	screen.set_size(320, 80);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
+	config.set_default_layout(layout_roland_xv5080);
 
 	SED1330(config, m_lcdc, 10_MHz_XTAL); // SED1335F0B
 	m_lcdc->set_screen("screen");
