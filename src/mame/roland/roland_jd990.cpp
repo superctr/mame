@@ -96,6 +96,8 @@
 #include "softlist_dev.h"
 #include "speaker.h"
 
+#include "roland_jd990.lh"
+
 #define LOG_EP  (1U << 1)
 #define LOG_CSP (1U << 2)
 #define LOG_ISP (1U << 3)
@@ -532,6 +534,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	screen.set_size(320, 80);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
+	config.set_default_layout(layout_roland_jd990);
 
 	PALETTE(config, "palette", FUNC(roland_jd990_state::lcd_palette), 2);
 
