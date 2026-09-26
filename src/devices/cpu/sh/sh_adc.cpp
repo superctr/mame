@@ -65,7 +65,7 @@ void sh_adc_device::adcsr_w(u8 data)
 {
 	if(V>=1) logerror("adcsr_w %02x\n", data);
 	u8 prev = m_adcsr;
-	m_adcsr = (data & (0x70 | m_port_mask)) | (m_adcsr & data & F_ADF);
+	m_adcsr = (data & (m_is_hs ? 0x7f : 0x7b)) | (m_adcsr & data & F_ADF);
 	mode_update();
 	if((prev & F_ADF) && !(m_adcsr & F_ADF)) {
 		if(m_mode & HALTED) {
@@ -263,6 +263,9 @@ void sh_adc_device::timeout(u64 current_time)
 
 int sh_adc_device::conversion_time(bool first, bool poweron)
 {
+	if(!m_is_hs)
+		return m_adcsr & 0x08 ? 134 : 266;
+
 	int tm = m_adcsr & 0x10 ? 44 : 24;
 	if(first)
 		tm += m_adcsr & 0x10 ? 20 : 10;
@@ -300,8 +303,8 @@ void sh_adc_device::mode_update()
 
 		m_mode = ACTIVE;
 
-		if(m_adcsr & 0x08) {
-			m_mode |= ROTATE;
+		if(m_adcsr & 0x10) {
+			m_mode |= ROTATE | REPEAT;
 			m_start_channel = 0;
 			m_end_channel = m_adcsr & 3;
 		} else
