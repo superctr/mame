@@ -28,6 +28,8 @@
 #include "softlist_dev.h"
 #include "speaker.h"
 
+#include "roland_jv1080.lh"
+
 
 namespace {
 
@@ -251,6 +253,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	screen.set_size(6 * 40, 8 * 2);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
+	config.set_default_layout(layout_roland_jv1080);
 
 	PALETTE(config, "palette", FUNC(roland_jv1080_state::jv_palette), 2);
 
@@ -291,4 +294,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", MACHINE_NOT_WORKING) // no expansion board or card slots, and no panel layout
+SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", MACHINE_NOT_WORKING) // no expansion board or card slots
