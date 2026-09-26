@@ -975,7 +975,7 @@ u32 roland_xv_device::cell_of(u32 sample, bool wide)
 	const int bank = (sample >> 25) & 7;
 	if (wide || bank == BANK_BYTE_WIDE)
 		return sample & ADDRESS_MASK;
-	return (sample & ADDRESS_MASK & ~0x1ffffff) | ((sample & 0x1ffffff) >> 1);
+	return (sample & ADDRESS_MASK & ~0x1ffffff) | ((sample & ADDRESS_MASK) >> 1 & 0x1ffffff);
 }
 
 u8 roland_xv_device::sample_byte(u32 sample)
