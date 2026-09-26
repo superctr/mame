@@ -126,7 +126,7 @@ u32 sh_dmac_channel_device::dmatcr_r()
 void sh_dmac_channel_device::dmatcr_w(offs_t, u32 data, u32 mem_mask)
 {
 	COMBINE_DATA(&m_dmatcr);
-	m_dmatcr &= 0xffff;
+	m_dmatcr &= 0xffffff;
 	LOGMASKED(LOG_REGS, "dmatcr_w %08x\n", m_dmatcr);
 }
 
@@ -231,7 +231,7 @@ void sh_dmac_channel_device::transfer_unit()
 	else if (dm == 2)
 		m_dar -= size;
 
-	m_dmatcr = (m_dmatcr - 1) & 0xffff;
+	m_dmatcr = (m_dmatcr - 1) & 0xffffff;
 	if (m_dmatcr == 0) {
 		m_chcr |= CHCR_TE;
 		if (m_chcr & CHCR_IE)
