@@ -99,10 +99,10 @@ const s16 interp_weights[3][128] = {
 	},
 };
 
-// the samples a ramp takes to land, by rate code: 2 ms a code to 20 ms, then 4 ms
-// a code to 40 ms, and 48 ms for 0xf
-const u16 ramp_samples[16] = {
-	88, 176, 265, 353, 441, 529, 617, 706, 794, 882, 1058, 1235, 1411, 1588, 1764, 2117 };
+// the milliseconds a ramp takes to land, by rate code: 2 ms a code to 20 ms, then
+// 4 ms a code to 40 ms, and 48 ms for 0xf
+const u8 ramp_ms[roland_xv_device::RATE_CODES] = {
+	2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48 };
 
 // what a muted ramp's slope loses each sample, by rate code, in the ramp's
 // fraction: 3.5 Q15 steps a sample at code 0, halving every four codes
@@ -147,7 +147,7 @@ void *roland_xv_device::alloc_near(size_t bytes, size_t align)
 void roland_xv_device::device_start()
 {
 	space(AS_WAVE).specific(m_wave);
-	m_stream = stream_alloc(0, OUTPUTS, SAMPLE_RATE);
+	m_stream = stream_alloc(0, OUTPUTS, sample_rate());
 	m_space = std::make_unique<u32[]>(0x10000);
 	m_eram = std::make_unique<s32[]>(ERAM_CELLS);
 	if (m_link)
@@ -264,7 +264,7 @@ void roland_xv_device::device_reset()
 	m_switch_changed = 0;
 	m_switch_index = 0;
 	m_scan_timer->adjust(attotime::from_msec(4), 0, attotime::from_msec(4));
-	const attotime sample = attotime::from_hz(SAMPLE_RATE);
+	const attotime sample = attotime::from_hz(sample_rate());
 	m_stream_timer->adjust(m_master ? attotime::never : sample, 0, sample);
 	m_run_mask = 0;
 	for (auto &v : m_voices)
@@ -286,6 +286,19 @@ void roland_xv_device::device_reset()
 	m_logged = 0;
 	if (m_recompiler)
 		m_recompiler->reset();
+}
+
+// a linked chip runs at its master's rate, so the master's clock is passed on to it
+void roland_xv_device::device_clock_changed()
+{
+	const u32 rate = sample_rate();
+	m_stream->set_sample_rate(rate);
+	for (int code = 0; code < RATE_CODES; code++)
+		m_ramp_samples[code] = (rate * ramp_ms[code] + 500) / 1000;
+	const attotime sample = attotime::from_hz(rate);
+	m_stream_timer->adjust(m_master ? attotime::never : sample, 0, sample);
+	if (m_link)
+		m_link->set_unscaled_clock(clock());
 }
 
 // a linked chip's frames are run from its master's stream; its own stream is silent
@@ -939,7 +952,7 @@ void roland_xv_device::start_ramp(int n, int kind, u32 value)
 		v.ramp_remaining[kind] = v.ramp_remaining[kind] ? steps_to_target(n, kind) : 0;
 		return;
 	}
-	const u16 samples = ramp_samples[rate];
+	const u16 samples = m_ramp_samples[rate];
 	v.ramp_position[kind] = v.ramp_current[kind] << RAMP_FRACTION_BITS;
 	v.ramp_step[kind] = ((v.ramp_target[kind] - v.ramp_current[kind]) << RAMP_FRACTION_BITS) / samples;
 	v.ramp_remaining[kind] = samples;
