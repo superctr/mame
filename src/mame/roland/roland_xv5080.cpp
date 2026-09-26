@@ -61,9 +61,8 @@
     gate array register 0x39, and card detect, write enable and ready on
     PE6, PE7 and PE8.  A read-only card image is a write-protected card.
 
-    Both machines boot their firmware: the XV-3080 to its PERFORM/PLAY
-    screen, the XV-5080 through its splash to the expansion board status
-    page.  The display bytes travel by DMA, channel 0 under DREQ0 on the
+    Both machines boot their firmware to their play screens and play MIDI.
+    The display bytes travel by DMA, channel 0 under DREQ0 on the
     XV-3080 (with the transfer end interrupt), channel 1 under DREQ1 on the
     XV-5080 (polled), one request every 40 us; the firmware's kernel
     dispatches its tasks from the watchdog's interval timer interrupt and
@@ -78,10 +77,15 @@
     DACs, port B being MIX OUT and the phones, C and D the two DIRECT OUT
     pairs; #1 has no DAC and reaches them through #0 over the port A bus.
 
-    Not done: the XV chips (sound/roland_xv) carry a provisional effect DSP
-    whose arithmetic is unmeasured, the XV-5080's blank SRAM still wants its
-    factory reset, and neither wave ROM is dumped (the descrambled set
-    stands in).
+    The XV-5080's two MIDI inputs are RXD0 (IN 1) and RXD1 (IN 2), and each
+    Part has a receive switch for either.
+
+    Not emulated: the XV-5080's R-BUS and S/PDIF digital outputs, R-BUS
+    control, and its external master clocks (R-BUS, WORD CLOCK IN), for
+    which MAME offers no digital audio link or clock input.  Also open: the
+    XV chips' effect DSP arithmetic is unmeasured on silicon, the XV-5080's
+    blank SRAM still wants its factory reset, and neither wave ROM is
+    dumped (the descrambled set stands in).
 
 ****************************************************************************/
 
@@ -967,7 +971,7 @@ void xv3080_state::common(machine_config &config)
 	m_maincpu->read_adc<6>().set_constant(0x266);
 	m_maincpu->read_adc<7>().set_constant(0x266);
 
-	// MIDI IN on RXD0, MIDI OUT on TXD0
+	// MIDI IN (IN 1 on the XV-5080) on RXD0, MIDI OUT on TXD0
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(sh7042_device::sci_rx_w<0>));
 	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
@@ -1040,6 +1044,10 @@ void xv5080_state::xv5080(machine_config &config)
 	common(config);
 	m_maincpu->read_porte().set(FUNC(xv5080_state::porte_r));
 	m_display_channel = 1;
+
+	// MIDI IN 2 on RXD1
+	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
+	mdin2.rxd_handler().set(m_maincpu, FUNC(sh7042_device::sci_rx_w<1>));
 
 	// EXP E to EXP H, one 32 MB SRX board each
 	for (int slot = 0; slot < 4; slot++)
@@ -1149,5 +1157,5 @@ ROM_END
 
 
 //    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY   FULLNAME   FLAGS
-SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", MACHINE_NOT_WORKING )
-SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, empty_init, "Roland", "XV-5080", MACHINE_NOT_WORKING )
+SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", 0 )
+SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, empty_init, "Roland", "XV-5080", 0 )
