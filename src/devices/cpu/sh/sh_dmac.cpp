@@ -82,6 +82,7 @@ void sh_dmac_channel_device::device_start()
 	save_item(NAME(m_dmatcr));
 	save_item(NAME(m_chcr));
 	save_item(NAME(m_dreq));
+	save_item(NAME(m_edge));
 }
 
 void sh_dmac_channel_device::device_reset()
@@ -91,6 +92,7 @@ void sh_dmac_channel_device::device_reset()
 	m_dmatcr = 0;
 	m_chcr = 0;
 	m_dreq = false;
+	m_edge = false;
 	m_timer->adjust(attotime::never);
 }
 
@@ -159,6 +161,7 @@ void sh_dmac_channel_device::dreq_w(int state)
 	const bool asserted = state != 0;
 	const bool edge = asserted && !m_dreq;
 	m_dreq = asserted;
+	m_edge |= edge;
 	if (!external() || !armed())
 		return;
 	if (edge || (asserted && !(m_chcr & CHCR_DS)))
@@ -193,12 +196,13 @@ TIMER_CALLBACK_MEMBER(sh_dmac_channel_device::tick)
 {
 	if (!armed())
 		return;
+	m_edge = false;
 	transfer_unit();
 	// a level sampled request keeps going while the pin is held; an edge sampled
-	// one takes one unit a request
+	// one takes one unit a request, including an edge made during the unit
 	if (!armed())
 		return;
-	if (resource() == RS_AUTO || (external() && m_dreq && !(m_chcr & CHCR_DS)))
+	if (resource() == RS_AUTO || (external() && m_dreq && (!(m_chcr & CHCR_DS) || m_edge)))
 		m_timer->adjust(attotime::from_ticks(2, m_cpu->clock()));
 	else if (external())
 		m_dreq = false;
