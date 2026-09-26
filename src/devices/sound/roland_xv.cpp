@@ -194,7 +194,6 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, fetching));
 	save_item(STRUCT_MEMBER(m_voices, was_running));
 	save_item(STRUCT_MEMBER(m_voices, region));
-	save_item(STRUCT_MEMBER(m_voices, finished));
 	save_item(STRUCT_MEMBER(m_voices, scaled));
 	save_item(STRUCT_MEMBER(m_voices, filter_low));
 	save_item(STRUCT_MEMBER(m_voices, filter_band));
@@ -1044,7 +1043,6 @@ void roland_xv_device::launch(int n)
 	v.predictor = 0;
 	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
 	v.region = REGION_BEFORE;
-	v.finished = false;
 	v.scaled = false;
 }
 
@@ -1089,21 +1087,21 @@ void roland_xv_device::cross(int n, u32 address)
 {
 	voice &v = m_voices[n];
 	const u32 index = address & PAGE_MASK;
+	u8 region;
 	if (index == (object_long(n, END) & PAGE_MASK))
-		v.region = REGION_END;
+		region = REGION_END;
 	else if (index == (object_long(n, LOOP_START) & PAGE_MASK))
-		v.region = REGION_LOOP;
+		region = REGION_LOOP;
 	else
 		return;
+	const bool arrived = region != v.region;
+	v.region = region;
 	const u16 control = object_word(n, VOICE_CONTROL);
 	const int condition = (control >> 8) & 3;
 	if (v.region == (BIT(control, 6) ? REGION_LOOP : REGION_END))
 		v.scaled = true;
-	if (!v.finished && ((v.region == REGION_END && condition == END_AT_END) || (v.region == REGION_LOOP && condition == END_INSIDE_LOOP)))
-	{
-		v.finished = true;
+	if (arrived && ((v.region == REGION_END && condition == END_AT_END) || (v.region == REGION_LOOP && condition == END_INSIDE_LOOP)))
 		raise_irq(IRQ_FINISHED, n);
-	}
 }
 
 

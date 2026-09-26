@@ -238,7 +238,6 @@ protected:
 		bool fetching = false;
 		bool was_running = false;
 		u8 region = REGION_BEFORE;
-		bool finished = false;
 		bool scaled = false;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
