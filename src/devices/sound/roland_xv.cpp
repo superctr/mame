@@ -125,6 +125,7 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	, m_lcd_callback(*this)
 	, m_stream(nullptr)
 	, m_scan_timer(nullptr)
+	, m_stream_timer(nullptr)
 	, m_master(nullptr)
 {
 }
@@ -184,6 +185,7 @@ void roland_xv_device::device_start()
 	save_item(NAME(m_switch_changed));
 	save_item(NAME(m_switch_index));
 	m_scan_timer = timer_alloc(FUNC(roland_xv_device::scan_switches), this);
+	m_stream_timer = timer_alloc(FUNC(roland_xv_device::stream_tick), this);
 	save_item(NAME(m_int_state));
 	save_item(NAME(m_run_mask));
 	save_item(STRUCT_MEMBER(m_voices, address));
@@ -262,6 +264,8 @@ void roland_xv_device::device_reset()
 	m_switch_changed = 0;
 	m_switch_index = 0;
 	m_scan_timer->adjust(attotime::from_msec(4), 0, attotime::from_msec(4));
+	const attotime sample = attotime::from_hz(SAMPLE_RATE);
+	m_stream_timer->adjust(m_master ? attotime::never : sample, 0, sample);
 	m_run_mask = 0;
 	for (auto &v : m_voices)
 		v = voice();
@@ -303,6 +307,13 @@ void roland_xv_device::sound_stream_update(sound_stream &stream)
 			stream.put_int_clamp(2 * pair + 1, i, m_master ? 0 : m_bus[DAC_R + pair - IBUS_MIX], 1 << DSP_FRACTION_BITS);
 		}
 	}
+}
+
+// the voices raise their interrupts from the stream, so it is brought up to
+// date every sample
+TIMER_CALLBACK_MEMBER(roland_xv_device::stream_tick)
+{
+	m_stream->update();
 }
 
 void roland_xv_device::sync()

@@ -303,6 +303,7 @@ private:
 	void update_irq();
 	void raise_irq(int reason, int voice);
 	TIMER_CALLBACK_MEMBER(scan_switches);
+	TIMER_CALLBACK_MEMBER(stream_tick);
 	void present_switch();
 	void run_mask_w(int word, u16 data);
 
@@ -362,6 +363,7 @@ private:
 	devcb_write8 m_lcd_callback;
 	sound_stream *m_stream;
 	emu_timer *m_scan_timer;
+	emu_timer *m_stream_timer;
 
 	u16 m_regs[0x100];
 	u16 m_object_regs[OBJECTS][OBJECT_END - OBJECT_BASE];
