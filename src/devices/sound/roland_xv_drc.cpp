@@ -952,7 +952,10 @@ void roland_xv_dsp_recompiler::emit_row(drcuml_block *block, int n, chain &c, co
 		UML_DAND(b, REG_X, REG_X, (s64(1) << shift) - 1);
 		UML_DADD(b, REG_P, REG_P, REG_X);
 		UML_DSAR(b, REG_P, REG_P, shift);
-		UML_DSEXT(b, REG_P, REG_P, SIZE_DWORD);
+		if (r.shift)
+			emit_clamp(b, REG_P);
+		else
+			UML_DSEXT(b, REG_P, REG_P, SIZE_DWORD);
 	}
 
 	// the result into its accumulator

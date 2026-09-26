@@ -34,8 +34,9 @@
     seventeen words each way between samples.
 
     The arithmetic is a provisional policy: 32-bit accumulators and
-    product with 23 fraction bits, every store, transfer, immediate add
-    and magnitude clamped to 24 bits, products truncated toward zero.
+    product with 23 fraction bits, every store, transfer, immediate add,
+    magnitude and shifted product clamped to 24 bits, products truncated
+    toward zero.
     Whether the chip is wider or narrower, and where it clamps, is unread.
 
     TODO:
@@ -311,15 +312,15 @@ void roland_xv_device::sync()
 		m_stream->update();
 }
 
-// one output sample: the voices onto the mix cells with the four guard bits the
-// program expects, then the DSP over them
+// one output sample: the voices onto the mix cells, a voice's twenty-bit word as
+// it is with the four guard bits the program expects above it, then the DSP over them
 void roland_xv_device::frame()
 {
 	s32 buses[BUSES] = { 0 };
 	for (int n = 0; n < OBJECTS; n++)
 		run_voice(n, buses);
 	for (int bus = 0; bus < BUSES; bus++)
-		m_bus[bus] = clamp24(s64(buses[bus]) * 2);
+		m_bus[bus] = clamp24(buses[bus]);
 	run_dsp();
 }
 
@@ -1508,7 +1509,8 @@ void roland_xv_device::execute(const dsp_row &row, const dsp_operand &k, bool co
 	{
 		const s64 full = operand * coefficient;
 		const int shift = DSP_FRACTION_BITS - row.shift;
-		s.product = s32((full + ((full >> 63) & ((s64(1) << shift) - 1))) >> shift);
+		const s64 scaled = (full + ((full >> 63) & ((s64(1) << shift) - 1))) >> shift;
+		s.product = row.shift ? clamp24(scaled) : s32(scaled);
 	}
 
 	const s32 destination = row.to_b ? b : a;
