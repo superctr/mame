@@ -42,8 +42,12 @@
     locks its VCO to 768*fs using IC23's divide-by-three feedback from
     the 256*fs reference. IC21B divides the VCO by two, so XVCLK at both
     chips' CKI pins is 384*fs: 16.9344 MHz at 44.1 kHz or 18.432 MHz at
-    48 kHz. The XV's internal clock multiplier is unknown; its clock
-    timing and sample-rate switching are not modelled here.
+    48 kHz.  SYSTEM, F2, Master Freq picks the rate, and the firmware
+    follows it with bit 0 of gate array register 0x38 - clear for 44.1 kHz,
+    set for 48 kHz - which the driver passes on to both chips as their
+    clock.  The external master clocks (R-BUS and WORD CLOCK IN), which the
+    firmware selects with bit 2 of that register and tests through bit 3 of
+    register 0x3b, are not modelled.
 
     The bus map follows giulioz's emulator of both machines: the two tone
     generator windows at 0x00200000 and 0x00280000 (CS0), the graphic LCD
@@ -145,7 +149,7 @@ protected:
 	void xp_rom_map(address_map &map) ATTR_COLD;
 
 	u8 ga_r(offs_t offset);
-	void ga_w(offs_t offset, u8 data);
+	virtual void ga_w(offs_t offset, u8 data);
 	virtual u8 ga_switches_r(u8 reg);
 	void ga_raise(int source);
 	void ga_lower(int source);
@@ -208,6 +212,7 @@ public:
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
+	virtual void ga_w(offs_t offset, u8 data) override;
 	virtual u8 ga_switches_r(u8 reg) override;
 
 	void xv5080_map(address_map &map) ATTR_COLD;
@@ -244,6 +249,10 @@ static constexpr int GA_TICK_HZ = 1000;
 static constexpr int GA_SENSING_HZ = 10;
 static constexpr int GA_SCAN_HZ = 120;
 
+// XVCLK, the XV-5080's tone generator clock: the PLL's 768*fs halved
+static constexpr XTAL XV_CLOCK_44K = 33.8688_MHz_XTAL / 2;
+static constexpr XTAL XV_CLOCK_48K = 36.864_MHz_XTAL / 2;
+
 // the display takes a byte by DMA every 40 us
 static constexpr int DISPLAY_REQUEST_US = 40;
 
@@ -251,6 +260,7 @@ static constexpr int DISPLAY_REQUEST_US = 40;
 static constexpr u8 GA_LEDS = 0x10;         // 0x10-0x13
 static constexpr u8 GA_LCD_COMMAND = 0x38;  // XV-3080: the character LCD's instruction and data registers
 static constexpr u8 GA_LCD_DATA = 0x39;
+static constexpr u8 GA_CLOCK = 0x38;        // XV-5080: bit 0 the tone generators' clock, clear for 44.1 kHz and set for 48 kHz
 static constexpr u8 GA_CARD = 0x39;         // XV-5080: the memory card's ALE (bit 0), /CE (bit 1), CLE (bit 2) and /WP (bit 3)
 static constexpr u8 GA_DIRECT_ROW = 0x3a;
 static constexpr u8 GA_SWITCHES = 0x3b;
@@ -318,6 +328,8 @@ void xv5080_state::machine_reset()
 {
 	xv3080_state::machine_reset();
 	simm_install();
+	for (auto &xv : m_xv)
+		xv->set_unscaled_clock(XV_CLOCK_44K);
 }
 
 
@@ -654,6 +666,16 @@ void xv3080_state::ga_w(offs_t offset, u8 data)
 		LOGMASKED(LOG_GA, "%s: gate array write %03x = %02x\n", machine().describe_context(), offset, data);
 		break;
 	}
+}
+
+
+// the XV-5080's clock select: both tone generators run from XVCLK
+void xv5080_state::ga_w(offs_t offset, u8 data)
+{
+	xv3080_state::ga_w(offset, data);
+	if ((offset & 0xff) == GA_CLOCK)
+		for (auto &xv : m_xv)
+			xv->set_unscaled_clock(BIT(data, 0) ? XV_CLOCK_48K : XV_CLOCK_44K);
 }
 
 
@@ -1044,7 +1066,7 @@ void xv5080_state::xv5080(machine_config &config)
 	SPEAKER(config, "outc", 2).front();
 	SPEAKER(config, "outd", 2).front();
 
-	ROLAND_XV(config, m_xv[0], 0);
+	ROLAND_XV(config, m_xv[0], XV_CLOCK_44K);
 	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
 	m_xv[0]->int_callback().set_inputline(m_maincpu, 1);
 	m_xv[0]->set_link(m_xv[1]);
@@ -1057,7 +1079,7 @@ void xv5080_state::xv5080(machine_config &config)
 	m_xv[0]->add_route(6, "outd", 1.0, 0);
 	m_xv[0]->add_route(7, "outd", 1.0, 1);
 
-	ROLAND_XV(config, m_xv[1], 0);
+	ROLAND_XV(config, m_xv[1], XV_CLOCK_44K);
 	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &xv5080_state::xv_wave_map);
 	m_xv[1]->int_callback().set_inputline(m_maincpu, 2);
 
