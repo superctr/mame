@@ -2,11 +2,12 @@
 // copyright-holders:superctr
 /***************************************************************************
 
-    Roland Boutique, third generation (D-05, SH-01A, TR-08)
+    Roland Boutique: first generation (JP-08, JU-06, JX-03), second
+    (TB-03, TR-09, VP-03) and third (D-05, SH-01A, TR-08)
 
-    One firmware serves all three: an ESC2 (MB8AA4181) booting from a
+    One firmware serves each generation: an ESC2 (MB8AA4181) booting from a
     4 MiB serial flash, SDRAM on its external bus, and an STM32F103-class
-    sub-CPU that reads the panel and reports the model from four strap
+    sub-CPU that reads the panel and reports the model from its strap
     pins.  The ESC2 holds the sub-CPU in reset and selects its boot mode.
 
 ***************************************************************************/
@@ -47,6 +48,12 @@ public:
 	{
 	}
 
+	void jp08(machine_config &config) ATTR_COLD;
+	void ju06(machine_config &config) ATTR_COLD;
+	void jx03(machine_config &config) ATTR_COLD;
+	void tb03(machine_config &config) ATTR_COLD;
+	void tr09(machine_config &config) ATTR_COLD;
+	void vp03(machine_config &config) ATTR_COLD;
 	void d05(machine_config &config) ATTR_COLD;
 	void sh01a(machine_config &config) ATTR_COLD;
 	void tr08(machine_config &config) ATTR_COLD;
@@ -466,6 +473,36 @@ void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &aud
 	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
 }
 
+void boutique_state::jp08(machine_config &config)
+{
+	boutique(config, 0xfff9, 24.576_MHz_XTAL);
+}
+
+void boutique_state::ju06(machine_config &config)
+{
+	boutique(config, 0xfffd, 24.576_MHz_XTAL);
+}
+
+void boutique_state::jx03(machine_config &config)
+{
+	boutique(config, 0xfffb, 24.576_MHz_XTAL);
+}
+
+void boutique_state::tb03(machine_config &config)
+{
+	boutique(config, 0xfff9, 24.576_MHz_XTAL);
+}
+
+void boutique_state::tr09(machine_config &config)
+{
+	boutique(config, 0xfffd, 11.2896_MHz_XTAL);
+}
+
+void boutique_state::vp03(machine_config &config)
+{
+	boutique(config, 0xfffe, 22.5792_MHz_XTAL);
+}
+
 void boutique_state::d05(machine_config &config)
 {
 	boutique(config, 0xfffb, 24.576_MHz_XTAL);
@@ -513,6 +550,28 @@ void boutique_state::tr08(machine_config &config)
 	m_subcpu->gpio_out_cb<3>().set([this] (u16 data) { m_key_rows = data; });
 }
 
+ROM_START(jp08)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.21 update image
+	ROM_LOAD("bq_121.bin", 0, 0x400000, BAD_DUMP CRC(6e14bd7a) SHA1(20986e162062136677cbc177a9959fdf7629f552))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
+#define rom_ju06 rom_jp08
+#define rom_jx03 rom_jp08
+
+ROM_START(tb03)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.07 update image
+	ROM_LOAD("bq2_107.bin", 0, 0x400000, BAD_DUMP CRC(5333365c) SHA1(76360b69356aa4f2d58241d6b165ddb7fceee0bf))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
+#define rom_tr09 rom_tb03
+#define rom_vp03 rom_tb03
+
 ROM_START(d05)
 	ROM_REGION32_LE(0x400000, "flash", 0)
 	// the 1.07 update image with the Roland Cloud D-50 plugin's waves at 0x200000, where the update leaves the flash blank
@@ -540,6 +599,12 @@ ROM_END
 } // anonymous namespace
 
 
+SYST(2015, jp08,  0, 0, jp08,  d05,   boutique_state, init_boutique, "Roland", "JP-08 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "JU-06 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, tb03,  0, 0, tb03,  d05,   boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, tr09,  0, 0, tr09,  d05,   boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "VP-03 Vocoder", MACHINE_NOT_WORKING)
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, tr08,  0, 0, tr08,  tr08, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)

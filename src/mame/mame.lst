@@ -40343,8 +40343,14 @@ cm32p
 
 @source:roland/roland_boutique.cpp
 d05
+jp08
+ju06
+jx03
 sh01a
+tb03
 tr08
+tr09
+vp03
 
 @source:roland/roland_d10.cpp
 d10
