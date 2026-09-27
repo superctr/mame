@@ -714,7 +714,10 @@ void mb8aa4181_device::device_start()
 	m_sfi_timer = timer_alloc(FUNC(mb8aa4181_device::sfi_done), this);
 	m_remap = 0;
 	m_system_reset = false;
+	std::fill_n(m_sfi, 16, 0);
+	std::fill_n(m_exint, 8, 0);
 	m_exint_level = 0;
+	m_exint_pending = 0;
 
 	save_item(NAME(m_gpio_out));
 	save_item(NAME(m_dma_flags));
