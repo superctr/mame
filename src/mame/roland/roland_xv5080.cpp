@@ -63,8 +63,10 @@
 
     Both machines boot their firmware to their play screens and play MIDI.
     The display bytes travel by DMA, channel 0 under DREQ0 on the
-    XV-3080 (with the transfer end interrupt), channel 1 under DREQ1 on the
-    XV-5080 (polled), one request every 40 us; the firmware's kernel
+    XV-3080 (with the transfer end interrupt), one request every 40 us for
+    the character LCD, and channel 1 under DREQ1 on the XV-5080 (polled),
+    a request a microsecond after each byte the SED1335 takes, since that
+    controller accepts data at bus speed; the firmware's kernel
     dispatches its tasks from the watchdog's interval timer interrupt and
     ticks from MTU1 (XV-3080) or MTU2 (XV-5080).  The XV-3080 also bit
     bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
@@ -231,6 +233,9 @@ protected:
 	u8 card_r();
 	void card_w(u8 data);
 	u16 porte_r();
+	void lcdc_data_w(u8 data);
+	void lcdc_command_w(u8 data);
+	void lcdc_taken();
 
 	required_device_array<roland_xv_device, 2> m_xv;
 	required_device<sed1330_device> m_lcdc;
@@ -257,8 +262,13 @@ static constexpr int GA_SCAN_HZ = 120;
 static constexpr XTAL XV_CLOCK_44K = 33.8688_MHz_XTAL / 2;
 static constexpr XTAL XV_CLOCK_48K = 36.864_MHz_XTAL / 2;
 
-// the display takes a byte by DMA every 40 us
+// the character LCD takes a byte by DMA every 40 us; the graphic LCD's
+// controller takes one within a bus cycle, and the next request follows it.
+// Both rates are stand-ins: gate array registers 0x23, 0x2f and 0x46, which
+// the firmware sets at power-on to 0x00, 0x08 and 0x04 on the XV-3080 and
+// 0x50, 0x0b and 0x09 on the XV-5080, likely set the display's timing
 static constexpr int DISPLAY_REQUEST_US = 40;
+static constexpr int LCDC_REQUEST_NS = 1000;
 
 // the gate array's registers, by the byte offset in its window
 static constexpr u8 GA_LEDS = 0x10;         // 0x10-0x13
@@ -557,6 +567,24 @@ TIMER_CALLBACK_MEMBER(xv3080_state::display_request)
 	m_maincpu->dreq_w(m_display_channel, 0);
 }
 
+void xv5080_state::lcdc_data_w(u8 data)
+{
+	m_lcdc->data_w(data);
+	lcdc_taken();
+}
+
+void xv5080_state::lcdc_command_w(u8 data)
+{
+	m_lcdc->command_w(data);
+	lcdc_taken();
+}
+
+void xv5080_state::lcdc_taken()
+{
+	if (!machine().side_effects_disabled())
+		m_display_timer->adjust(attotime::from_nsec(LCDC_REQUEST_NS), 0, attotime::from_usec(DISPLAY_REQUEST_US));
+}
+
 u8 xv3080_state::ga_switches_r(u8 reg)
 {
 	u8 data = 0xff;
@@ -752,8 +780,8 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x00200000, 0x002001ff).mirror(0x0007fe00).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x00280000, 0x002801ff).mirror(0x0007fe00).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x00500000, 0x00500000).rw(FUNC(xv5080_state::scsi_dma_r), FUNC(xv5080_state::scsi_dma_w));
-	map(0x005c0000, 0x005c0000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
-	map(0x005c0001, 0x005c0001).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
+	map(0x005c0000, 0x005c0000).r(m_lcdc, FUNC(sed1330_device::data_r)).w(FUNC(xv5080_state::lcdc_data_w));
+	map(0x005c0001, 0x005c0001).r(m_lcdc, FUNC(sed1330_device::status_r)).w(FUNC(xv5080_state::lcdc_command_w));
 	map(0x00640000, 0x00640000).rw(FUNC(xv5080_state::card_r), FUNC(xv5080_state::card_w));
 	map(0x00680000, 0x0068000f).m(m_scsi, FUNC(ncr53cf94_device::map));
 	map(0x01000000, 0x013fffff).ram();
