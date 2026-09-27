@@ -35,6 +35,7 @@ void m60205_device::device_start()
 {
 	m_timer_a = timer_alloc(FUNC(m60205_device::tick_a), this);
 	m_timer_b = timer_alloc(FUNC(m60205_device::tick_b), this);
+	m_timer_c = timer_alloc(FUNC(m60205_device::tick_c), this);
 
 	save_item(NAME(m_pending));
 	save_item(NAME(m_int_state));
@@ -67,6 +68,7 @@ void m60205_device::device_reset()
 
 	m_timer_a->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
 	m_timer_b->adjust(attotime::from_hz(250), 0, attotime::from_hz(250));
+	m_timer_c->adjust(attotime::from_hz(100), 0, attotime::from_hz(100));
 }
 
 
@@ -129,12 +131,16 @@ TIMER_CALLBACK_MEMBER(m60205_device::tick_a)
 	}
 
 	raise(SOURCE_TIMER_A);
-	raise(8);
 }
 
 TIMER_CALLBACK_MEMBER(m60205_device::tick_b)
 {
 	raise(SOURCE_TIMER_B);
+}
+
+TIMER_CALLBACK_MEMBER(m60205_device::tick_c)
+{
+	raise(SOURCE_TIMER_C);
 }
 
 

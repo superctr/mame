@@ -35,11 +35,13 @@ private:
 		SOURCE_KEY = 0,
 		SOURCE_ENCODER = 1,
 		SOURCE_TIMER_B = 5,
+		SOURCE_TIMER_C = 8,
 		SOURCE_TIMER_A = 9
 	};
 
 	TIMER_CALLBACK_MEMBER(tick_a);
 	TIMER_CALLBACK_MEMBER(tick_b);
+	TIMER_CALLBACK_MEMBER(tick_c);
 
 	void raise(unsigned source);
 	void update_int();
@@ -55,6 +57,7 @@ private:
 
 	emu_timer *m_timer_a;
 	emu_timer *m_timer_b;
+	emu_timer *m_timer_c;
 
 	u16 m_pending;
 	int m_int_state;
