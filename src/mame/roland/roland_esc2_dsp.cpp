@@ -18,6 +18,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <numbers>
 
 #define LOG_UNSUPPORTED (1U << 1)
@@ -59,7 +60,9 @@ constexpr int RETURN = -2;
 
 double wrap(double x)
 {
-	return std::fmod(std::fmod(x + 1.0, 2.0) + 2.0, 2.0) - 1.0;
+	if (x >= -1.0 && x < 1.0)
+		return x;
+	return x - 2.0 * std::floor((x + 1.0) / 2.0);
 }
 
 double noise(double x)
@@ -506,6 +509,7 @@ void mb8aa4181_dsp_device::decode(unit_state &u)
 		p.length = length;
 		p.count = 0;
 		p.selectors = 0;
+		p.paired = 0;
 		p.extension_length = 0;
 		if (header != 1)
 		{
@@ -539,7 +543,11 @@ void mb8aa4181_dsp_device::decode(unit_state &u)
 			{
 				classify(p, i, p.ops[i]);
 				if (p.ops[i].type == OP_D_SELECT)
+				{
 					p.selectors |= 1 << i;
+					if (p.ops[i].drop_true && p.ops[i].drop_false)
+						p.paired |= p.ops[i].named;
+				}
 			}
 		}
 		const int index = u.packets.size();
@@ -860,6 +868,11 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = (w & 0x400) ? OP_C_MAX : OP_C_MIN;
 			op.s = make_source(p, w & 63, false);
 		}
+		else if ((w & 0x8e00) == 0x8a00)
+		{
+			op.type = OP_C_ABS_MAX;
+			op.s = make_source(p, w & 63, false);
+		}
 		else if ((w & 0x8fc0) == 0x8e00)
 		{
 			op.type = OP_C_COMPARE;
@@ -890,6 +903,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_FLOOR14;
 		else if ((w & 0x8ff8) == 0x8f50)
 			op.type = OP_C_FRACTION14;
+		else if ((w & 0x8fff) == 0x8f5c)
+			op.type = OP_C_FRAME;
 		else if ((w & 0x8ffc) == 0x8f58)
 		{
 			op.type = OP_C_SELECTOR;
@@ -926,13 +941,15 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_SCALE;
 			op.q = std::ldexp(1.0, 8 + int(op.y));
 		}
-		else if ((w & 0x8e38) == 0x8c10 || (w & 0x8e38) == 0x8c20)
+		else if ((w & 0x8e38) == 0x8c10)
 		{
 			op.type = OP_C_SCALE;
-			op.q = std::ldexp(1.0, (w & 0x8e38) == 0x8c10 ? int(op.y) : -int(op.y));
+			op.q = std::ldexp(1.0, int(op.y));
 			if (w == 0xfc90 || w == 0xfcd0)
 				op.flags |= F_FUNCTION;
 		}
+		else if ((w & 0x8e38) == 0x8c20)
+			op.type = OP_C_RIGHT_SHIFT;
 		break;
 	}
 
@@ -988,6 +1005,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		}
 		else if (low >= 0xd0 && low < 0xd8)
 			op.type = OP_D_CLEAR;
+		else if (low >= 0xd8 && low < 0xe0 && !(w >> 8))
+			op.type = OP_D_STEP;
 		else if (low == 0xe7)
 			op.type = OP_D_COUNTER;
 		else if (low == 0xf8)
@@ -1013,13 +1032,18 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			if (BIT(w, 4))
 				op.flags |= F_INDEXED;
 		}
+		else if ((w & 0x8fc0) == 0x0f00)
+		{
+			op.type = OP_E_CONSTANT;
+			op.value = 0xe000 | (w & 0x3f);
+		}
 		else if ((w & 0x8ff8) == 0x89b0)
 		{
 			const unsigned kind = (w >> 12) & 7;
 			if (op.y)
 			{
 				op.type = OP_E_PUBLISH;
-				op.value = kind == 3 ? 2 : kind == 4 ? 3 : op.y == 1 ? 1 : op.y == 2 ? 2 : 0;
+				op.value = kind == 1 ? 1 : (kind == 2 || kind == 3) ? 2 : (kind == 4 || kind == 5) ? 3 : 0;
 			}
 		}
 		else if ((w & 0x8ff8) == 0x89b8)
@@ -1109,6 +1133,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	double results[MAX_OPS];
 	u8 has_result = 0;
 	double arithmetic[2] = { 0.0, 0.0 };
+	bool arithmetic_counts[2] = { false, false };
 	u8 arithmetic_kind[2] = { 0, 0 };
 	u16 arithmetic_word[2] = { 0, 0 };
 	unsigned narithmetic = 0;
@@ -1165,9 +1190,12 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		case OP_B_SUM: value = r[y] + r[x] + get(op.s, r); break;
 		case OP_B_SQUARE: value = r[y] * r[y] / 4.0; break;
 		case OP_B_NEWTON:
-			value = r[d] * (2.0 - r[y] * u.reciprocal);
-			u.reciprocal *= 2.0 - r[y] * u.reciprocal;
+		{
+			const double scale = u.reciprocal != 0.0 ? 2.0 - r[y] * u.reciprocal : 2.0;
+			value = r[d] * scale;
+			u.reciprocal *= scale;
 			break;
+		}
 		case OP_B_MOVE: value = get(op.s, r); break;
 		case OP_B_DOUBLE: value = 2.0 * r[d] + get(op.t, r); break;
 		case OP_B_MUL: value = r[x] * get(op.s, r); break;
@@ -1212,6 +1240,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		}
 		case OP_C_MIN: value = std::min(sigma * r[x], get(op.s, r)); break;
 		case OP_C_MAX: value = std::max(sigma * r[x], get(op.s, r)); break;
+		case OP_C_ABS_MAX: value = std::max(std::fabs(r[x]), std::fabs(get(op.s, r))); break;
+		case OP_C_FRAME: value = double(m_frames & 0x3fffff) / 16384.0; break;
 		case OP_C_COMPARE:
 			value = r[d] + get(op.s, r);
 			is_test = true;
@@ -1250,13 +1280,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			}
 			const double k2 = std::floor(std::log2(v / (std::numbers::sqrt2 / 2.0)));
 			const double m = v / std::ldexp(1.0, int(k2));
-			if (m == 1.0)
-			{
-				unsupported(unitnum, p, op);
-				break;
-			}
 			sets[nsets++] = { u8(d), k2 };
-			sets[nsets++] = { u8(y), (m + 1.0) / (m - 1.0) };
+			sets[nsets++] = { u8(y), m != 1.0 ? (m + 1.0) / (m - 1.0) : std::numeric_limits<double>::infinity() };
 			break;
 		}
 		case OP_C_SIGN: value = double((r[y] > 0.0) - (r[y] < 0.0)); is_function = true; break;
@@ -1281,9 +1306,9 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		case OP_C_F3:
 		{
 			const double s = get(op.s, r);
-			value = (sigma < 0.0 ? -std::fabs(r[x]) : r[x]) + s;
+			value = sigma * std::fabs(r[x]) + s;
 			has_c_arith = true;
-			c_arith = sigma * std::fabs(r[x]) + s;
+			c_arith = value;
 			break;
 		}
 		case OP_C_UNARY0: value = r[d] + r[y]; is_test = true; break;
@@ -1307,6 +1332,12 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 				break;
 			}
 			value = std::ldexp(std::trunc(std::ldexp(r[x], 32)), int(e) - 32);
+			break;
+		}
+		case OP_C_RIGHT_SHIFT:
+		{
+			const double t = std::trunc(std::ldexp(r[x], 32));
+			value = std::fabs(t) < 0x1p62 ? std::ldexp(double(s64(t) >> y), -32) : std::ldexp(t, -32 - int(y));
 			break;
 		}
 
@@ -1355,6 +1386,10 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 				target = 7;
 			}
 			break;
+		case OP_D_STEP:
+			value = r[y] + 1.0 / 16384.0;
+			target = y;
+			break;
 		case OP_D_RETURN:
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
@@ -1377,6 +1412,10 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
 			break;
 		}
+		case OP_E_CONSTANT:
+			has = false;
+			loads[nloads++] = { u8(d), read_operand(unitnum, op.value) };
+			break;
 		case OP_E_PUBLISH:
 			has = false;
 			publications[npublications++] = { u8(op.value), u8(y - 1) };
@@ -1460,16 +1499,21 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			has_function = true;
 			function = value;
 		}
-		if ((op.kind == KIND_A || op.kind == KIND_B) && !(op.flags & F_MOVE))
+		if (op.kind == KIND_A || op.kind == KIND_B)
 		{
-			if (narithmetic < 2)
+			const bool counts = !(op.flags & F_MOVE);
+			if (counts || (BIT(p.paired, k) && (op.word & 0x30) == 0x30))
 			{
-				arithmetic[narithmetic] = value;
-				arithmetic_kind[narithmetic] = op.kind;
-				arithmetic_word[narithmetic] = op.word;
+				if (narithmetic < 2)
+				{
+					arithmetic[narithmetic] = value;
+					arithmetic_counts[narithmetic] = counts;
+					arithmetic_kind[narithmetic] = op.kind;
+					arithmetic_word[narithmetic] = op.word;
+				}
+				narithmetic++;
 			}
-			narithmetic++;
-			if (!has_first_arith)
+			if (counts && !has_first_arith)
 			{
 				has_first_arith = true;
 				first_arith = value;
@@ -1489,10 +1533,6 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		case STORE_CELL: set_cell(s.address, s.value); break;
 		}
 	}
-	for (unsigned i = 0; i < nselectors; i++)
-		u.sel[selector_sets[i].reg] = selector_sets[i].value;
-	if (step_index)
-		u.sel[0] += 1.0;
 	for (unsigned i = 0; i < nrequests; i++)
 	{
 		const store &q = requests[i];
@@ -1530,6 +1570,10 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			u.samples.push_back({ ((u32(u.sel[3]) & (SAMPLE_OWNERS - 1)) << 4) | q.address, cell(u32(address >> 2)) });
 		}
 	}
+	for (unsigned i = 0; i < nselectors; i++)
+		u.sel[selector_sets[i].reg] = selector_sets[i].value;
+	if (step_index)
+		u.sel[0] += 1.0;
 	for (unsigned i = 0; i < nloads; i++)
 		u.r[loads[i].reg] = loads[i].value;
 	for (unsigned i = 0; i < nsets; i++)
@@ -1576,7 +1620,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	else if (u.comparison_published)
 	{
 	}
-	else if (narithmetic > 1 && !(arithmetic_kind[0] == KIND_B && BIT(arithmetic_word[1], 9)))
+	else if (narithmetic > 1 && arithmetic_counts[1] && !(arithmetic_kind[0] == KIND_B && BIT(arithmetic_word[1], 9)))
 	{
 		has_comparison = true;
 		comparison = arithmetic[1];
