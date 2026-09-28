@@ -32,7 +32,7 @@ DEFINE_DEVICE_TYPE(MB8AA4181_DSP, mb8aa4181_dsp_device, "mb8aa4181_dsp", "Roland
 
 namespace {
 
-constexpr offs_t SHORT_MODE[2] = { 0x044 / 4, 0x088 / 4 };
+constexpr offs_t PROFILE[2] = { 0x044 / 4, 0x088 / 4 };
 constexpr offs_t FRAME_COUNT = 0x048 / 4;
 constexpr offs_t MEMORY_ADDRESS = 0x050 / 4;
 constexpr offs_t SWITCH_REQUEST[2] = { 0x054 / 4, 0x05c / 4 };
@@ -56,6 +56,8 @@ constexpr u32 FIELD_NUMERIC = 1 << 30;
 
 constexpr int NO_TRANSFER = -1;
 constexpr int RETURN = -2;
+
+enum : u8 { TRANSFER_JUMP, TRANSFER_ABSOLUTE, TRANSFER_CALL };
 
 double wrap(double x)
 {
@@ -185,7 +187,7 @@ void mb8aa4181_dsp_device::device_start()
 	save_item(NAME(m_port));
 	save_item(NAME(m_field));
 	save_item(NAME(m_flags));
-	save_item(NAME(m_short_moves));
+	save_item(NAME(m_effect_profile));
 	save_item(NAME(m_frame_start));
 	save_item(NAME(m_frames));
 	save_item(NAME(m_switch_queued));
@@ -199,7 +201,7 @@ void mb8aa4181_dsp_device::device_reset()
 	std::fill_n(m_port, 0x100, 0.0);
 	m_field = 0;
 	m_flags = 0;
-	m_short_moves = true;
+	m_effect_profile = true;
 	m_frames = 0;
 	m_switch_queued = m_switch_done = 0;
 	m_output_read = m_output_write = 0;
@@ -437,8 +439,8 @@ void mb8aa4181_dsp_device::host_write(offs_t offset, u32 data, u32 mem_mask)
 	COMBINE_DATA(&m_regs[offset]);
 	if (offset == FLAGS)
 		m_flags = m_regs[offset];
-	else if (offset == SHORT_MODE[0] || offset == SHORT_MODE[1])
-		m_short_moves = !(BIT(m_regs[SHORT_MODE[0]], 0) && BIT(m_regs[SHORT_MODE[1]], 0));
+	else if (offset == PROFILE[0] || offset == PROFILE[1])
+		m_effect_profile = !(BIT(m_regs[PROFILE[0]], 0) && BIT(m_regs[PROFILE[1]], 0));
 }
 
 u32 mb8aa4181_dsp_device::native_number(u32 data, unsigned bits)
@@ -1006,7 +1008,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		else if (low >= 0x80 && low < 0xc0)
 		{
 			const u32 offset = raw(p, w & 15, 2);
-			op.type = (low & 0xf0) == 0xa0 ? OP_D_CALL : OP_D_JUMP;
+			op.type = (low & 0xf0) == 0xa0 ? OP_D_CALL : (low & 0xf0) == 0x80 ? OP_D_ABSOLUTE : OP_D_JUMP;
 			op.value = ((low & 0xf0) == 0x90 ? p.pc + 2 * p.length + 2 * offset : 2 * offset) & 0xffff;
 		}
 		else if (low >= 0xc0 && low < 0xd0)
@@ -1104,7 +1106,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 	}
 }
 
-int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
+int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 {
 	unit_state &u = m_unit[unitnum];
 	double r[8];
@@ -1158,7 +1160,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 	publication publications[MAX_OPS];
 	unsigned npublications = 0;
 	int transfer = NO_TRANSFER;
-	call = false;
+	kind = TRANSFER_JUMP;
 
 	enum : u8 { STORE_OPERAND, STORE_SHORT, STORE_LOCAL, STORE_DIRECT, STORE_CELL };
 	enum : u8 { REQUEST_DELAY, REQUEST_TOKEN, REQUEST_SAMPLE };
@@ -1375,12 +1377,13 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			has = false;
 			break;
 		case OP_D_JUMP:
+		case OP_D_ABSOLUTE:
 		case OP_D_CALL:
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
 			{
 				transfer = op.value;
-				call = op.type == OP_D_CALL;
+				kind = op.type == OP_D_CALL ? TRANSFER_CALL : op.type == OP_D_ABSOLUTE ? TRANSFER_ABSOLUTE : TRANSFER_JUMP;
 			}
 			break;
 		case OP_D_NOTIFY:
@@ -1707,6 +1710,18 @@ void mb8aa4181_dsp_device::end_frame(unit_state &u)
 	u.samples.clear();
 }
 
+int mb8aa4181_dsp_device::transfer_index(unsigned unit, int target)
+{
+	const int index = m_unit[unit].index[(target >> 1) & (PRG_HALFWORDS - 1)];
+	if (index != -2)
+		return index;
+	const u32 key = 0x30000000 | (unit << 16) | target;
+	if (!m_unsupported.count(key))
+		LOGUNSUPPORTED("unit %u: transfer into a packet at %04x\n", unit, target);
+	m_unsupported[key] = true;
+	return -1;
+}
+
 void mb8aa4181_dsp_device::run_frame(unsigned unit)
 {
 	unit_state &u = m_unit[unit];
@@ -1718,18 +1733,22 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 	for (unsigned count = 0; index >= 0 && count < FRAME_PACKETS; count++)
 	{
 		const packet &p = u.packets[index];
-		bool call;
-		const int transfer = step(unit, p, call);
+		u8 kind;
+		const int transfer = step(unit, p, kind);
 		u.packets_run++;
 		if (!pending)
 		{
 			index = p.next;
-			if (transfer != NO_TRANSFER)
+			if (transfer == NO_TRANSFER)
+				continue;
+			if (kind == TRANSFER_ABSOLUTE && m_effect_profile)
 			{
-				pending = true;
-				pending_target = transfer;
-				pending_call = call;
+				index = transfer_index(unit, transfer);
+				continue;
 			}
+			pending = true;
+			pending_target = transfer;
+			pending_call = kind == TRANSFER_CALL;
 			continue;
 		}
 
@@ -1741,15 +1760,7 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 		}
 		if (pending_call && u.depth < STACK_DEPTH && p.next >= 0)
 			u.stack[u.depth++] = p.next;
-		index = u.index[(pending_target >> 1) & (PRG_HALFWORDS - 1)];
-		if (index == -2)
-		{
-			const u32 key = 0x30000000 | (unit << 16) | pending_target;
-			if (!m_unsupported.count(key))
-				LOGUNSUPPORTED("unit %u: transfer into a packet at %04x\n", unit, pending_target);
-			m_unsupported[key] = true;
-			index = -1;
-		}
+		index = transfer_index(unit, pending_target);
 	}
 	end_frame(u);
 }

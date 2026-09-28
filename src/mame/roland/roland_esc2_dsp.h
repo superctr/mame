@@ -75,7 +75,7 @@ private:
 		OP_C_FLOOR14, OP_C_FRACTION14, OP_C_SELECTOR, OP_C_ADD_SELECTOR, OP_C_F3, OP_C_ABS_MAX, OP_C_FRAME,
 		OP_C_UNARY0, OP_C_UNARY1, OP_C_UNARY2, OP_C_UNARY3, OP_C_UNARY4, OP_C_UNARY5, OP_C_UNARY6,
 		OP_C_SCALE, OP_C_SHIFT, OP_C_RIGHT_SHIFT, OP_C_FREXP, OP_C_SAVE, OP_C_RESTORE,
-		OP_D_SELECT, OP_D_ADDRESS, OP_D_ADDRESS_REGISTER, OP_D_JUMP, OP_D_CALL, OP_D_NOTIFY, OP_D_CLEAR, OP_D_COUNTER, OP_D_STEP, OP_D_RETURN,
+		OP_D_SELECT, OP_D_ADDRESS, OP_D_ADDRESS_REGISTER, OP_D_JUMP, OP_D_ABSOLUTE, OP_D_CALL, OP_D_NOTIFY, OP_D_CLEAR, OP_D_COUNTER, OP_D_STEP, OP_D_RETURN,
 		OP_E_OPERAND, OP_E_CONSTANT, OP_E_PUBLISH, OP_E_INDIRECT, OP_E_DELAY, OP_E_TOKEN, OP_E_SAMPLE, OP_E_REQUEST,
 		OP_E_LOCAL, OP_E_SHORT, OP_E_DIRECT, OP_E_PARAMETER, OP_E_TARGET
 	};
@@ -219,7 +219,7 @@ private:
 	std::unordered_map<offs_t, u32> m_regs;
 	u32 m_field;
 	u32 m_flags;
-	bool m_short_moves;
+	bool m_effect_profile;
 	u32 m_frames;
 	u8 m_switch_queued;
 	u8 m_switch_done;
@@ -258,12 +258,13 @@ private:
 	bool condition(const unit_state &u, u16 word) const;
 	double read_operand(unsigned unit, u16 address) const;
 	void write_operand(unsigned unit, u16 address, double value);
-	u32 short_index(const unit_state &u, u32 address) const { return (address + (m_short_moves ? u.origin : 0)) & (SHORT_WORDS - 1); }
+	u32 short_index(const unit_state &u, u32 address) const { return (address + (m_effect_profile ? u.origin : 0)) & (SHORT_WORDS - 1); }
 	double shortmem(const unit_state &u, u32 address) const { return u.shortmem[short_index(u, address)]; }
 	float cell(u32 address) const { return std::bit_cast<float>(m_memory[address & (MEMORY_CELLS - 1)]); }
 	void set_cell(u32 address, double value) { m_memory[address & (MEMORY_CELLS - 1)] = std::bit_cast<u32>(float(value)); }
 	u32 token_cell(const unit_state &u, double token) const;
-	int step(unsigned unit, const packet &p, bool &call);
+	int step(unsigned unit, const packet &p, u8 &kind);
+	int transfer_index(unsigned unit, int target);
 	void unsupported(unsigned unit, const packet &p, const operation &op);
 };
 
