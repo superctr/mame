@@ -18,6 +18,7 @@
 
 #include "cpu/armv7m/stm32f1.h"
 #include "machine/generic_spi_flash.h"
+#include "machine/timer.h"
 #include "bus/midi/midi.h"
 #include "video/hd44780.h"
 
@@ -45,6 +46,10 @@ public:
 		, m_steps(*this, "STEPS")
 		, m_keys(*this, "KEYS")
 		, m_select(*this, "SELECT")
+		, m_buttons(*this, "BUTTONS")
+		, m_tempo(*this, "TEMPO")
+		, m_leds(*this, "led%u", 1U)
+		, m_digits(*this, "digit%u", 0U)
 	{
 	}
 
@@ -75,10 +80,19 @@ private:
 	optional_ioport m_steps;
 	optional_ioport m_keys;
 	optional_ioport m_select;
+	optional_ioport m_buttons;
+	optional_ioport m_tempo;
+	output_finder<35> m_leds;
+	output_finder<4> m_digits;
 
 	u32 m_lcd_port = 0;
 	u8 m_mux_select = 0;
 	u16 m_key_rows = 0xffff;
+	u16 m_led_port = 0;
+	u16 m_led_shift[3]{};
+	u8 m_tempo_pos = 0;
+	u8 m_tempo_phase = 0;
+	s32 m_tempo_pending = 0;
 
 	void mem_map(address_map &map) ATTR_COLD;
 	void boutique(machine_config &config, u16 strap, const XTAL &audio) ATTR_COLD;
@@ -91,6 +105,11 @@ private:
 	u16 tr08_porta_r();
 	u32 tr08_port6_r();
 	u16 tr08_portd_r();
+	u16 tr09_portc_r();
+	u16 tr09_portd_r();
+	void tr09_porte_w(u16 data);
+	void tr09_led_row(unsigned row);
+	TIMER_DEVICE_CALLBACK_MEMBER(tr09_tempo_tick);
 	void lcd_port_w(u32 data);
 	void lcd_data_w(u8 data);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -119,6 +138,11 @@ void boutique_state::machine_start()
 	save_item(NAME(m_lcd_port));
 	save_item(NAME(m_mux_select));
 	save_item(NAME(m_key_rows));
+	save_item(NAME(m_led_port));
+	save_item(NAME(m_led_shift));
+	save_item(NAME(m_tempo_pos));
+	save_item(NAME(m_tempo_phase));
+	save_item(NAME(m_tempo_pending));
 
 	m_maincpu->exint_w<0>(1);
 	m_maincpu->exint_w<7>(1);
@@ -190,6 +214,78 @@ u16 boutique_state::tr08_portd_r()
 				data |= 1 << (9 - col);
 	}
 	return data;
+}
+
+u16 boutique_state::tr09_portc_r()
+{
+	return 0xe0ff | (bitswap<3>(m_buttons->read(), 5, 6, 7) << 10) | (BIT(0x3, m_tempo_phase) << 9) | (BIT(0x9, m_tempo_phase) << 8);
+}
+
+u16 boutique_state::tr09_portd_r()
+{
+	const u32 keys = m_keys->read();
+	u16 data = 0xf800 | bitswap<5>(m_buttons->read(), 0, 1, 2, 3, 4);
+	for (unsigned row = 0; row < 5; row++)
+	{
+		if (!BIT(m_key_rows, 15 - row))
+			continue;
+		for (unsigned col = 0; col < 6; col++)
+			if (!BIT(keys, col * 5 + row))
+				data |= 1 << (10 - col);
+	}
+	return data;
+}
+
+void boutique_state::tr09_porte_w(u16 data)
+{
+	m_mux_select = BIT(data, 4, 3);
+	if (BIT(data, 11) && !BIT(m_led_port, 11))
+		for (unsigned line = 0; line < 3; line++)
+			m_led_shift[line] = (m_led_shift[line] << 1) | BIT(data, 10 - line);
+	const u16 rising = data & ~m_led_port;
+	m_led_port = data;
+	for (unsigned row = 0; row < 4; row++)
+		if (BIT(rising, 12 + row))
+			tr09_led_row(row);
+}
+
+void boutique_state::tr09_led_row(unsigned row)
+{
+	const u16 main = ~m_led_shift[1];
+	const u16 panel = ~m_led_shift[2];
+	m_digits[row] = panel & 0xff;
+	if (row < 2)
+		for (unsigned col = 0; col < 8; col++)
+			m_leds[1 + row * 8 + col] = BIT(main, col);
+	else if (row == 2)
+		for (unsigned col = 0; col < 4; col++)
+			m_leds[17 + col] = BIT(main, 8 + col);
+	if (row < 3)
+		for (unsigned col = 0; col < 4; col++)
+			m_leds[21 + row * 4 + col] = BIT(panel, 8 + col);
+	else
+	{
+		m_leds[33] = BIT(panel, 8);
+		m_leds[34] = BIT(panel, 9);
+		m_leds[0] = BIT(panel, 10);
+	}
+}
+
+TIMER_DEVICE_CALLBACK_MEMBER(boutique_state::tr09_tempo_tick)
+{
+	const u8 pos = m_tempo->read();
+	m_tempo_pending += s8(pos - m_tempo_pos) * 4;
+	m_tempo_pos = pos;
+	if (m_tempo_pending > 0)
+	{
+		m_tempo_phase = (m_tempo_phase + 1) & 3;
+		m_tempo_pending--;
+	}
+	else if (m_tempo_pending < 0)
+	{
+		m_tempo_phase = (m_tempo_phase - 1) & 3;
+		m_tempo_pending++;
+	}
 }
 
 void boutique_state::lcd_port_w(u32 data)
@@ -508,6 +604,49 @@ static INPUT_PORTS_START(tr09)
 	PORT_ADJUSTER(128, "Bass Drum Attack") PORT_MINMAX(0, 255)
 	PORT_START("MUX31")
 	PORT_ADJUSTER(128, "Bass Drum Tune") PORT_MINMAX(0, 255)
+	PORT_START("KEYS")
+	PORT_BIT(0x00000001, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 1")
+	PORT_BIT(0x00000002, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 2")
+	PORT_BIT(0x00000004, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 3")
+	PORT_BIT(0x00000008, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 4")
+	PORT_BIT(0x00000010, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 5")
+	PORT_BIT(0x00000020, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 6")
+	PORT_BIT(0x00000040, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 7")
+	PORT_BIT(0x00000080, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 8")
+	PORT_BIT(0x00000100, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 9")
+	PORT_BIT(0x00000200, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 10")
+	PORT_BIT(0x00000400, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 11")
+	PORT_BIT(0x00000800, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 12")
+	PORT_BIT(0x00001000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 13")
+	PORT_BIT(0x00002000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 14")
+	PORT_BIT(0x00004000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 15")
+	PORT_BIT(0x00008000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Main Key 16")
+	PORT_BIT(0x00010000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Menu / Trigger Out")
+	PORT_BIT(0x00020000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Cycle/Guide")
+	PORT_BIT(0x00040000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Available Meas / Bank II")
+	PORT_BIT(0x00080000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Fwd / Bank I")
+	PORT_BIT(0x00100000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Back / Tap")
+	PORT_BIT(0x00200000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Tempo / Step")
+	PORT_BIT(0x00400000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Comp / Edit")
+	PORT_BIT(0x00800000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pattern Play 3")
+	PORT_BIT(0x01000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pattern Play 2")
+	PORT_BIT(0x02000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pattern Play 1")
+	PORT_BIT(0x04000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Track Play 4")
+	PORT_BIT(0x08000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Track Play 3")
+	PORT_BIT(0x10000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Track Play 2")
+	PORT_BIT(0x20000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Track Play 1")
+	PORT_START("BUTTONS")
+	PORT_BIT(0x0001, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Start")
+	PORT_BIT(0x0002, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Stop/Cont")
+	PORT_BIT(0x0004, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Last Step")
+	PORT_BIT(0x0008, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Scale")
+	PORT_BIT(0x0010, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Shuffle/Flam")
+	PORT_BIT(0x0020, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Clear")
+	PORT_BIT(0x0040, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Instrument Select")
+	PORT_BIT(0x0080, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Shift")
+	PORT_BIT(0x0100, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Enter / Total Accent")
+	PORT_START("TEMPO")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Tempo") PORT_SENSITIVITY(25) PORT_KEYDELTA(1)
 INPUT_PORTS_END
 
 void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
@@ -572,11 +711,16 @@ void boutique_state::tb03(machine_config &config)
 void boutique_state::tr09(machine_config &config)
 {
 	boutique(config, 0xfffd, 11.2896_MHz_XTAL);
-	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
+	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::tr09_porte_w));
 	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::tr09_panel_r<8>));
 	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::tr09_panel_r<9>));
 	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::tr09_panel_r<10>));
 	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::tr09_panel_r<11>));
+	m_subcpu->gpio_in_cb<2>().set(FUNC(boutique_state::tr09_portc_r));
+	m_subcpu->gpio_in_cb<3>().set(FUNC(boutique_state::tr09_portd_r));
+	m_subcpu->gpio_out_cb<3>().set([this] (u16 data) { m_key_rows = data; });
+	m_maincpu->gpio_in_cb<6>().set([this] () { return u32((1 << 3) | (BIT(m_buttons->read(), 8) << 21)); });
+	TIMER(config, "tempo").configure_periodic(FUNC(boutique_state::tr09_tempo_tick), attotime::from_msec(2));
 }
 
 void boutique_state::vp03(machine_config &config)
