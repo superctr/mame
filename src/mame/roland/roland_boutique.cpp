@@ -519,6 +519,8 @@ void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &aud
 	m_maincpu->gpio_out_cb<6>().set(FUNC(boutique_state::lcd_port_w));
 	m_maincpu->gpio_in_cb<6>().set_constant((1 << 21) | (1 << 3));
 	m_maincpu->adc_in_cb<2>().set([this] () { return u16(m_volume->read() * 0xfff / 100); });
+	m_maincpu->adc_in_cb<3>().set_constant(0xfff);
+	m_maincpu->adc_in_cb<4>().set_constant(0xfff);
 	m_maincpu->sot_cb<1>().set(FUNC(boutique_state::lcd_data_w));
 	m_maincpu->sfi_cs_cb().set(m_spiflash, FUNC(generic_spi_flash_device::cs_w));
 	m_maincpu->sfi_tx_cb().set(m_spiflash, FUNC(generic_spi_flash_device::write));
