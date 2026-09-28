@@ -18,7 +18,6 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <numbers>
 
 #define LOG_UNSUPPORTED (1U << 1)
@@ -146,6 +145,7 @@ void mb8aa4181_dsp_device::device_start()
 		save_item(NAME(u.r), i);
 		save_item(NAME(u.shadow), i);
 		save_item(NAME(u.reciprocal), i);
+		save_item(NAME(u.divisor), i);
 		save_item(NAME(u.sel), i);
 		save_item(NAME(u.shortmem), i);
 		save_item(NAME(u.local), i);
@@ -215,6 +215,7 @@ void mb8aa4181_dsp_device::device_reset()
 		std::fill_n(u.r, 8, 0.0);
 		std::fill_n(u.shadow, 8, 0.0);
 		u.reciprocal = 0.0;
+		u.divisor = 0.0;
 		std::fill_n(u.sel, 4, 0.0);
 		std::fill_n(u.shortmem, SHORT_WORDS, 0.0);
 		std::fill_n(u.local, SHORT_WORDS, 0.0);
@@ -901,7 +902,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		{
 			switch (function)
 			{
-			case 0: case 1: op.type = OP_C_SEED; break;
+			case 0: op.type = OP_C_SEED; break;
+			case 1: op.type = OP_C_RATIO; break;
 			case 3: op.type = OP_C_EXPONENT; break;
 			case 4: op.type = OP_C_LOGARITHM; break;
 			case 5: op.type = OP_C_SIGN; break;
@@ -1200,7 +1202,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		case OP_B_SQUARE: value = r[y] * r[y] / 4.0; break;
 		case OP_B_NEWTON:
 		{
-			const double scale = u.reciprocal != 0.0 ? 2.0 - r[y] * u.reciprocal : 2.0;
+			const double scale = u.reciprocal != 0.0 ? 2.0 - u.divisor * u.reciprocal : 2.0;
 			value = r[d] * scale;
 			u.reciprocal *= scale;
 			break;
@@ -1259,8 +1261,22 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			compare = value;
 			break;
 		case OP_C_SET: value = get(op.s, r); break;
-		case OP_C_RECIPROCAL: u.reciprocal = 1.0 / get(op.s, r); value = r[BIT(op.word, 3, 3)] * u.reciprocal; break;
-		case OP_C_SEED: value = u.reciprocal = 1.0 / r[y]; is_function = true; break;
+		case OP_C_RECIPROCAL:
+			u.divisor = get(op.s, r);
+			u.reciprocal = 1.0 / u.divisor;
+			value = r[BIT(op.word, 3, 3)] * u.reciprocal;
+			break;
+		case OP_C_SEED:
+			u.divisor = r[y];
+			value = u.reciprocal = 1.0 / u.divisor;
+			is_function = true;
+			break;
+		case OP_C_RATIO:
+			u.divisor = r[y] + 1.0;
+			u.reciprocal = 1.0 / u.divisor;
+			value = (r[y] - 1.0) * u.reciprocal;
+			is_function = true;
+			break;
 		case OP_C_EXPONENT:
 		{
 			const double k2 = std::floor(r[y] / std::numbers::ln2);
@@ -1290,7 +1306,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			const double k2 = std::floor(std::log2(v / (std::numbers::sqrt2 / 2.0)));
 			const double m = v / std::ldexp(1.0, int(k2));
 			sets[nsets++] = { u8(d), k2 };
-			sets[nsets++] = { u8(y), m != 1.0 ? (m + 1.0) / (m - 1.0) : std::numeric_limits<double>::infinity() };
+			sets[nsets++] = { u8(y), m };
 			break;
 		}
 		case OP_C_SIGN: value = double((r[y] > 0.0) - (r[y] < 0.0)); is_function = true; break;
