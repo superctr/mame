@@ -475,17 +475,17 @@ void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &aud
 
 void boutique_state::jp08(machine_config &config)
 {
-	boutique(config, 0xfff9, 24.576_MHz_XTAL);
+	boutique(config, 0xfff9, 22.5792_MHz_XTAL);
 }
 
 void boutique_state::ju06(machine_config &config)
 {
-	boutique(config, 0xfffd, 24.576_MHz_XTAL);
+	boutique(config, 0xfffd, 22.5792_MHz_XTAL);
 }
 
 void boutique_state::jx03(machine_config &config)
 {
-	boutique(config, 0xfffb, 24.576_MHz_XTAL);
+	boutique(config, 0xfffb, 22.5792_MHz_XTAL);
 }
 
 void boutique_state::tb03(machine_config &config)
@@ -599,9 +599,9 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(2015, jp08,  0, 0, jp08,  d05,   boutique_state, init_boutique, "Roland", "JP-08 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "JU-06 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2015, jp08,  0, 0, jp08,  d05,   boutique_state, init_boutique, "Roland", "JP-08 Synthesizer Module", MACHINE_NOT_WORKING)
+SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "JU-06 Synthesizer Module", MACHINE_NOT_WORKING)
+SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2016, tb03,  0, 0, tb03,  d05,   boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(2016, tr09,  0, 0, tr09,  d05,   boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "VP-03 Vocoder", MACHINE_NOT_WORKING)
