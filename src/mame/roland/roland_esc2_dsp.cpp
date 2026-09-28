@@ -902,11 +902,6 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_ADD_SELECTOR;
 			op.y = w & 3;
 		}
-		else if ((w & 0x8f00) == 0x0f00)
-		{
-			op.type = OP_C_ADD;
-			op.s = make_source(p, w & 63, false);
-		}
 		else if (!BIT(w, 15) && f == 3)
 		{
 			op.type = OP_C_F3;
@@ -917,10 +912,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			if (function < 7)
 				op.type = OP_C_UNARY0 + function;
 		}
-		else if ((w & 0x8e00) == 0x8c00 && ((w & 0x3f) == 0x28 || (w & 0x3f) == 0x30))
+		else if ((w & 0x8e38) == 0x8c28 || (w & 0x8e38) == 0x8c30)
 		{
 			op.type = OP_C_SCALE;
-			op.q = (w & 0x3f) == 0x28 ? 1.0 / 256.0 : 1.0 / 65536.0;
+			op.q = std::ldexp(1.0, -((w & 0x38) == 0x28 ? 8 : 16) - int(w & 7));
 		}
 		else if ((w & 0x8e38) == 0x8c08)
 			op.type = OP_C_SHIFT;
@@ -1267,16 +1262,12 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			sets[nsets++] = { u8(d), u.shadow[d] };
 			has = false;
 			break;
-		case OP_C_ADD:
-			value = r[d] + get(op.s, r);
-			is_test = true;
-			break;
 		case OP_C_F3:
 		{
 			const double s = get(op.s, r);
-			value = sigma * r[x] + s;
+			value = (sigma < 0.0 ? -std::fabs(r[x]) : r[x]) + s;
 			has_c_arith = true;
-			c_arith = std::fabs(r[x]) + s;
+			c_arith = sigma * std::fabs(r[x]) + s;
 			break;
 		}
 		case OP_C_UNARY0: value = r[d] + r[y]; is_test = true; break;
