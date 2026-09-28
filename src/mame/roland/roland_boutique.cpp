@@ -2,8 +2,8 @@
 // copyright-holders:superctr
 /***************************************************************************
 
-    Roland Boutique: first generation (JP-08, JU-06, JX-03), second
-    (TB-03, TR-09, VP-03) and third (D-05, SH-01A, TR-08)
+    Roland Boutique: first generation (JP-08, JU-06, JX-03) and the JU-06A,
+    second (TB-03, TR-09, VP-03), third (D-05, SH-01A, TR-08) and the TR-06
 
     One firmware serves each generation: an ESC2 (MB8AA4181) booting from a
     4 MiB serial flash, SDRAM on its external bus, and an STM32F103-class
@@ -51,12 +51,14 @@ public:
 	void jp08(machine_config &config) ATTR_COLD;
 	void ju06(machine_config &config) ATTR_COLD;
 	void jx03(machine_config &config) ATTR_COLD;
+	void ju06a(machine_config &config) ATTR_COLD;
 	void tb03(machine_config &config) ATTR_COLD;
 	void tr09(machine_config &config) ATTR_COLD;
 	void vp03(machine_config &config) ATTR_COLD;
 	void d05(machine_config &config) ATTR_COLD;
 	void sh01a(machine_config &config) ATTR_COLD;
 	void tr08(machine_config &config) ATTR_COLD;
+	void tr06(machine_config &config) ATTR_COLD;
 
 	void init_boutique() ATTR_COLD;
 
@@ -488,6 +490,11 @@ void boutique_state::jx03(machine_config &config)
 	boutique(config, 0xfffb, 22.5792_MHz_XTAL);
 }
 
+void boutique_state::ju06a(machine_config &config)
+{
+	boutique(config, 0xfff9, 22.5792_MHz_XTAL);
+}
+
 void boutique_state::tb03(machine_config &config)
 {
 	boutique(config, 0xfff9, 24.576_MHz_XTAL);
@@ -550,6 +557,19 @@ void boutique_state::tr08(machine_config &config)
 	m_subcpu->gpio_out_cb<3>().set([this] (u16 data) { m_key_rows = data; });
 }
 
+void boutique_state::tr06(machine_config &config)
+{
+	boutique(config, 0xfff7, 12.288_MHz_XTAL);
+}
+
+ROM_START(ju06a)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.02 update image
+	ROM_LOAD("bq_102.bin", 0, 0x400000, BAD_DUMP CRC(e33cf272) SHA1(dfd5b42d8c8646a5253258de01fe2d578c792351))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
 ROM_START(jp08)
 	ROM_REGION32_LE(0x400000, "flash", 0)
 	// the 1.21 update image
@@ -596,15 +616,25 @@ ROM_START(tr08)
 	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
 ROM_END
 
+ROM_START(tr06)
+	ROM_REGION32_LE(0x400000, "flash", 0)
+	// the 1.02 update image
+	ROM_LOAD("bq5_102.bin", 0, 0x400000, BAD_DUMP CRC(38f7bfe0) SHA1(f823da66bb04e1bdda96d848f283835bbd2315a0))
+
+	ROM_REGION32_LE(0x20000, "subcpu", ROMREGION_ERASEFF)
+ROM_END
+
 } // anonymous namespace
 
 
 SYST(2015, jp08,  0, 0, jp08,  d05,   boutique_state, init_boutique, "Roland", "JP-08 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "JU-06 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING)
+SYST(2019, ju06a, 0, 0, ju06a, d05,   boutique_state, init_boutique, "Roland", "JU-06A Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2016, tb03,  0, 0, tb03,  d05,   boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(2016, tr09,  0, 0, tr09,  d05,   boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "VP-03 Vocoder", MACHINE_NOT_WORKING)
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, tr08,  0, 0, tr08,  tr08, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)
+SYST(2020, tr06,  0, 0, tr06,  d05,   boutique_state, init_boutique, "Roland", "TR-06 Drumatix", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
