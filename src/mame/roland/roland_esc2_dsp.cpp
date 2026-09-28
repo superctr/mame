@@ -1218,7 +1218,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			compare = value;
 			break;
 		case OP_C_SET: value = get(op.s, r); break;
-		case OP_C_RECIPROCAL: u.reciprocal = 1.0 / get(op.s, r); value = r[d] * u.reciprocal; break;
+		case OP_C_RECIPROCAL: u.reciprocal = 1.0 / get(op.s, r); value = r[BIT(op.word, 3, 3)] * u.reciprocal; break;
 		case OP_C_SEED: value = u.reciprocal = 1.0 / r[y]; is_function = true; break;
 		case OP_C_EXPONENT:
 		{
