@@ -917,8 +917,15 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_SCALE;
 			op.q = std::ldexp(1.0, -((w & 0x38) == 0x28 ? 8 : 16) - int(w & 7));
 		}
+		else if ((w & 0x8e38) == 0x8c00)
+			op.type = OP_C_FREXP;
 		else if ((w & 0x8e38) == 0x8c08)
 			op.type = OP_C_SHIFT;
+		else if ((w & 0x8e38) == 0x8c18)
+		{
+			op.type = OP_C_SCALE;
+			op.q = std::ldexp(1.0, 8 + int(op.y));
+		}
 		else if ((w & 0x8e38) == 0x8c10 || (w & 0x8e38) == 0x8c20)
 		{
 			op.type = OP_C_SCALE;
@@ -1223,6 +1230,15 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			has = false;
 			break;
 		}
+		case OP_C_FREXP:
+		{
+			int exponent;
+			const double mantissa = std::frexp(r[x], &exponent);
+			sets[nsets++] = { u8(d), mantissa };
+			sets[nsets++] = { u8(y), double(exponent) };
+			has = false;
+			break;
+		}
 		case OP_C_LOGARITHM:
 		{
 			has = false;
@@ -1444,7 +1460,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 			has_function = true;
 			function = value;
 		}
-		if (op.kind == KIND_A || op.kind == KIND_B)
+		if ((op.kind == KIND_A || op.kind == KIND_B) && !(op.flags & F_MOVE))
 		{
 			if (narithmetic < 2)
 			{
@@ -1453,7 +1469,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 				arithmetic_word[narithmetic] = op.word;
 			}
 			narithmetic++;
-			if (!(op.flags & F_MOVE) && !has_first_arith)
+			if (!has_first_arith)
 			{
 				has_first_arith = true;
 				first_arith = value;
