@@ -87,6 +87,7 @@ private:
 	void subcpu_porte_w(u16 data);
 	template <unsigned Ch> u16 panel_r();
 	template <unsigned Ch> u16 panel_level_r();
+	template <unsigned Ch> u16 tr09_panel_r();
 	u16 tr08_porta_r();
 	u32 tr08_port6_r();
 	u16 tr08_portd_r();
@@ -152,6 +153,13 @@ u16 boutique_state::panel_level_r()
 		port = m_mux[(Ch - 6) * 8 + m_mux_select].target();
 	else
 		port = m_knob[Ch - 10].target();
+	return port ? (port->read() << 4) | 8 : 0;
+}
+
+template <unsigned Ch>
+u16 boutique_state::tr09_panel_r()
+{
+	ioport_port *const port = m_mux[(Ch - 8) * 8 + m_mux_select].target();
 	return port ? (port->read() << 4) | 8 : 0;
 }
 
@@ -443,6 +451,65 @@ static INPUT_PORTS_START(tr08)
 	PORT_CONFSETTING(0xb, "Closed Hi-Hat")
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(tr09)
+	PORT_INCLUDE(d05)
+
+	PORT_START("MUX0")
+	PORT_ADJUSTER(128, "Ride Cymbal Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX1")
+	PORT_ADJUSTER(160, "Ride Cymbal Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX2")
+	PORT_ADJUSTER(128, "Crash Cymbal Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX8")
+	PORT_ADJUSTER(160, "Crash Cymbal Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX9")
+	PORT_ADJUSTER(128, "Open Hi-Hat Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX10")
+	PORT_ADJUSTER(160, "Hi-Hat Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX11")
+	PORT_ADJUSTER(128, "Closed Hi-Hat Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX12")
+	PORT_ADJUSTER(160, "Hand Clap Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX13")
+	PORT_ADJUSTER(160, "Rim Shot Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX14")
+	PORT_ADJUSTER(128, "High Tom Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX15")
+	PORT_ADJUSTER(160, "High Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX16")
+	PORT_ADJUSTER(128, "High Tom Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX17")
+	PORT_ADJUSTER(128, "Mid Tom Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX18")
+	PORT_ADJUSTER(160, "Mid Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX19")
+	PORT_ADJUSTER(128, "Mid Tom Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX20")
+	PORT_ADJUSTER(128, "Low Tom Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX21")
+	PORT_ADJUSTER(160, "Low Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX22")
+	PORT_ADJUSTER(128, "Low Tom Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX23")
+	PORT_ADJUSTER(128, "Snare Drum Snappy") PORT_MINMAX(0, 255)
+	PORT_START("MUX24")
+	PORT_ADJUSTER(160, "Snare Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX25")
+	PORT_ADJUSTER(128, "Snare Drum Tone") PORT_MINMAX(0, 255)
+	PORT_START("MUX26")
+	PORT_ADJUSTER(128, "Snare Drum Tune") PORT_MINMAX(0, 255)
+	PORT_START("MUX27")
+	PORT_ADJUSTER(128, "Bass Drum Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX28")
+	PORT_ADJUSTER(160, "Bass Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX29")
+	PORT_ADJUSTER(160, "Accent") PORT_MINMAX(0, 255)
+	PORT_START("MUX30")
+	PORT_ADJUSTER(128, "Bass Drum Attack") PORT_MINMAX(0, 255)
+	PORT_START("MUX31")
+	PORT_ADJUSTER(128, "Bass Drum Tune") PORT_MINMAX(0, 255)
+INPUT_PORTS_END
+
 void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
 {
 	MB8AA4181(config, m_maincpu, 156'000'000);
@@ -503,6 +570,11 @@ void boutique_state::tb03(machine_config &config)
 void boutique_state::tr09(machine_config &config)
 {
 	boutique(config, 0xfffd, 11.2896_MHz_XTAL);
+	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
+	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::tr09_panel_r<8>));
+	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::tr09_panel_r<9>));
+	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::tr09_panel_r<10>));
+	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::tr09_panel_r<11>));
 }
 
 void boutique_state::vp03(machine_config &config)
@@ -632,7 +704,7 @@ SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "
 SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2019, ju06a, 0, 0, ju06a, d05,   boutique_state, init_boutique, "Roland", "JU-06A Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2016, tb03,  0, 0, tb03,  d05,   boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(2016, tr09,  0, 0, tr09,  d05,   boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, tr09,  0, 0, tr09,  tr09,  boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING)
 SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "VP-03 Vocoder", MACHINE_NOT_WORKING)
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
