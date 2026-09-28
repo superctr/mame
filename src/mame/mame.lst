@@ -40446,6 +40446,9 @@ sc88vl
 sc88pro
 vegspro
 
+@source:roland/roland_system1.cpp
+system1
+
 @source:roland/roland_tb303.cpp
 tb303
 
