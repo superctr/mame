@@ -53,6 +53,7 @@ private:
 	static constexpr unsigned DRP_ENTRIES = 0x400;
 	static constexpr unsigned SHORT_WORDS = 0x2000;
 	static constexpr unsigned BUS_WORDS = 0x200;
+	static constexpr unsigned FIXED_WORDS = 0x200;
 	static constexpr unsigned SLOTS = 0x200;
 	static constexpr unsigned SAMPLE_OWNERS = 0x2000;
 	static constexpr unsigned MEMORY_CELLS = 0x800000;
@@ -165,6 +166,7 @@ private:
 		double shortmem[SHORT_WORDS];
 		double local[SHORT_WORDS];
 		double bus[BUS_WORDS];
+		double fixed[FIXED_WORDS];
 		double slot[SLOTS];
 		double requested[SLOTS];
 		u8 slot_valid[SLOTS];

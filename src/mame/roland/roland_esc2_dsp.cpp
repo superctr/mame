@@ -150,6 +150,7 @@ void mb8aa4181_dsp_device::device_start()
 		save_item(NAME(u.shortmem), i);
 		save_item(NAME(u.local), i);
 		save_item(NAME(u.bus), i);
+		save_item(NAME(u.fixed), i);
 		save_item(NAME(u.slot), i);
 		save_item(NAME(u.requested), i);
 		save_item(NAME(u.slot_valid), i);
@@ -218,6 +219,7 @@ void mb8aa4181_dsp_device::device_reset()
 		std::fill_n(u.shortmem, SHORT_WORDS, 0.0);
 		std::fill_n(u.local, SHORT_WORDS, 0.0);
 		std::fill_n(u.bus, BUS_WORDS, 0.0);
+		std::fill_n(u.fixed, FIXED_WORDS, 0.0);
 		std::fill_n(u.slot, SLOTS, 0.0);
 		std::fill_n(u.requested, SLOTS, 0.0);
 		std::fill_n(u.slot_valid, SLOTS, 0);
@@ -620,6 +622,8 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 	case 0x2:
 		if (address < 0x2200)
 			return u.bus[(u.origin + address) & (BUS_WORDS - 1)];
+		if (address < 0x2200 + FIXED_WORDS)
+			return u.fixed[address - 0x2200];
 		break;
 	case 0x4:
 		if (address < 0x4200)
@@ -671,6 +675,11 @@ void mb8aa4181_dsp_device::write_operand(unsigned unit, u16 address, double valu
 		if (address < 0x2200)
 		{
 			u.bus[(u.origin + address) & (BUS_WORDS - 1)] = value;
+			return;
+		}
+		if (address < 0x2200 + FIXED_WORDS)
+		{
+			u.fixed[address - 0x2200] = value;
 			return;
 		}
 		break;
@@ -1400,7 +1409,9 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, bool &call)
 		{
 			has = false;
 			u32 address = op.value;
-			if (op.flags & F_INDEXED)
+			if ((op.flags & F_INDEXED) && BIT(address, 11))
+				address = ((address & ~0x800) + s32(u.sel[2])) & 0xffff;
+			else if (op.flags & F_INDEXED)
 			{
 				address = (address + s32(u.sel[0])) & 0xffff;
 				if ((op.value & 0xf000) == 0xb000)
