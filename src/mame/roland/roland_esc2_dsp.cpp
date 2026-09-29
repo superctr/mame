@@ -696,6 +696,8 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 			return 0.0;
 		if (address <= 0xe021)
 			return std::ldexp(1.0, int(address & 0xff) - 0x21);
+		if (address == 0xe043)
+			return double(u.packets_run & 0xfff) / 4096.0;
 		break;
 	}
 	if (!m_unsupported.count(0x10000000 | address))
