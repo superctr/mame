@@ -57,7 +57,7 @@ constexpr u32 FIELD_NUMERIC = 1 << 30;
 constexpr int NO_TRANSFER = -1;
 constexpr int RETURN = -2;
 
-enum : u8 { TRANSFER_JUMP, TRANSFER_ABSOLUTE, TRANSFER_CALL };
+enum : u8 { TRANSFER_RETURN, TRANSFER_JUMP, TRANSFER_CALL };
 
 double wrap(double x)
 {
@@ -1008,7 +1008,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		else if (low >= 0x80 && low < 0xc0)
 		{
 			const u32 offset = raw(p, w & 15, 2);
-			op.type = (low & 0xf0) == 0xa0 ? OP_D_CALL : (low & 0xf0) == 0x80 ? OP_D_ABSOLUTE : OP_D_JUMP;
+			op.type = (low & 0xf0) == 0xa0 ? OP_D_CALL : OP_D_JUMP;
 			op.value = ((low & 0xf0) == 0x90 ? p.pc + 2 * p.length + 2 * offset : 2 * offset) & 0xffff;
 		}
 		else if (low >= 0xc0 && low < 0xd0)
@@ -1160,7 +1160,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 	publication publications[MAX_OPS];
 	unsigned npublications = 0;
 	int transfer = NO_TRANSFER;
-	kind = TRANSFER_JUMP;
+	kind = TRANSFER_RETURN;
 
 	enum : u8 { STORE_OPERAND, STORE_SHORT, STORE_LOCAL, STORE_DIRECT, STORE_CELL };
 	enum : u8 { REQUEST_DELAY, REQUEST_TOKEN, REQUEST_SAMPLE };
@@ -1377,13 +1377,12 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			has = false;
 			break;
 		case OP_D_JUMP:
-		case OP_D_ABSOLUTE:
 		case OP_D_CALL:
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
 			{
 				transfer = op.value;
-				kind = op.type == OP_D_CALL ? TRANSFER_CALL : op.type == OP_D_ABSOLUTE ? TRANSFER_ABSOLUTE : TRANSFER_JUMP;
+				kind = op.type == OP_D_CALL ? TRANSFER_CALL : TRANSFER_JUMP;
 			}
 			break;
 		case OP_D_NOTIFY:
@@ -1741,7 +1740,7 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 			index = p.next;
 			if (transfer == NO_TRANSFER)
 				continue;
-			if (kind == TRANSFER_ABSOLUTE && u.moving)
+			if (kind == TRANSFER_JUMP && u.moving)
 			{
 				index = transfer_index(unit, transfer);
 				continue;
