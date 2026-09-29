@@ -188,8 +188,9 @@ void ve500_state::ve500(machine_config &config)
 	SPEAKER(config, "speaker", 2).front();
 	mb8aa4181_dsp_device &dsp = *m_maincpu->subdevice<mb8aa4181_dsp_device>("dsp");
 	dsp.set_clock(24.576_MHz_XTAL);
-	dsp.set_audio_inputs(true);
-	MICROPHONE(config, "mic", 1).front_center().add_route(0, dsp, 1.0, 1);
+	dsp.set_audio_inputs(2);
+	MICROPHONE(config, "mic", 1).front_center().add_route(0, dsp, 1.0, 0).add_route(0, dsp, 85.0 / 7.0, 1);
+	MICROPHONE(config, "inst", 1).front_center().add_route(0, dsp, 1.0, 2).add_route(0, dsp, 1.0 / 0.0701531, 3);
 	dsp.add_route(0, "speaker", 1.0, 0);
 	dsp.add_route(1, "speaker", 1.0, 1);
 
