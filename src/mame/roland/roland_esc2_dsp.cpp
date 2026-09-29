@@ -650,7 +650,7 @@ double mb8aa4181_dsp_device::number(const packet &p, unsigned offset, unsigned w
 
 u32 mb8aa4181_dsp_device::token_cell(const unit_state &u, double token) const
 {
-	return u32(s64(std::floor(token * 16384.0)) + s64(std::floor(u.sel[1])));
+	return u32(s64(std::floor(token * 16384.0)) + s64(std::floor(u.sel[1]))) + (u.moving ? u.origin : 0);
 }
 
 double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
@@ -1727,15 +1727,15 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 	else if (u.comparison_published)
 	{
 	}
-	else if (narithmetic > 1 && arithmetic_counts[1] && !(arithmetic_kind[0] == KIND_B && BIT(arithmetic_word[1], 9)))
-	{
-		has_comparison = true;
-		comparison = arithmetic[1];
-	}
 	else if (has_c_arith && !tested)
 	{
 		has_comparison = true;
 		comparison = c_arith;
+	}
+	else if (narithmetic > 1 && arithmetic_counts[1] && !(arithmetic_kind[0] == KIND_B && BIT(arithmetic_word[1], 9)))
+	{
+		has_comparison = true;
+		comparison = arithmetic[1];
 	}
 
 	u.comp.push(has_comparison, comparison);
