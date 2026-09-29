@@ -30,6 +30,7 @@ public:
 	mb8aa4181_dsp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto irq_cb(unsigned n) { return m_irq_cb[n].bind(); }
+	void set_port_link(mb8aa4181_dsp_device &link) { m_port_link = &link; }
 
 	u32 read(offs_t offset, u32 mem_mask);
 	void write(offs_t offset, u32 data, u32 mem_mask);
@@ -217,6 +218,9 @@ private:
 	std::unique_ptr<u32[]> m_memory;
 	double m_shared[0x100];
 	double m_port[0x100];
+	mb8aa4181_dsp_device *m_port_link = nullptr;
+
+	double port(unsigned index) const { return (m_port_link && index >= 6) ? m_port_link->m_port[index] : m_port[index]; }
 	std::unordered_map<offs_t, u32> m_regs;
 	u32 m_field;
 	u32 m_flags;

@@ -641,7 +641,7 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 		break;
 	case 0x6:
 		if (address < 0x6100)
-			return m_port[address & 0xff];
+			return port(address & 0xff);
 		break;
 	case 0xa: case 0xb:
 		if (address < 0xa100)
