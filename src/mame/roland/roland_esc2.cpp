@@ -42,8 +42,9 @@ constexpr unsigned IRQ_SFI = 4;
 constexpr u32 MFS_EXT_CLOCK = 6'000'000;
 
 constexpr unsigned IRQ_DUALTIMER = 26;
+constexpr unsigned IRQ_PTIMER = 100;
 constexpr unsigned IRQ_MFS = 64;
-constexpr unsigned IRQ_ADC = 128;
+constexpr unsigned IRQ_ADC[2] = { 128, 129 };
 constexpr unsigned IRQ_USB_RX = 54;
 constexpr unsigned IRQ_USB_TX[2] = { 55, 56 };
 constexpr unsigned IRQ_EVENT[8] = { 47, 49, 50, 51, 62, 63, 96, 97 };
@@ -696,8 +697,9 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x40025000, 0x40025fff).rw(FUNC(mb8aa4181_device::dualtimer_r), FUNC(mb8aa4181_device::dualtimer_w));
 	for (unsigned i = 0; i < 8; i++)
 		map(0x40028000 + 0x400 * i, 0x400283ff + 0x400 * i).rw(m_mfs[i], FUNC(mb8aa4181_mfs_device::read), FUNC(mb8aa4181_mfs_device::write));
-	map(0x4002c000, 0x4002c03f).rw(FUNC(mb8aa4181_device::adc_r), FUNC(mb8aa4181_device::adc_w));
+	map(0x4002c000, 0x4002c2ff).rw(FUNC(mb8aa4181_device::adc_r), FUNC(mb8aa4181_device::adc_w));
 	map(0x4002d000, 0x4002d03f).rw(FUNC(mb8aa4181_device::gpio_r), FUNC(mb8aa4181_device::gpio_w));
+	map(0x4002e000, 0x4002e03f).rw(FUNC(mb8aa4181_device::ptimer_r), FUNC(mb8aa4181_device::ptimer_w));
 	map(0x4002de20, 0x4002de3f).w(FUNC(mb8aa4181_device::event_w));
 	map(0x4002dfec, 0x4002dfef).lr32(NAME([] () { return BOOT_SERIAL_FLASH; }));
 	map(0x40100000, 0x4017ffff).rw(m_dsp, FUNC(mb8aa4181_dsp_device::read), FUNC(mb8aa4181_dsp_device::write));
@@ -710,7 +712,10 @@ void mb8aa4181_device::device_start()
 
 	for (int i = 0; i < 2; i++)
 		m_timer[i] = timer_alloc(FUNC(mb8aa4181_device::dualtimer_expired), this);
-	m_adc_timer = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
+	for (int i = 0; i < 4; i++)
+		m_ptimer[i] = timer_alloc(FUNC(mb8aa4181_device::ptimer_expired), this);
+	m_adc_timer[0] = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
+	m_adc_timer[1] = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
 	m_sfi_timer = timer_alloc(FUNC(mb8aa4181_device::sfi_done), this);
 	m_remap = 0;
 	m_system_reset = false;
@@ -726,10 +731,15 @@ void mb8aa4181_device::device_start()
 	save_item(NAME(m_adc_config));
 	save_item(NAME(m_adc_status));
 	save_item(NAME(m_adc_data));
+	save_item(NAME(m_adc_scan));
 	save_item(NAME(m_timer_load));
 	save_item(NAME(m_timer_bgload));
 	save_item(NAME(m_timer_ctrl));
 	save_item(NAME(m_timer_int));
+	save_item(NAME(m_ptimer_load));
+	save_item(NAME(m_ptimer_ctrl));
+	save_item(NAME(m_ptimer_count));
+	save_item(NAME(m_ptimer_start));
 	save_item(NAME(m_sfi));
 	save_item(NAME(m_exint));
 	save_item(NAME(m_exint_level));
@@ -773,9 +783,12 @@ void mb8aa4181_device::device_reset()
 	m_usb_rx_length = m_usb_rx_position = 0;
 	m_usb_rx_pending = false;
 	std::fill_n(m_converter, 4, 0.0);
-	m_adc_ctrl = m_adc_config = m_adc_status = 0;
+	m_adc_ctrl = m_adc_config = 0;
+	std::fill_n(m_adc_status, 2, 0);
 	std::fill_n(m_adc_data, 8, 0);
-	m_adc_timer->adjust(attotime::never);
+	std::fill_n(m_adc_scan, std::size(m_adc_scan), 0);
+	m_adc_timer[0]->adjust(attotime::never);
+	m_adc_timer[1]->adjust(attotime::never);
 	for (int i = 0; i < 8; i++)
 	{
 		m_gpio_out[i] = 0;
@@ -788,6 +801,14 @@ void mb8aa4181_device::device_reset()
 		m_timer_ctrl[i] = 0x20;
 		m_timer_int[i] = false;
 		m_timer[i]->adjust(attotime::never);
+	}
+	for (int i = 0; i < 4; i++)
+	{
+		m_ptimer_load[i] = 0;
+		m_ptimer_ctrl[i] = 0;
+		m_ptimer_count[i] = 0;
+		m_ptimer_start[i] = attotime::zero;
+		m_ptimer[i]->adjust(attotime::never);
 	}
 
 	cortex_m3_device::device_reset();
@@ -942,11 +963,21 @@ u32 mb8aa4181_device::timebase_r(offs_t offset)
 
 TIMER_CALLBACK_MEMBER(mb8aa4181_device::adc_done)
 {
-	for (int i = 0; i < 8; i++)
-		m_adc_data[i] = m_adc_in_cb[i]() & 0xfff;
-	m_adc_ctrl &= ~0x400;
-	m_adc_status = 1;
-	set_irq_line(IRQ_ADC, ASSERT_LINE);
+	if (param)
+	{
+		const unsigned count = 8 * ((m_adc_config >> 8) & 0xf);
+		for (unsigned i = 0; i < count; i++)
+			m_adc_scan[i] = (m_adc_in_cb[i & 7]() & 0xfff) >> 2;
+		m_adc_ctrl &= ~0x800;
+	}
+	else
+	{
+		for (int i = 0; i < 8; i++)
+			m_adc_data[i] = m_adc_in_cb[i]() & 0xfff;
+		m_adc_ctrl &= ~0x400;
+	}
+	m_adc_status[param] = 1;
+	set_irq_line(IRQ_ADC[param], ASSERT_LINE);
 }
 
 u32 mb8aa4181_device::converter_r(offs_t offset)
@@ -982,11 +1013,13 @@ void mb8aa4181_device::converter_w(offs_t offset, u32 data, u32 mem_mask)
 
 u32 mb8aa4181_device::adc_r(offs_t offset)
 {
+	if (offset >= 0x40)
+		return offset - 0x40 < std::size(m_adc_scan) ? m_adc_scan[offset - 0x40] : 0;
 	switch (offset)
 	{
 	case 0: return m_adc_ctrl;
 	case 1: return m_adc_config;
-	case 2: return m_adc_status;
+	case 2: case 3: return m_adc_status[offset - 2];
 	case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: return m_adc_data[offset - 4];
 	default: return 0;
 	}
@@ -998,15 +1031,16 @@ void mb8aa4181_device::adc_w(offs_t offset, u32 data, u32 mem_mask)
 	{
 	case 0:
 		COMBINE_DATA(&m_adc_ctrl);
-		if (BIT(m_adc_ctrl, 10) && BIT(m_adc_ctrl, 8) && m_adc_timer->remaining().is_never())
-			m_adc_timer->adjust(attotime::from_usec(8));
+		for (int i = 0; i < 2; i++)
+			if (BIT(m_adc_ctrl, 10 + i) && BIT(m_adc_ctrl, 8) && m_adc_timer[i]->remaining().is_never())
+				m_adc_timer[i]->adjust(attotime::from_usec(8), i);
 		break;
 	case 1:
 		COMBINE_DATA(&m_adc_config);
 		break;
-	case 2:
-		m_adc_status = 0;
-		set_irq_line(IRQ_ADC, CLEAR_LINE);
+	case 2: case 3:
+		m_adc_status[offset - 2] = 0;
+		set_irq_line(IRQ_ADC[offset - 2], CLEAR_LINE);
 		break;
 	}
 }
@@ -1238,6 +1272,79 @@ void mb8aa4181_device::event_w(offs_t offset, u32 data, u32 mem_mask)
 {
 	set_irq_line(IRQ_EVENT[offset], ASSERT_LINE);
 	set_irq_line(IRQ_EVENT[offset], CLEAR_LINE);
+}
+
+
+//  four-channel timer
+
+u32 mb8aa4181_device::ptimer_value(int which) const
+{
+	if (BIT(m_ptimer_ctrl[which], 6) || !m_ptimer_load[which])
+		return m_ptimer_count[which];
+	const u64 ticks = m_ptimer_count[which] + (machine().time() - m_ptimer_start[which]).as_ticks(clock() / 2);
+	return u32(ticks % m_ptimer_load[which]);
+}
+
+void mb8aa4181_device::ptimer_run(int which, u32 count)
+{
+	m_ptimer_count[which] = count;
+	m_ptimer_start[which] = machine().time();
+	if (BIT(m_ptimer_ctrl[which], 6) || !m_ptimer_load[which] || count >= m_ptimer_load[which])
+		m_ptimer[which]->adjust(attotime::never);
+	else
+		m_ptimer[which]->adjust(attotime::from_ticks(u64(m_ptimer_load[which] - count), clock() / 2), which);
+}
+
+void mb8aa4181_device::ptimer_irq(int which)
+{
+	const u32 ctrl = m_ptimer_ctrl[which];
+	set_irq_line(IRQ_PTIMER + which, ((BIT(ctrl, 14) && BIT(ctrl, 13)) || (BIT(ctrl, 9) && BIT(ctrl, 8))) ? ASSERT_LINE : CLEAR_LINE);
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_device::ptimer_expired)
+{
+	m_ptimer_ctrl[param] |= (1 << 14) | (1 << 9);
+	ptimer_run(param, 0);
+	ptimer_irq(param);
+}
+
+u32 mb8aa4181_device::ptimer_r(offs_t offset)
+{
+	const int which = offset >> 2;
+	switch (offset & 3)
+	{
+	case 0: return m_ptimer_load[which];
+	case 1: return ptimer_value(which);
+	case 2: return m_ptimer_ctrl[which];
+	default: return 0;
+	}
+}
+
+void mb8aa4181_device::ptimer_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	const int which = offset >> 2;
+	const u32 count = ptimer_value(which);
+	switch (offset & 3)
+	{
+	case 0:
+		COMBINE_DATA(&m_ptimer_load[which]);
+		ptimer_run(which, count);
+		break;
+	case 1:
+		ptimer_run(which, data);
+		break;
+	case 2:
+		COMBINE_DATA(&m_ptimer_ctrl[which]);
+		if (BIT(m_ptimer_ctrl[which], 4))
+		{
+			m_ptimer_ctrl[which] &= ~(1 << 4);
+			ptimer_run(which, 0);
+		}
+		else
+			ptimer_run(which, count);
+		ptimer_irq(which);
+		break;
+	}
 }
 
 

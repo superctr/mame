@@ -159,14 +159,20 @@ private:
 	double m_converter[4];
 	u32 m_adc_ctrl;
 	u32 m_adc_config;
-	u32 m_adc_status;
+	u32 m_adc_status[2];
 	u16 m_adc_data[8];
-	emu_timer *m_adc_timer;
+	u16 m_adc_scan[120];
+	emu_timer *m_adc_timer[2];
 	u32 m_timer_load[2];
 	u32 m_timer_bgload[2];
 	u32 m_timer_ctrl[2];
 	bool m_timer_int[2];
 	emu_timer *m_timer[2];
+	u32 m_ptimer_load[4];
+	u32 m_ptimer_count[4];
+	u32 m_ptimer_ctrl[4];
+	attotime m_ptimer_start[4];
+	emu_timer *m_ptimer[4];
 
 	void internal_map(address_map &map) ATTR_COLD;
 
@@ -236,6 +242,13 @@ private:
 	void dualtimer_start(int which, u32 count);
 	u32 dualtimer_value(int which) const;
 	void dualtimer_irq(int which);
+
+	u32 ptimer_r(offs_t offset);
+	void ptimer_w(offs_t offset, u32 data, u32 mem_mask);
+	TIMER_CALLBACK_MEMBER(ptimer_expired);
+	u32 ptimer_value(int which) const;
+	void ptimer_run(int which, u32 count);
+	void ptimer_irq(int which);
 };
 
 DECLARE_DEVICE_TYPE(MB8AA4181_MFS, mb8aa4181_mfs_device)
