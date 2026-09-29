@@ -79,6 +79,8 @@ protected:
 
 	int &icount() { return m_core->icount; }
 
+	bool bus_locked() const { return m_bus_locked; }
+
 private:
 	enum : int {
 		EXC_RESET = 1, EXC_NMI = 2, EXC_HARDFAULT = 3, EXC_MEMMANAGE = 4, EXC_BUSFAULT = 5,
@@ -153,6 +155,7 @@ private:
 	unsigned m_prio_bits;
 	unsigned m_mpu_regions;
 	bool m_bitband;
+	bool m_bus_locked;
 	u32 m_vtor_reset;
 	u32 m_systick_calib;
 	unsigned m_systick_ref_div;

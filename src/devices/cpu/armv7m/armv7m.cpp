@@ -61,6 +61,7 @@ armv7m_device::armv7m_device(const machine_config &mconfig, device_type type, co
 	, m_prio_bits(8)
 	, m_mpu_regions(8)
 	, m_bitband(true)
+	, m_bus_locked(false)
 	, m_vtor_reset(0)
 	, m_systick_calib(0xc0000000)
 	, m_systick_ref_div(0)
@@ -720,11 +721,13 @@ bool armv7m_device::access_aligned(u32 address, int size, u32 &value, bool write
 		const u32 byte = (address & 0xf0000000) | ((address & 0x01ffffff) >> 5);
 		const u32 container = byte & ~u32(size - 1);
 		const unsigned bit = ((address >> 2) & 7) + 8 * (byte - container);
+		m_bus_locked = write;
 		const u32 data = bus_read(container, size);
 		if (write)
 			bus_write(container, size, (data & ~(1U << bit)) | ((value & 1) << bit));
 		else
 			value = (data >> bit) & 1;
+		m_bus_locked = false;
 		return true;
 	}
 
