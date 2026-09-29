@@ -66,12 +66,17 @@ mb8aa4181_mfs_device::mb8aa4181_mfs_device(const machine_config &mconfig, const 
 	, m_rx_irq_cb(*this)
 	, m_tx_irq_cb(*this)
 	, m_status_irq_cb(*this)
+	, m_i2c_start_cb(*this, I2C_NACK)
+	, m_i2c_data_cb(*this, I2C_NACK)
+	, m_i2c_stop_cb(*this)
 {
 }
 
 void mb8aa4181_mfs_device::device_start()
 {
 	m_csio_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::csio_done), this);
+	m_i2c_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_master_done), this);
+	m_i2c_slave_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_slave_byte), this);
 
 	save_item(NAME(m_scr_smr));
 	save_item(NAME(m_ssr_escr));
@@ -93,6 +98,12 @@ void mb8aa4181_mfs_device::device_start()
 	save_item(NAME(m_ibsr));
 	save_item(NAME(m_i2c_address));
 	save_item(NAME(m_i2c_active));
+	save_item(NAME(m_i2c_start_pending));
+	save_item(NAME(m_i2c_result));
+	save_item(NAME(m_i2c_slave));
+	save_item(NAME(m_i2c_slave_buf));
+	save_item(NAME(m_i2c_slave_count));
+	save_item(NAME(m_i2c_slave_head));
 }
 
 void mb8aa4181_mfs_device::device_reset()
@@ -113,7 +124,14 @@ void mb8aa4181_mfs_device::device_reset()
 	m_ibsr = 0;
 	m_i2c_address = 0;
 	m_i2c_active = false;
+	m_i2c_start_pending = false;
+	m_i2c_result = I2C_NACK;
+	m_i2c_slave = false;
+	m_i2c_slave_count = 0;
+	m_i2c_slave_head = 0;
 	m_csio_timer->adjust(attotime::never);
+	m_i2c_timer->adjust(attotime::never);
+	m_i2c_slave_timer->adjust(attotime::never);
 	m_regs.clear();
 
 	receive_register_reset();
@@ -166,7 +184,7 @@ void mb8aa4181_mfs_device::update_irq()
 	{
 		const u16 ibcr = m_scr_smr;
 		const bool status = ((ibcr & IBCR_INTE) && (ibcr & (IBCR_INT | IBCR_BER))) || ((ibcr & IBCR_CNDE) && (m_ibsr & (IBSR_RSC | IBSR_SPC)));
-		const bool rx = BIT(m_scr_smr, 3) && m_rx_count;
+		const bool rx = BIT(m_scr_smr, 3) && (m_ssr_escr & SSR_RDRF);
 		const bool tx = (BIT(m_scr_smr, 2) && (m_ssr_escr & SSR_TDRE)) || ((m_fcr & FCR_FTIE) && (m_fcr & FCR_FDRQ));
 		m_rx_irq_cb(rx ? ASSERT_LINE : CLEAR_LINE);
 		m_tx_irq_cb(tx ? ASSERT_LINE : CLEAR_LINE);
@@ -480,6 +498,9 @@ u32 mb8aa4181_mfs_device::i2c_read(offs_t offset)
 			{
 				m_rx_head = (m_rx_head + 1) % FIFO_SIZE;
 				m_rx_count--;
+				if (!m_rx_count)
+					m_ssr_escr &= ~SSR_RDRF;
+				update_irq();
 			}
 			return data;
 		}
@@ -500,6 +521,11 @@ u32 mb8aa4181_mfs_device::i2c_read(offs_t offset)
 	}
 }
 
+attotime mb8aa4181_mfs_device::i2c_byte_time() const
+{
+	return attotime::from_ticks(9 * ((m_bgr & 0x7fff) + 1), baud_clock());
+}
+
 void mb8aa4181_mfs_device::i2c_start()
 {
 	u8 address;
@@ -508,19 +534,127 @@ void mb8aa4181_mfs_device::i2c_start()
 		address = m_tx_fifo[m_tx_head];
 		m_tx_head = (m_tx_head + 1) % FIFO_SIZE;
 		m_tx_count--;
-		if (!m_tx_count)
-			m_fcr |= FCR_FDRQ;
 	}
 	else
 		address = m_tdr;
 
 	m_i2c_active = true;
-	m_ibsr = (m_ibsr & ~(IBSR_RSA | IBSR_AL)) | IBSR_BB | IBSR_FBT | IBSR_RACK;
-	if (!BIT(address, 0))
+	m_i2c_start_pending = false;
+	m_ibsr = (m_ibsr & ~(IBSR_RSA | IBSR_AL | IBSR_RACK | IBSR_TRX)) | IBSR_BB | IBSR_FBT;
+	m_ssr_escr &= ~SSR_TDRE;
+
+	unsigned bytes = 1;
+	m_i2c_result = m_i2c_start_cb(address);
+	if (m_i2c_result == I2C_ACK && BIT(address, 0))
+	{
+		logerror("I2C master read from %02x not supported\n", address >> 1);
+		m_i2c_result = I2C_NACK;
+	}
+	if (m_i2c_result == I2C_ACK)
+	{
 		m_ibsr |= IBSR_TRX;
+		while (m_tx_count)
+		{
+			const u8 data = m_tx_fifo[m_tx_head];
+			m_tx_head = (m_tx_head + 1) % FIFO_SIZE;
+			m_tx_count--;
+			bytes++;
+			if (m_i2c_data_cb(data) != I2C_ACK)
+			{
+				m_i2c_result = I2C_DATA_NACK;
+				break;
+			}
+		}
+	}
+	if (!m_tx_count)
+		m_fcr |= FCR_FDRQ;
+	m_i2c_timer->adjust(i2c_byte_time() * bytes);
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_mfs_device::i2c_master_done)
+{
+	if (!m_i2c_active)
+		return;
+	if (m_i2c_result == I2C_ACK)
+	{
+		m_ibsr &= ~(IBSR_FBT | IBSR_RACK);
+		m_ssr_escr |= SSR_TDRE;
+	}
+	else if (m_i2c_result == I2C_NACK)
+		m_ibsr |= IBSR_RACK;
 	else
-		m_ibsr &= ~IBSR_TRX;
+		m_ibsr = (m_ibsr & ~IBSR_FBT) | IBSR_RACK;
 	m_scr_smr |= IBCR_INT;
+	update_irq();
+}
+
+void mb8aa4181_mfs_device::i2c_stop()
+{
+	m_i2c_active = false;
+	m_i2c_timer->adjust(attotime::never);
+	m_ibsr = (m_ibsr & ~(IBSR_BB | IBSR_FBT | IBSR_TRX)) | IBSR_SPC;
+	m_scr_smr &= ~IBCR_INT;
+	m_ssr_escr |= SSR_TDRE;
+	m_i2c_stop_cb(1);
+}
+
+u8 mb8aa4181_mfs_device::i2c_slave_start(u8 address)
+{
+	if (!i2c_mode() || !BIT(m_i2c_address, 15))
+		return I2C_NACK;
+	if ((m_ibsr & IBSR_BB) || m_i2c_slave)
+		return I2C_BUSY;
+	const u8 mask = BIT(m_i2c_address, 8, 7);
+	if (!BIT(m_i2c_address, 7) || ((address >> 1) & mask) != (m_i2c_address & mask))
+		return I2C_NACK;
+	if (BIT(address, 0))
+	{
+		logerror("I2C slave transmit to %02x not supported\n", address >> 1);
+		return I2C_NACK;
+	}
+	m_i2c_slave = true;
+	m_i2c_slave_count = 0;
+	m_i2c_slave_head = 0;
+	m_ibsr = (m_ibsr & ~(IBSR_TRX | IBSR_FBT | IBSR_RACK | IBSR_RSA)) | IBSR_BB;
+	update_irq();
+	return I2C_ACK;
+}
+
+void mb8aa4181_mfs_device::i2c_slave_data(u8 data)
+{
+	if (m_i2c_slave && m_i2c_slave_count < std::size(m_i2c_slave_buf))
+		m_i2c_slave_buf[m_i2c_slave_count++] = data;
+}
+
+void mb8aa4181_mfs_device::i2c_slave_stop()
+{
+	if (m_i2c_slave && m_i2c_slave_timer->expire().is_never())
+		m_i2c_slave_timer->adjust(i2c_byte_time() * 2);
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_mfs_device::i2c_slave_byte)
+{
+	if (!m_i2c_slave)
+		return;
+	if (m_i2c_slave_head < m_i2c_slave_count)
+	{
+		if (m_rx_count < FIFO_SIZE)
+		{
+			m_rx_fifo[(m_rx_head + m_rx_count) % FIFO_SIZE] = m_i2c_slave_buf[m_i2c_slave_head++];
+			m_rx_count++;
+			if (!m_rx_threshold || m_rx_count >= m_rx_threshold)
+				m_ssr_escr |= SSR_RDRF;
+		}
+		m_i2c_slave_timer->adjust(i2c_byte_time());
+	}
+	else
+	{
+		m_i2c_slave = false;
+		m_ibsr = (m_ibsr & ~IBSR_BB) | IBSR_SPC;
+		if (m_i2c_start_pending && (m_scr_smr & IBCR_MSS))
+			i2c_start();
+	}
+	update_irq();
 }
 
 void mb8aa4181_mfs_device::i2c_write(offs_t offset, u32 data, u32 mem_mask)
@@ -537,13 +671,18 @@ void mb8aa4181_mfs_device::i2c_write(offs_t offset, u32 data, u32 mem_mask)
 			m_scr_smr &= ~(IBCR_INT | IBCR_BER);
 		if (!i2c_mode())
 			break;
-		if ((m_scr_smr & ~old & IBCR_MSS) && BIT(m_i2c_address, 15) && !(m_ibsr & IBSR_BB))
-			i2c_start();
-		else if ((old & ~m_scr_smr & IBCR_MSS) && m_i2c_active)
+		if ((m_scr_smr & ~old & IBCR_MSS) && BIT(m_i2c_address, 15))
 		{
-			m_i2c_active = false;
-			m_ibsr = (m_ibsr & ~(IBSR_BB | IBSR_FBT | IBSR_TRX)) | IBSR_SPC;
-			m_scr_smr &= ~IBCR_INT;
+			if (m_ibsr & IBSR_BB)
+				m_i2c_start_pending = true;
+			else
+				i2c_start();
+		}
+		else if (old & ~m_scr_smr & IBCR_MSS)
+		{
+			m_i2c_start_pending = false;
+			if (m_i2c_active)
+				i2c_stop();
 		}
 		else if (ACCESSING_BITS_8_15 && (value & IBCR_ACT) && m_i2c_active && (m_scr_smr & IBCR_MSS))
 		{
@@ -973,7 +1112,7 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_device::adc_done)
 	else
 	{
 		for (int i = 0; i < 8; i++)
-			m_adc_data[i] = m_adc_in_cb[i]() & 0xfff;
+			m_adc_data[i] = (m_adc_in_cb[i]() & 0xfff) >> 2;
 		m_adc_ctrl &= ~0x400;
 	}
 	m_adc_status[param] = 1;

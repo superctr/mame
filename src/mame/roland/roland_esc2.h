@@ -30,8 +30,16 @@ public:
 	auto rx_irq_cb() { return m_rx_irq_cb.bind(); }
 	auto tx_irq_cb() { return m_tx_irq_cb.bind(); }
 	auto status_irq_cb() { return m_status_irq_cb.bind(); }
+	auto i2c_start_cb() { return m_i2c_start_cb.bind(); }
+	auto i2c_data_cb() { return m_i2c_data_cb.bind(); }
+	auto i2c_stop_cb() { return m_i2c_stop_cb.bind(); }
+
+	enum : u8 { I2C_NACK = 0, I2C_ACK = 1, I2C_BUSY = 2 };
 
 	void rxd_w(int state);
+	u8 i2c_slave_start(u8 address);
+	void i2c_slave_data(u8 data);
+	void i2c_slave_stop();
 
 	u32 read(offs_t offset, u32 mem_mask);
 	void write(offs_t offset, u32 data, u32 mem_mask);
@@ -47,6 +55,7 @@ protected:
 
 private:
 	static constexpr unsigned FIFO_SIZE = 64;
+	static constexpr u8 I2C_DATA_NACK = 3;
 
 	enum : u16 {
 		SCR_UPCL = 0x8000, SCR_RIE = 0x1000, SCR_TIE = 0x0800, SCR_TBIE = 0x0400, SCR_RXE = 0x0200, SCR_TXE = 0x0100,
@@ -64,6 +73,9 @@ private:
 	devcb_write_line m_rx_irq_cb;
 	devcb_write_line m_tx_irq_cb;
 	devcb_write_line m_status_irq_cb;
+	devcb_read8 m_i2c_start_cb;
+	devcb_read8 m_i2c_data_cb;
+	devcb_write_line m_i2c_stop_cb;
 
 	u16 m_scr_smr;
 	u16 m_ssr_escr;
@@ -83,7 +95,15 @@ private:
 	u8 m_ibsr;
 	u16 m_i2c_address;
 	bool m_i2c_active;
+	bool m_i2c_start_pending;
+	u8 m_i2c_result;
+	bool m_i2c_slave;
+	u8 m_i2c_slave_buf[FIFO_SIZE * 2];
+	u8 m_i2c_slave_count;
+	u8 m_i2c_slave_head;
 	emu_timer *m_csio_timer;
+	emu_timer *m_i2c_timer;
+	emu_timer *m_i2c_slave_timer;
 	std::unordered_map<offs_t, u32> m_regs;
 
 	bool i2c_mode() const;
@@ -91,6 +111,10 @@ private:
 	u32 i2c_read(offs_t offset);
 	void i2c_write(offs_t offset, u32 data, u32 mem_mask);
 	void i2c_start();
+	void i2c_stop();
+	attotime i2c_byte_time() const;
+	TIMER_CALLBACK_MEMBER(i2c_master_done);
+	TIMER_CALLBACK_MEMBER(i2c_slave_byte);
 	TIMER_CALLBACK_MEMBER(csio_done);
 	bool tx_fifo_enabled() const;
 	bool rx_fifo_enabled() const;
@@ -114,6 +138,12 @@ public:
 	template <unsigned N> auto txd_cb() { return m_mfs[N].lookup()->txd_cb(); }
 	template <unsigned N> auto sot_cb() { return m_mfs[N].lookup()->sot_cb(); }
 	template <unsigned N> auto sin_cb() { return m_mfs[N].lookup()->sin_cb(); }
+	template <unsigned N> auto i2c_start_cb() { return m_mfs[N].lookup()->i2c_start_cb(); }
+	template <unsigned N> auto i2c_data_cb() { return m_mfs[N].lookup()->i2c_data_cb(); }
+	template <unsigned N> auto i2c_stop_cb() { return m_mfs[N].lookup()->i2c_stop_cb(); }
+	template <unsigned N> u8 i2c_slave_start(u8 address) { return m_mfs[N]->i2c_slave_start(address); }
+	template <unsigned N> void i2c_slave_data(u8 data) { m_mfs[N]->i2c_slave_data(data); }
+	template <unsigned N> void i2c_slave_stop() { m_mfs[N]->i2c_slave_stop(); }
 	template <unsigned N> auto gpio_out_cb() { return m_gpio_out_cb[N].bind(); }
 	template <unsigned N> auto gpio_in_cb() { return m_gpio_in_cb[N].bind(); }
 	template <unsigned N> auto adc_in_cb() { return m_adc_in_cb[N].bind(); }
