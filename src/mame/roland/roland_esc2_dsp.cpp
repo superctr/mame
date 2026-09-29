@@ -522,7 +522,7 @@ void mb8aa4181_dsp_device::decode(unit_state &u)
 			unsigned count = strlen(shape);
 			unsigned extra = (header >> 6) & 3;
 			unsigned aux = std::count(shape, shape + count, 'A');
-			if (!count || 1 + count + extra + aux > length)
+			if (!count || 1 + count + extra + aux > length || count + extra > MAX_OPS || 2 * (length - 1 - count - extra) > MAX_EXTENSION)
 			{
 				zeros.push_back(h);
 				h++;
