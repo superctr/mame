@@ -22,9 +22,287 @@
 #include "bus/midi/midi.h"
 #include "video/hd44780.h"
 
+#include "multibyte.h"
+
 #include "emupal.h"
 #include "screen.h"
 #include "speaker.h"
+
+
+namespace {
+
+class k25m_device : public device_t
+{
+public:
+	k25m_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
+
+	auto host_start_cb() { return m_host_start_cb.bind(); }
+	auto host_data_cb() { return m_host_data_cb.bind(); }
+	auto host_stop_cb() { return m_host_stop_cb.bind(); }
+
+	u8 start_r(offs_t address);
+	u8 data_r(offs_t data);
+	void stop_w(int state);
+
+protected:
+	virtual ioport_constructor device_input_ports() const override ATTR_COLD;
+	virtual void device_start() override ATTR_COLD;
+	virtual void device_reset() override ATTR_COLD;
+
+private:
+	static constexpr u8 ADDRESS = 0x28;
+	static constexpr u8 HOST_ADDRESS = 0x08;
+	static constexpr unsigned KEYS = 25;
+	static constexpr u8 FIRST_KEY = 24;
+	static constexpr unsigned QUEUE = 256;
+
+	devcb_read8 m_host_start_cb;
+	devcb_write8 m_host_data_cb;
+	devcb_write_line m_host_stop_cb;
+	required_ioport m_dock;
+	required_ioport m_keys;
+	required_ioport m_travel;
+	emu_timer *m_reply_timer;
+	emu_timer *m_scan_timer;
+
+	u8 m_rx[32];
+	u8 m_rx_count;
+	bool m_selected;
+	bool m_scanning;
+	u32 m_key_state;
+	u8 m_queue[QUEUE];
+	u16 m_queue_count;
+	u16 m_reply_count;
+
+	bool docked() const { return BIT(m_dock->read(), 0); }
+	u32 timestamp() const;
+	void message();
+	void reply(const u8 *data, unsigned count);
+	void queue(const u8 *data, unsigned count);
+	void event(u8 key, u8 contacts, u32 time);
+	TIMER_CALLBACK_MEMBER(send);
+	TIMER_CALLBACK_MEMBER(scan);
+};
+
+} // anonymous namespace
+
+DEFINE_DEVICE_TYPE(K25M, k25m_device, "k25m", "Roland K-25m keyboard unit")
+
+k25m_device::k25m_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: device_t(mconfig, K25M, tag, owner, clock)
+	, m_host_start_cb(*this, mb8aa4181_mfs_device::I2C_NACK)
+	, m_host_data_cb(*this)
+	, m_host_stop_cb(*this)
+	, m_dock(*this, "DOCK")
+	, m_keys(*this, "KEYS")
+	, m_travel(*this, "TRAVEL")
+{
+}
+
+static INPUT_PORTS_START(k25m)
+	PORT_START("DOCK")
+	PORT_CONFNAME(0x01, 0x01, "K-25m keyboard unit")
+	PORT_CONFSETTING(0x00, "Not docked")
+	PORT_CONFSETTING(0x01, "Docked")
+
+	PORT_START("KEYS")
+	PORT_BIT(0x0000001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C3") PORT_CODE(KEYCODE_Z)
+	PORT_BIT(0x0000002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C#3") PORT_CODE(KEYCODE_S)
+	PORT_BIT(0x0000004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D3") PORT_CODE(KEYCODE_X)
+	PORT_BIT(0x0000008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D#3") PORT_CODE(KEYCODE_D)
+	PORT_BIT(0x0000010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("E3") PORT_CODE(KEYCODE_C)
+	PORT_BIT(0x0000020, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F3") PORT_CODE(KEYCODE_V)
+	PORT_BIT(0x0000040, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F#3") PORT_CODE(KEYCODE_G)
+	PORT_BIT(0x0000080, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G3") PORT_CODE(KEYCODE_B)
+	PORT_BIT(0x0000100, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G#3") PORT_CODE(KEYCODE_H)
+	PORT_BIT(0x0000200, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A3") PORT_CODE(KEYCODE_N)
+	PORT_BIT(0x0000400, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A#3") PORT_CODE(KEYCODE_J)
+	PORT_BIT(0x0000800, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("B3") PORT_CODE(KEYCODE_M)
+	PORT_BIT(0x0001000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C4") PORT_CODE(KEYCODE_Q)
+	PORT_BIT(0x0002000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C#4") PORT_CODE(KEYCODE_2)
+	PORT_BIT(0x0004000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D4") PORT_CODE(KEYCODE_W)
+	PORT_BIT(0x0008000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D#4") PORT_CODE(KEYCODE_3)
+	PORT_BIT(0x0010000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("E4") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x0020000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F4") PORT_CODE(KEYCODE_R)
+	PORT_BIT(0x0040000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F#4") PORT_CODE(KEYCODE_5)
+	PORT_BIT(0x0080000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G4") PORT_CODE(KEYCODE_T)
+	PORT_BIT(0x0100000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G#4") PORT_CODE(KEYCODE_6)
+	PORT_BIT(0x0200000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A4") PORT_CODE(KEYCODE_Y)
+	PORT_BIT(0x0400000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A#4") PORT_CODE(KEYCODE_7)
+	PORT_BIT(0x0800000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("B4") PORT_CODE(KEYCODE_U)
+	PORT_BIT(0x1000000, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C5") PORT_CODE(KEYCODE_I)
+
+	PORT_START("TRAVEL")
+	PORT_ADJUSTER(10, "Key travel time (0.1 ms)")
+INPUT_PORTS_END
+
+ioport_constructor k25m_device::device_input_ports() const
+{
+	return INPUT_PORTS_NAME(k25m);
+}
+
+void k25m_device::device_start()
+{
+	m_reply_timer = timer_alloc(FUNC(k25m_device::send), this);
+	m_scan_timer = timer_alloc(FUNC(k25m_device::scan), this);
+
+	save_item(NAME(m_rx));
+	save_item(NAME(m_rx_count));
+	save_item(NAME(m_selected));
+	save_item(NAME(m_scanning));
+	save_item(NAME(m_key_state));
+	save_item(NAME(m_queue));
+	save_item(NAME(m_queue_count));
+	save_item(NAME(m_reply_count));
+}
+
+void k25m_device::device_reset()
+{
+	m_rx_count = 0;
+	m_selected = false;
+	m_scanning = false;
+	m_key_state = 0;
+	m_queue_count = 0;
+	m_reply_count = 0;
+	m_reply_timer->adjust(attotime::never);
+	m_scan_timer->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
+}
+
+u8 k25m_device::start_r(offs_t address)
+{
+	m_selected = docked() && address == ADDRESS << 1;
+	m_rx_count = 0;
+	return m_selected ? mb8aa4181_mfs_device::I2C_ACK : mb8aa4181_mfs_device::I2C_NACK;
+}
+
+u8 k25m_device::data_r(offs_t data)
+{
+	if (!m_selected)
+		return mb8aa4181_mfs_device::I2C_NACK;
+	if (m_rx_count < std::size(m_rx))
+		m_rx[m_rx_count++] = data;
+	return mb8aa4181_mfs_device::I2C_ACK;
+}
+
+void k25m_device::stop_w(int state)
+{
+	if (m_selected)
+		message();
+	m_selected = false;
+}
+
+u32 k25m_device::timestamp() const
+{
+	return std::max<u32>(machine().time().as_ticks(1'000'000) & 0xffffff, 1);
+}
+
+void k25m_device::message()
+{
+	if (m_rx_count < 2)
+		return;
+	const u16 command = m_rx[0] << 8 | m_rx[1];
+	if (command == 0xbeef && m_rx_count == 6)
+	{
+		const u8 data[5] = { 0, 0, 0, 0, 0 };
+		reply(data, 5);
+	}
+	else if (command == 0xbeef)
+	{
+		m_scanning = true;
+		m_key_state = m_keys->read();
+	}
+	else if (m_rx[0] == 0xfd && m_rx_count >= 9)
+	{
+		const u32 length = get_u32be(&m_rx[5]);
+		u8 data[QUEUE];
+		const unsigned count = std::min<u32>(length, QUEUE - 1);
+		std::fill_n(data, count, 0xff);
+		data[count] = u8(-(count * 0xff));
+		reply(data, count + 1);
+	}
+}
+
+void k25m_device::reply(const u8 *data, unsigned count)
+{
+	if (m_queue_count + count > QUEUE)
+		return;
+	std::copy_backward(&m_queue[m_reply_count], &m_queue[m_queue_count], &m_queue[m_queue_count + count]);
+	std::copy_n(data, count, &m_queue[m_reply_count]);
+	m_reply_count += count;
+	m_queue_count += count;
+	if (m_reply_timer->expire().is_never())
+		m_reply_timer->adjust(attotime::from_usec(500));
+}
+
+void k25m_device::queue(const u8 *data, unsigned count)
+{
+	if (m_queue_count + count > QUEUE)
+		return;
+	std::copy_n(data, count, &m_queue[m_queue_count]);
+	m_queue_count += count;
+	if (m_reply_timer->expire().is_never())
+		m_reply_timer->adjust(attotime::from_usec(500));
+}
+
+void k25m_device::event(u8 key, u8 contacts, u32 time)
+{
+	u8 message[6] = { u8(0x80 | contacts), u8(FIRST_KEY + key), u8(time), u8(time >> 8), u8(time >> 16), 0 };
+	for (unsigned i = 0; i < 5; i++)
+		message[5] -= message[i];
+	queue(message, 6);
+}
+
+TIMER_CALLBACK_MEMBER(k25m_device::send)
+{
+	if (!m_queue_count)
+		return;
+	const u8 result = m_host_start_cb(HOST_ADDRESS << 1);
+	if (result == mb8aa4181_mfs_device::I2C_BUSY)
+	{
+		m_reply_timer->adjust(attotime::from_usec(100));
+		return;
+	}
+	const unsigned count = m_reply_count ? m_reply_count : std::min<unsigned>(m_queue_count, 60);
+	m_reply_count = 0;
+	if (result == mb8aa4181_mfs_device::I2C_ACK)
+	{
+		for (unsigned i = 0; i < count; i++)
+			m_host_data_cb(m_queue[i]);
+		m_host_stop_cb(1);
+	}
+	m_queue_count -= count;
+	std::copy_n(&m_queue[count], m_queue_count, &m_queue[0]);
+	if (m_queue_count)
+		m_reply_timer->adjust(attotime::from_usec(500));
+}
+
+TIMER_CALLBACK_MEMBER(k25m_device::scan)
+{
+	if (!m_scanning || !docked())
+		return;
+	const u32 keys = m_keys->read();
+	const u32 changed = keys ^ m_key_state;
+	if (!changed)
+		return;
+	m_key_state = keys;
+	const u32 now = timestamp();
+	const u32 travel = std::max<u32>(m_travel->read(), 1) * 100;
+	for (unsigned key = 0; key < KEYS; key++)
+	{
+		if (!BIT(changed, key))
+			continue;
+		if (BIT(keys, key))
+		{
+			event(key, 1, now);
+			event(key, 3, (now + travel) & 0xffffff);
+		}
+		else
+		{
+			event(key, 1, now);
+			event(key, 0, (now + travel) & 0xffffff);
+		}
+	}
+}
 
 
 namespace {
@@ -353,7 +631,7 @@ HD44780_PIXEL_UPDATE(boutique_state::lcd_pixel_update)
 
 static INPUT_PORTS_START(d05)
 	PORT_START("VOLUME")
-	PORT_ADJUSTER(80, "Volume")
+	PORT_ADJUSTER(100, "Volume")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(sh01a)
@@ -843,6 +1121,14 @@ void boutique_state::vp03(machine_config &config)
 void boutique_state::d05(machine_config &config)
 {
 	boutique(config, 0xfffb, 24.576_MHz_XTAL);
+
+	k25m_device &keyboard = K25M(config, "k25m");
+	m_maincpu->i2c_start_cb<7>().set(keyboard, FUNC(k25m_device::start_r));
+	m_maincpu->i2c_data_cb<7>().set(keyboard, FUNC(k25m_device::data_r));
+	m_maincpu->i2c_stop_cb<7>().set(keyboard, FUNC(k25m_device::stop_w));
+	keyboard.host_start_cb().set([this] (offs_t address) { return m_maincpu->i2c_slave_start<7>(address); });
+	keyboard.host_data_cb().set([this] (u8 data) { m_maincpu->i2c_slave_data<7>(data); });
+	keyboard.host_stop_cb().set([this] (int state) { m_maincpu->i2c_slave_stop<7>(); });
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
