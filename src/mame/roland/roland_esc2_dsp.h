@@ -33,7 +33,7 @@ public:
 
 	auto irq_cb(unsigned n) { return m_irq_cb[n].bind(); }
 	void set_port_link(mb8aa4181_dsp_device &link) { m_port_link = &link; }
-	void set_audio_inputs(bool enable) { m_inputs = enable; }
+	void set_audio_inputs(unsigned lanes) { m_input_lanes = std::min(lanes, INPUT_LANES); }
 
 	u32 read(offs_t offset, u32 mem_mask);
 	void write(offs_t offset, u32 data, u32 mem_mask);
@@ -66,6 +66,7 @@ private:
 	static constexpr unsigned STACK_DEPTH = 8;
 	static constexpr unsigned FRAME_PACKETS = 0x4000;
 	static constexpr unsigned OUTPUT_BUFFER = 0x4000;
+	static constexpr unsigned INPUT_LANES = 4;
 
 	enum : u8 { KIND_A, KIND_B, KIND_C, KIND_D, KIND_E };
 
@@ -81,7 +82,7 @@ private:
 		OP_C_SCALE, OP_C_SHIFT, OP_C_RIGHT_SHIFT, OP_C_FREXP, OP_C_SAVE, OP_C_RESTORE,
 		OP_D_SELECT, OP_D_ADDRESS, OP_D_ADDRESS_REGISTER, OP_D_JUMP, OP_D_CALL, OP_D_NOTIFY, OP_D_CLEAR, OP_D_COUNTER, OP_D_STEP, OP_D_RETURN,
 		OP_E_OPERAND, OP_E_CONSTANT, OP_E_PUBLISH, OP_E_INDIRECT, OP_E_DELAY, OP_E_TOKEN, OP_E_SAMPLE, OP_E_REQUEST,
-		OP_E_LOCAL, OP_E_SHORT, OP_E_DIRECT, OP_E_PARAMETER, OP_E_TARGET
+		OP_E_LOCAL, OP_E_BUS, OP_E_SHORT, OP_E_DIRECT, OP_E_PARAMETER, OP_E_TARGET
 	};
 
 	enum : u8
@@ -223,9 +224,9 @@ private:
 	double m_port[0x100];
 	mb8aa4181_dsp_device *m_port_link = nullptr;
 	u8 m_output_port = 0;
-	u8 m_input_port = 0;
-	bool m_inputs = false;
-	float m_input[OUTPUT_BUFFER][2];
+	u8 m_input_port[INPUT_LANES];
+	unsigned m_input_lanes = 0;
+	float m_input[OUTPUT_BUFFER][2 * INPUT_LANES];
 	u32 m_input_read = 0;
 	u32 m_input_write = 0;
 

@@ -141,7 +141,7 @@ void mb8aa4181_dsp_device::device_start()
 	m_memory = std::make_unique<u32[]>(MEMORY_CELLS);
 	std::fill_n(m_memory.get(), MEMORY_CELLS, 0);
 
-	m_stream = stream_alloc(m_inputs ? 2 : 0, 2, clock() / 256);
+	m_stream = stream_alloc(2 * m_input_lanes, 2, clock() / 256);
 	m_frame_timer = timer_alloc(FUNC(mb8aa4181_dsp_device::frame), this);
 	for (unsigned i = 0; i < UNITS; i++)
 		for (unsigned j = 0; j < 16; j++)
@@ -210,7 +210,7 @@ void mb8aa4181_dsp_device::device_reset()
 {
 	m_regs.clear();
 	m_output_port = 0;
-	m_input_port = 2;
+	std::fill_n(m_input_port, INPUT_LANES, 0xff);
 	m_input_read = m_input_write = 0;
 	std::fill_n(m_shared, 0x100, 0.0);
 	std::fill_n(m_port, 0x100, 0.0);
@@ -463,8 +463,9 @@ void mb8aa4181_dsp_device::host_write(offs_t offset, u32 data, u32 mem_mask)
 void mb8aa4181_dsp_device::update_output_port()
 {
 	m_output_port = 0;
-	m_input_port = 2;
-	bool output = false, input = false;
+	std::fill_n(m_input_port, INPUT_LANES, 0xff);
+	bool output = false;
+	unsigned inputs = 0;
 	for (unsigned lane = 0; lane < 8; lane++)
 	{
 		const auto it = m_regs.find(SERIAL_LANES + 2 * lane);
@@ -475,11 +476,8 @@ void mb8aa4181_dsp_device::update_output_port()
 			m_output_port = it->second & 0xfe;
 			output = true;
 		}
-		else if (!BIT(it->second, 28) && !input)
-		{
-			m_input_port = it->second & 0xfe;
-			input = true;
-		}
+		else if (!BIT(it->second, 28) && inputs < INPUT_LANES)
+			m_input_port[inputs++] = it->second & 0xfe;
 	}
 }
 
@@ -1124,6 +1122,12 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_E_REQUEST;
 			op.value = w & 15;
 		}
+		else if ((w & 0x0f00) == 0x0600 && ((w >> 6) & 3) != 3)
+		{
+			op.type = OP_E_BUS;
+			op.y = (w >> 6) & 3;
+			op.value = w & 0x3f;
+		}
 		else if ((w & 0x0fe0) == 0x06c0)
 		{
 			op.type = OP_E_LOCAL;
@@ -1541,6 +1545,16 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 				loads[nloads++] = { u8(d), u.local[address & (SHORT_WORDS - 1)] };
 			break;
 		}
+		case OP_E_BUS:
+		{
+			has = false;
+			const u32 address = 0x2000 | ((u32(s32(std::floor(u.sel[y]))) + op.value) & 0xfff);
+			if (op.flags & F_STORE)
+				stores[nstores++] = { STORE_OPERAND, address, r[d] };
+			else
+				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
+			break;
+		}
 		case OP_E_SHORT:
 		{
 			has = false;
@@ -1832,10 +1846,12 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_dsp_device::frame)
 		m_stream->update();
 
 	m_frame_start = machine().time();
-	if (m_inputs && m_input_read != m_input_write)
+	if (m_input_lanes && m_input_read != m_input_write)
 	{
-		m_port[m_input_port] = m_input[m_input_read][0];
-		m_port[m_input_port + 1] = m_input[m_input_read][1];
+		for (unsigned lane = 0; lane < m_input_lanes; lane++)
+			if (m_input_port[lane] != 0xff)
+				for (unsigned i = 0; i < 2; i++)
+					m_port[m_input_port[lane] + i] = std::clamp(double(m_input[m_input_read][2 * lane + i]), -1.0, 1.0 - 1.0 / 8388608.0);
 		m_input_read = (m_input_read + 1) % OUTPUT_BUFFER;
 	}
 	run_frame(1);
@@ -1872,13 +1888,13 @@ void mb8aa4181_dsp_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
-		if (m_inputs)
+		if (m_input_lanes)
 		{
 			const u32 next = (m_input_write + 1) % OUTPUT_BUFFER;
 			if (next != m_input_read)
 			{
-				m_input[m_input_write][0] = stream.get(0, i);
-				m_input[m_input_write][1] = stream.get(1, i);
+				for (unsigned j = 0; j < 2 * m_input_lanes; j++)
+					m_input[m_input_write][j] = stream.get(j, i);
 				m_input_write = next;
 			}
 		}
