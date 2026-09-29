@@ -33,6 +33,7 @@ public:
 		, m_subcpu(*this, "subcpu")
 		, m_spiflash(*this, "spiflash")
 		, m_control(*this, "CTRL%u", 0U)
+		, m_keys(*this, "KEY%u", 0U)
 	{
 	}
 
@@ -43,12 +44,15 @@ private:
 	required_device<mb8aa4181_device> m_subcpu;
 	required_device<generic_spi_flash_device> m_spiflash;
 	required_ioport_array<64> m_control;
+	required_ioport_array<4> m_keys;
 
 	u32 m_port0 = 0;
+	u32 m_subport4 = 0;
 
 	void mem_map(address_map &map) ATTR_COLD;
 	template <unsigned N> u16 control_r() { return (m_control[((BIT(m_port0, 19) << 2) | (m_port0 & 3)) * 8 + N]->read() << 4) | 8; }
 	void sub_map(address_map &map) ATTR_COLD;
+	u32 keys_r();
 
 	virtual void machine_start() override ATTR_COLD;
 };
@@ -66,8 +70,18 @@ void system1_state::sub_map(address_map &map)
 void system1_state::machine_start()
 {
 	save_item(NAME(m_port0));
+	save_item(NAME(m_subport4));
 	m_spiflash->set_rom_ptr(memregion("flash")->base());
 	m_spiflash->set_rom_size(memregion("flash")->bytes());
+}
+
+u32 system1_state::keys_r()
+{
+	u32 data = 0;
+	for (unsigned row = 0; row < 4; row++)
+		if (BIT(m_subport4, 8 + row))
+			data |= m_keys[row]->read() << 16;
+	return data;
 }
 
 static INPUT_PORTS_START(system1)
@@ -138,9 +152,9 @@ static INPUT_PORTS_START(system1)
 	PORT_START("CTRL32")
 	PORT_ADJUSTER(128, "Amp Decay") PORT_MINMAX(0, 255)
 	PORT_START("CTRL33")
-	PORT_ADJUSTER(128, "OSC2 Wave") PORT_MINMAX(0, 255)
+	PORT_ADJUSTER(0, "OSC2 Wave") PORT_MINMAX(0, 255)
 	PORT_START("CTRL34")
-	PORT_ADJUSTER(128, "OSC1 Range") PORT_MINMAX(0, 255)
+	PORT_ADJUSTER(64, "OSC1 Range") PORT_MINMAX(0, 255)
 	PORT_START("CTRL35")
 	PORT_ADJUSTER(128, "LFO Wave") PORT_MINMAX(0, 255)
 	PORT_START("CTRL36")
@@ -154,7 +168,7 @@ static INPUT_PORTS_START(system1)
 	PORT_START("CTRL40")
 	PORT_ADJUSTER(0, "Amp Attack") PORT_MINMAX(0, 255)
 	PORT_START("CTRL41")
-	PORT_ADJUSTER(128, "OSC2 Range") PORT_MINMAX(0, 255)
+	PORT_ADJUSTER(64, "OSC2 Range") PORT_MINMAX(0, 255)
 	PORT_START("CTRL42")
 	PORT_ADJUSTER(0, "OSC1 Mod") PORT_MINMAX(0, 255)
 	PORT_START("CTRL43")
@@ -172,7 +186,7 @@ static INPUT_PORTS_START(system1)
 	PORT_START("CTRL49")
 	PORT_ADJUSTER(128, "OSC2 Fine Tune") PORT_MINMAX(0, 255)
 	PORT_START("CTRL50")
-	PORT_ADJUSTER(128, "OSC1 Wave") PORT_MINMAX(0, 255)
+	PORT_ADJUSTER(0, "OSC1 Wave") PORT_MINMAX(0, 255)
 	PORT_START("CTRL51")
 	PORT_ADJUSTER(128, "Control 3.6") PORT_MINMAX(0, 255)
 	PORT_START("CTRL52")
@@ -199,6 +213,35 @@ static INPUT_PORTS_START(system1)
 	PORT_ADJUSTER(128, "Control 6.7") PORT_MINMAX(0, 255)
 	PORT_START("CTRL63")
 	PORT_ADJUSTER(128, "Control 7.7") PORT_MINMAX(0, 255)
+	PORT_START("KEY0")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C2")
+	PORT_START("KEY1")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C#2")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D#2")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("E2")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F2")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F#2")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G2")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G#2")
+	PORT_START("KEY2")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A2")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A#2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("B2")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C3")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C#3")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D3")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("D#3")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("E3")
+	PORT_START("KEY3")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F3")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F#3")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G3")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("G#3")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A3")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("A#3")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("B3")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("C4")
 INPUT_PORTS_END
 
 void system1_state::system1(machine_config &config)
@@ -227,14 +270,16 @@ void system1_state::system1(machine_config &config)
 	m_subcpu->set_boot_mode(3);
 	m_subcpu->set_i2c_bus<7>(m_maincpu);
 	m_subcpu->set_usb_link(m_maincpu, false);
+	m_subcpu->gpio_out_cb<4>().set([this] (u32 data) { m_subport4 = data; });
+	m_subcpu->gpio_in_cb<4>().set(FUNC(system1_state::keys_r));
 
 	SPEAKER(config, "speaker", 2).front();
 	mb8aa4181_dsp_device &dsp = *m_maincpu->subdevice<mb8aa4181_dsp_device>("dsp");
-	dsp.set_clock(22.5792_MHz_XTAL);
+	dsp.set_clock(24.576_MHz_XTAL);
 	dsp.add_route(0, "speaker", 1.0, 0);
 	dsp.add_route(1, "speaker", 1.0, 1);
 	mb8aa4181_dsp_device &subdsp = *m_subcpu->subdevice<mb8aa4181_dsp_device>("dsp");
-	subdsp.set_clock(22.5792_MHz_XTAL);
+	subdsp.set_clock(24.576_MHz_XTAL / 4);
 	subdsp.set_port_link(dsp);
 	dsp.set_port_link(subdsp);
 
@@ -254,4 +299,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(2014, system1, 0, 0, system1, system1, system1_state, empty_init, "Roland", "SYSTEM-1 Variable Synthesizer", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+SYST(2014, system1, 0, 0, system1, system1, system1_state, empty_init, "Roland", "SYSTEM-1 Variable Synthesizer", MACHINE_NOT_WORKING)
