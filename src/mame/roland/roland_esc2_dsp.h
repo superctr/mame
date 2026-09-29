@@ -29,6 +29,8 @@ public:
 
 	mb8aa4181_dsp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
+	static constexpr feature_type imperfect_features() { return feature::SOUND; }
+
 	auto irq_cb(unsigned n) { return m_irq_cb[n].bind(); }
 	void set_port_link(mb8aa4181_dsp_device &link) { m_port_link = &link; }
 	void set_audio_inputs(bool enable) { m_inputs = enable; }
@@ -71,9 +73,9 @@ private:
 	{
 		OP_NONE, OP_UNSUPPORTED,
 		OP_A,
-		OP_B_SUM, OP_B_SQUARE, OP_B_NEWTON, OP_B_MOVE, OP_B_DOUBLE, OP_B_MUL, OP_B_MAC, OP_B_F2, OP_B_F3,
+		OP_B_SUM, OP_B_SQUARE, OP_B_NEWTON, OP_B_ROOT_STEP, OP_B_MOVE, OP_B_DOUBLE, OP_B_MUL, OP_B_MAC, OP_B_F2, OP_B_F3,
 		OP_C_ARRIVAL_CLEAR, OP_C_ADVANCE, OP_C_CLAMP, OP_C_BIT, OP_C_FRACTION, OP_C_LOGIC, OP_C_MIN, OP_C_MAX,
-		OP_C_COMPARE, OP_C_SET, OP_C_RECIPROCAL, OP_C_SEED, OP_C_RATIO, OP_C_EXPONENT, OP_C_LOGARITHM, OP_C_SIGN, OP_C_FLOOR,
+		OP_C_COMPARE, OP_C_SET, OP_C_RECIPROCAL, OP_C_SEED, OP_C_RATIO, OP_C_ROOT, OP_C_EXPONENT, OP_C_LOGARITHM, OP_C_SIGN, OP_C_FLOOR,
 		OP_C_FLOOR14, OP_C_FRACTION14, OP_C_SELECTOR, OP_C_ADD_SELECTOR, OP_C_F3, OP_C_ABS_MAX, OP_C_FRAME,
 		OP_C_UNARY0, OP_C_UNARY1, OP_C_UNARY2, OP_C_UNARY3, OP_C_UNARY4, OP_C_UNARY5, OP_C_UNARY6,
 		OP_C_SCALE, OP_C_SHIFT, OP_C_RIGHT_SHIFT, OP_C_FREXP, OP_C_SAVE, OP_C_RESTORE,

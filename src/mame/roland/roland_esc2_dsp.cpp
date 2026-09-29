@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cfloat>
 #include <cmath>
 #include <cstring>
 #include <numbers>
@@ -65,6 +66,16 @@ double wrap(double x)
 	if (x >= -1.0 && x < 1.0)
 		return x;
 	return x - 2.0 * std::floor((x + 1.0) / 2.0);
+}
+
+double saturate(double x)
+{
+	return std::isnan(x) ? 0.0 : std::clamp(x, -DBL_MAX, DBL_MAX);
+}
+
+double reciprocal(double x)
+{
+	return saturate(1.0 / x);
 }
 
 double noise(double x)
@@ -862,6 +873,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_B_SQUARE;
 		else if (!f && op.x == 2 && !(w & 0x30))
 			op.type = OP_B_NEWTON;
+		else if (!f && op.x == 2 && (w & 0x30) == 0x10)
+			op.type = OP_B_ROOT_STEP;
 		else if (!f && op.x == 1)
 		{
 			op.type = OP_B_MOVE;
@@ -935,6 +948,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			{
 			case 0: op.type = OP_C_SEED; break;
 			case 1: op.type = OP_C_RATIO; break;
+			case 2: op.type = OP_C_ROOT; break;
 			case 3: op.type = OP_C_EXPONENT; break;
 			case 4: op.type = OP_C_LOGARITHM; break;
 			case 5: op.type = OP_C_SIGN; break;
@@ -1235,7 +1249,14 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		{
 			const double scale = u.reciprocal != 0.0 ? 2.0 - u.divisor * u.reciprocal : 2.0;
 			value = r[d] * scale;
-			u.reciprocal *= scale;
+			u.reciprocal = saturate(u.reciprocal * scale);
+			break;
+		}
+		case OP_B_ROOT_STEP:
+		{
+			const double scale = u.reciprocal != 0.0 ? 1.5 - 0.5 * u.divisor * u.reciprocal * u.reciprocal : 1.0;
+			value = r[d] * scale;
+			u.reciprocal = saturate(u.reciprocal * scale);
 			break;
 		}
 		case OP_B_MOVE: value = get(op.s, r); break;
@@ -1250,7 +1271,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			has = false;
 			break;
 		case OP_C_ADVANCE:
-			value = r[d] + r[7] / 16.0;
+			value = r[d] + r[(d + 1) & 7] / 16.0;
 			break;
 		case OP_C_CLAMP:
 		{
@@ -1294,18 +1315,30 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		case OP_C_SET: value = get(op.s, r); break;
 		case OP_C_RECIPROCAL:
 			u.divisor = get(op.s, r);
-			u.reciprocal = 1.0 / u.divisor;
+			u.reciprocal = reciprocal(u.divisor);
 			value = r[BIT(op.word, 3, 3)] * u.reciprocal;
 			break;
 		case OP_C_SEED:
 			u.divisor = r[y];
-			value = u.reciprocal = 1.0 / u.divisor;
+			value = u.reciprocal = reciprocal(u.divisor);
 			is_function = true;
 			break;
 		case OP_C_RATIO:
 			u.divisor = r[y] + 1.0;
-			u.reciprocal = 1.0 / u.divisor;
+			u.reciprocal = reciprocal(u.divisor);
 			value = (r[y] - 1.0) * u.reciprocal;
+			is_function = true;
+			break;
+		case OP_C_ROOT:
+			if (r[y] < 0.0)
+			{
+				unsupported(unitnum, p, op);
+				has = false;
+				break;
+			}
+			u.divisor = r[y];
+			u.reciprocal = reciprocal(std::sqrt(u.divisor));
+			value = u.divisor * u.reciprocal;
 			is_function = true;
 			break;
 		case OP_C_EXPONENT:
@@ -1633,9 +1666,9 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 	if (step_index)
 		u.sel[0] += 1.0;
 	for (unsigned i = 0; i < nloads; i++)
-		u.r[loads[i].reg] = loads[i].value;
+		u.r[loads[i].reg] = saturate(loads[i].value);
 	for (unsigned i = 0; i < nsets; i++)
-		u.r[sets[i].reg] = sets[i].value;
+		u.r[sets[i].reg] = saturate(sets[i].value);
 	for (unsigned i = 0; i < nshadows; i++)
 		u.shadow[shadows[i].reg] = shadows[i].value;
 
