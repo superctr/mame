@@ -37,6 +37,7 @@ constexpr offs_t MEMORY_ADDRESS = 0x050 / 4;
 constexpr offs_t SWITCH_REQUEST[2] = { 0x054 / 4, 0x05c / 4 };
 constexpr offs_t UNIT_MODE[2] = { 0x090 / 4, 0x0b0 / 4 };
 constexpr offs_t FLAGS = 0x600 / 4;
+constexpr offs_t SERIAL_LANES = 0x500 / 4;
 constexpr offs_t NOTIFY_STATUS = 0x640 / 4;
 constexpr offs_t TARGET_STATUS = 0x648 / 4;
 constexpr offs_t SWITCH_STATUS[2] = { 0x658 / 4, 0x654 / 4 };
@@ -129,7 +130,7 @@ void mb8aa4181_dsp_device::device_start()
 	m_memory = std::make_unique<u32[]>(MEMORY_CELLS);
 	std::fill_n(m_memory.get(), MEMORY_CELLS, 0);
 
-	m_stream = stream_alloc(0, 2, clock() / 256);
+	m_stream = stream_alloc(m_inputs ? 2 : 0, 2, clock() / 256);
 	m_frame_timer = timer_alloc(FUNC(mb8aa4181_dsp_device::frame), this);
 	for (unsigned i = 0; i < UNITS; i++)
 		for (unsigned j = 0; j < 16; j++)
@@ -197,6 +198,9 @@ void mb8aa4181_dsp_device::device_start()
 void mb8aa4181_dsp_device::device_reset()
 {
 	m_regs.clear();
+	m_output_port = 0;
+	m_input_port = 2;
+	m_input_read = m_input_write = 0;
 	std::fill_n(m_shared, 0x100, 0.0);
 	std::fill_n(m_port, 0x100, 0.0);
 	m_field = 0;
@@ -437,10 +441,35 @@ void mb8aa4181_dsp_device::host_write(offs_t offset, u32 data, u32 mem_mask)
 		}
 	}
 	COMBINE_DATA(&m_regs[offset]);
-	if (offset == FLAGS)
+	if (offset >= SERIAL_LANES && offset < SERIAL_LANES + 16 && !(offset & 1))
+		update_output_port();
+	else if (offset == FLAGS)
 		m_flags = m_regs[offset];
 	else if (offset == UNIT_MODE[0] || offset == UNIT_MODE[1])
 		m_unit[offset == UNIT_MODE[1]].moving = !BIT(m_regs[offset], 5);
+}
+
+void mb8aa4181_dsp_device::update_output_port()
+{
+	m_output_port = 0;
+	m_input_port = 2;
+	bool output = false, input = false;
+	for (unsigned lane = 0; lane < 8; lane++)
+	{
+		const auto it = m_regs.find(SERIAL_LANES + 2 * lane);
+		if (it == m_regs.end() || !BIT(it->second, 31) || BIT(it->second, 12, 4) != 3)
+			continue;
+		if (BIT(it->second, 28) && !output)
+		{
+			m_output_port = it->second & 0xfe;
+			output = true;
+		}
+		else if (!BIT(it->second, 28) && !input)
+		{
+			m_input_port = it->second & 0xfe;
+			input = true;
+		}
+	}
 }
 
 u32 mb8aa4181_dsp_device::native_number(u32 data, unsigned bits)
@@ -1770,6 +1799,12 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_dsp_device::frame)
 		m_stream->update();
 
 	m_frame_start = machine().time();
+	if (m_inputs && m_input_read != m_input_write)
+	{
+		m_port[m_input_port] = m_input[m_input_read][0];
+		m_port[m_input_port + 1] = m_input[m_input_read][1];
+		m_input_read = (m_input_read + 1) % OUTPUT_BUFFER;
+	}
 	run_frame(1);
 	run_frame(0);
 	m_frames++;
@@ -1777,8 +1812,8 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_dsp_device::frame)
 	const u32 next = (m_output_write + 1) % OUTPUT_BUFFER;
 	if (next != m_output_read)
 	{
-		m_output[m_output_write][0] = float(m_port[0]);
-		m_output[m_output_write][1] = float(m_port[1]);
+		m_output[m_output_write][0] = float(m_port[m_output_port]);
+		m_output[m_output_write][1] = float(m_port[m_output_port + 1]);
 		m_output_write = next;
 	}
 
@@ -1804,6 +1839,16 @@ void mb8aa4181_dsp_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
+		if (m_inputs)
+		{
+			const u32 next = (m_input_write + 1) % OUTPUT_BUFFER;
+			if (next != m_input_read)
+			{
+				m_input[m_input_write][0] = stream.get(0, i);
+				m_input[m_input_write][1] = stream.get(1, i);
+				m_input_write = next;
+			}
+		}
 		if (m_output_read != m_output_write)
 		{
 			m_last[0] = m_output[m_output_read][0];
