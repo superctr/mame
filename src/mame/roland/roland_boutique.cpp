@@ -101,7 +101,7 @@ private:
 	void subcpu_porte_w(u16 data);
 	template <unsigned Ch> u16 panel_r();
 	template <unsigned Ch> u16 panel_level_r();
-	template <unsigned Ch> u16 tr09_panel_r();
+	template <unsigned Slot> u16 panel_rising_r();
 	u16 tr08_porta_r();
 	u32 tr08_port6_r();
 	u16 tr08_portd_r();
@@ -109,7 +109,11 @@ private:
 	u16 tr09_portd_r();
 	void tr09_porte_w(u16 data);
 	void tr09_led_row(unsigned row);
-	TIMER_DEVICE_CALLBACK_MEMBER(tr09_tempo_tick);
+	TIMER_DEVICE_CALLBACK_MEMBER(tempo_tick);
+	u16 tr06_porta_r();
+	u16 tr06_portb_r();
+	void tr06_porta_w(u16 data);
+	void tr06_portb_w(u16 data);
 	void lcd_port_w(u32 data);
 	void lcd_data_w(u8 data);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -180,10 +184,10 @@ u16 boutique_state::panel_level_r()
 	return port ? (port->read() << 4) | 8 : 0;
 }
 
-template <unsigned Ch>
-u16 boutique_state::tr09_panel_r()
+template <unsigned Slot>
+u16 boutique_state::panel_rising_r()
 {
-	ioport_port *const port = m_mux[(Ch - 8) * 8 + m_mux_select].target();
+	ioport_port *const port = m_mux[Slot * 8 + m_mux_select].target();
 	return port ? (port->read() << 4) | 8 : 0;
 }
 
@@ -271,7 +275,7 @@ void boutique_state::tr09_led_row(unsigned row)
 	}
 }
 
-TIMER_DEVICE_CALLBACK_MEMBER(boutique_state::tr09_tempo_tick)
+TIMER_DEVICE_CALLBACK_MEMBER(boutique_state::tempo_tick)
 {
 	const u8 pos = m_tempo->read();
 	m_tempo_pending += s8(pos - m_tempo_pos) * 4;
@@ -286,6 +290,42 @@ TIMER_DEVICE_CALLBACK_MEMBER(boutique_state::tr09_tempo_tick)
 		m_tempo_phase = (m_tempo_phase - 1) & 3;
 		m_tempo_pending++;
 	}
+}
+
+u16 boutique_state::tr06_porta_r()
+{
+	const unsigned row = BIT(m_led_port, 2, 3);
+	return 0xff1f | (BIT(m_keys->read(), row * 3, 3) << 5);
+}
+
+u16 boutique_state::tr06_portb_r()
+{
+	return 0xfffc | (BIT(0x3, m_tempo_phase) << 1) | BIT(0x9, m_tempo_phase);
+}
+
+void boutique_state::tr06_porta_w(u16 data)
+{
+	if (BIT(data, 8) && !BIT(m_led_port, 8))
+		for (unsigned line = 0; line < 2; line++)
+			m_led_shift[line] = (m_led_shift[line] << 1) | BIT(data, 11 + line);
+	m_led_port = data;
+}
+
+void boutique_state::tr06_portb_w(u16 data)
+{
+	static constexpr u8 LEDS[2][12] = {
+		{ 8, 9, 12, 14, 17, 1, 15, 11, 5, 6, 4, 7 },
+		{ 13, 10, 16, 23, 19, 20, 24, 18, 3, 2, 21, 22 } };
+	const u16 rising = data & ~m_key_rows;
+	m_key_rows = data;
+	for (unsigned row = 0; row < 4; row++)
+		if (BIT(rising, 12 + row))
+		{
+			m_digits[row] = ~m_led_shift[0] & 0xff;
+			if (row < 2)
+				for (unsigned col = 0; col < 12; col++)
+					m_leds[LEDS[row][col] - 1] = BIT(~m_led_shift[1], col);
+		}
 }
 
 void boutique_state::lcd_port_w(u32 data)
@@ -649,6 +689,78 @@ static INPUT_PORTS_START(tr09)
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Tempo") PORT_SENSITIVITY(25) PORT_KEYDELTA(1)
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(tr06)
+	PORT_INCLUDE(d05)
+
+	PORT_START("MUX0")
+	PORT_CONFNAME(0xff, 0x13, "Scale")
+	PORT_CONFSETTING(0x13, "1")
+	PORT_CONFSETTING(0x46, "2")
+	PORT_CONFSETTING(0x93, "3")
+	PORT_CONFSETTING(0xdf, "4")
+	PORT_START("MUX1")
+	PORT_CONFNAME(0xff, 0xd8, "Instrument")
+	PORT_CONFSETTING(0xf8, "AC")
+	PORT_CONFSETTING(0xd8, "BD")
+	PORT_CONFSETTING(0xb4, "SD")
+	PORT_CONFSETTING(0x90, "LT")
+	PORT_CONFSETTING(0x6c, "HT")
+	PORT_CONFSETTING(0x48, "CY")
+	PORT_CONFSETTING(0x24, "OH")
+	PORT_CONFSETTING(0x04, "CH")
+	PORT_START("MUX2")
+	PORT_CONFNAME(0xff, 0x54, "Mode")
+	PORT_CONFSETTING(0xf0, "Track Write")
+	PORT_CONFSETTING(0xa8, "Track Play")
+	PORT_CONFSETTING(0x54, "Pattern Play")
+	PORT_CONFSETTING(0x10, "Pattern Write")
+	PORT_START("MUX4")
+	PORT_ADJUSTER(160, "Accent") PORT_MINMAX(0, 255)
+	PORT_START("MUX5")
+	PORT_ADJUSTER(160, "Bass Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX6")
+	PORT_ADJUSTER(160, "Snare Drum Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX7")
+	PORT_ADJUSTER(160, "Tom Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX8")
+	PORT_ADJUSTER(160, "Cymbal Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX9")
+	PORT_ADJUSTER(160, "Hi-Hat Level") PORT_MINMAX(0, 255)
+	PORT_START("MUX12")
+	PORT_ADJUSTER(0, "Drive") PORT_MINMAX(0, 255)
+	PORT_START("MUX13")
+	PORT_ADJUSTER(128, "Delay Time") PORT_MINMAX(0, 255)
+	PORT_START("MUX14")
+	PORT_ADJUSTER(128, "Delay Depth") PORT_MINMAX(0, 255)
+	PORT_START("KEYS")
+	PORT_BIT(0x0000001, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 16")
+	PORT_BIT(0x0000002, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pattern Group")
+	PORT_BIT(0x0000004, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 15")
+	PORT_BIT(0x0000008, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 12")
+	PORT_BIT(0x0000010, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 13")
+	PORT_BIT(0x0000020, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 14")
+	PORT_BIT(0x0000040, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 10")
+	PORT_BIT(0x0000080, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 11")
+	PORT_BIT(0x0000100, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 9")
+	PORT_BIT(0x0000200, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 7")
+	PORT_BIT(0x0000400, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 8")
+	PORT_BIT(0x0000800, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 6")
+	PORT_BIT(0x0001000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 4")
+	PORT_BIT(0x0002000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 5")
+	PORT_BIT(0x0004000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 3")
+	PORT_BIT(0x0008000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 16")
+	PORT_BIT(0x0010000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Function")
+	PORT_BIT(0x0020000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 2")
+	PORT_BIT(0x0040000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 00")
+	PORT_BIT(0x0080000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step 1")
+	PORT_BIT(0x0200000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 14")
+	PORT_BIT(0x0400000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Step Loop")
+	PORT_BIT(0x0800000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 12")
+	PORT_BIT(0x1000000, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Tap")
+	PORT_START("TEMPO")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(1)
+INPUT_PORTS_END
+
 void boutique_state::boutique(machine_config &config, u16 strap, const XTAL &audio)
 {
 	MB8AA4181(config, m_maincpu, 156'000'000);
@@ -712,15 +824,15 @@ void boutique_state::tr09(machine_config &config)
 {
 	boutique(config, 0xfffd, 11.2896_MHz_XTAL);
 	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::tr09_porte_w));
-	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::tr09_panel_r<8>));
-	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::tr09_panel_r<9>));
-	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::tr09_panel_r<10>));
-	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::tr09_panel_r<11>));
+	m_subcpu->adc_in_cb<8>().set(FUNC(boutique_state::panel_rising_r<0>));
+	m_subcpu->adc_in_cb<9>().set(FUNC(boutique_state::panel_rising_r<1>));
+	m_subcpu->adc_in_cb<10>().set(FUNC(boutique_state::panel_rising_r<2>));
+	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::panel_rising_r<3>));
 	m_subcpu->gpio_in_cb<2>().set(FUNC(boutique_state::tr09_portc_r));
 	m_subcpu->gpio_in_cb<3>().set(FUNC(boutique_state::tr09_portd_r));
 	m_subcpu->gpio_out_cb<3>().set([this] (u16 data) { m_key_rows = data; });
 	m_maincpu->gpio_in_cb<6>().set([this] () { return u32((1 << 3) | (BIT(m_buttons->read(), 8) << 21)); });
-	TIMER(config, "tempo").configure_periodic(FUNC(boutique_state::tr09_tempo_tick), attotime::from_msec(2));
+	TIMER(config, "tempo").configure_periodic(FUNC(boutique_state::tempo_tick), attotime::from_msec(2));
 }
 
 void boutique_state::vp03(machine_config &config)
@@ -778,6 +890,16 @@ void boutique_state::tr08(machine_config &config)
 void boutique_state::tr06(machine_config &config)
 {
 	boutique(config, 0xfff7, 12.288_MHz_XTAL);
+	m_subcpu->set_clock(16'000'000);
+	m_subcpu->gpio_out_cb<2>().set([this] (u16 data) { m_mux_select = BIT(data, 13, 3); });
+	m_subcpu->adc_in_cb<0>().set(FUNC(boutique_state::panel_rising_r<0>));
+	m_subcpu->adc_in_cb<1>().set(FUNC(boutique_state::panel_rising_r<1>));
+	m_subcpu->gpio_in_cb<0>().set(FUNC(boutique_state::tr06_porta_r));
+	m_subcpu->gpio_in_cb<1>().set(FUNC(boutique_state::tr06_portb_r));
+	m_subcpu->gpio_out_cb<0>().set(FUNC(boutique_state::tr06_porta_w));
+	m_subcpu->gpio_out_cb<1>().set(FUNC(boutique_state::tr06_portb_w));
+	m_maincpu->gpio_in_cb<6>().set([this] () { return u32((1 << 3) | (BIT(m_keys->read(), 24) << 21)); });
+	TIMER(config, "tempo").configure_periodic(FUNC(boutique_state::tempo_tick), attotime::from_msec(2));
 }
 
 ROM_START(ju06a)
@@ -855,4 +977,4 @@ SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, sh01a, 0, 0, sh01a, sh01a, boutique_state, init_boutique, "Roland", "SH-01A Synthesizer", MACHINE_NOT_WORKING)
 SYST(2016, tr08,  0, 0, tr08,  tr08, boutique_state, init_boutique, "Roland", "TR-08 Rhythm Composer", MACHINE_NOT_WORKING)
-SYST(2020, tr06,  0, 0, tr06,  d05,   boutique_state, init_boutique, "Roland", "TR-06 Drumatix", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2020, tr06,  0, 0, tr06,  tr06,  boutique_state, init_boutique, "Roland", "TR-06 Drumatix", MACHINE_NOT_WORKING)
