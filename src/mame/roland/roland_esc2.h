@@ -41,6 +41,13 @@ public:
 	void i2c_slave_data(u8 data);
 	void i2c_slave_stop();
 
+	void set_i2c_peer(mb8aa4181_mfs_device *peer) { m_i2c_peer = peer; }
+	void i2c_bus_start();
+	void i2c_bus_busy();
+	bool i2c_bus_address(u8 address);
+	u8 i2c_bus_data(u8 data);
+	void i2c_bus_stop();
+
 	u32 read(offs_t offset, u32 mem_mask);
 	void write(offs_t offset, u32 data, u32 mem_mask);
 
@@ -54,7 +61,7 @@ protected:
 	virtual void rcv_complete() override;
 
 private:
-	static constexpr unsigned FIFO_SIZE = 64;
+	static constexpr unsigned FIFO_SIZE = 128;
 	static constexpr u8 I2C_DATA_NACK = 3;
 
 	enum : u16 {
@@ -101,9 +108,15 @@ private:
 	u8 m_i2c_slave_buf[FIFO_SIZE * 2];
 	u8 m_i2c_slave_count;
 	u8 m_i2c_slave_head;
+	bool m_i2c_master;
+	u8 m_i2c_state;
+	u8 m_i2c_byte;
+	mb8aa4181_mfs_device *m_i2c_peer;
 	emu_timer *m_csio_timer;
 	emu_timer *m_i2c_timer;
 	emu_timer *m_i2c_slave_timer;
+	emu_timer *m_i2c_bus_timer;
+	emu_timer *m_i2c_idle_timer;
 	std::unordered_map<offs_t, u32> m_regs;
 
 	bool i2c_mode() const;
@@ -115,6 +128,18 @@ private:
 	attotime i2c_byte_time() const;
 	TIMER_CALLBACK_MEMBER(i2c_master_done);
 	TIMER_CALLBACK_MEMBER(i2c_slave_byte);
+
+	enum : u8 { I2C_IDLE, I2C_ADDRESS, I2C_DATA, I2C_HOLD };
+
+	attotime i2c_bit_time() const;
+	bool i2c_tx_pending() const;
+	u8 i2c_tx_pop();
+	void i2c_bus_master_start(bool restart);
+	void i2c_bus_master_next();
+	void i2c_bus_master_stop();
+	bool bus_locked() const;
+	TIMER_CALLBACK_MEMBER(i2c_bus_byte_done);
+	TIMER_CALLBACK_MEMBER(i2c_idle);
 	TIMER_CALLBACK_MEMBER(csio_done);
 	bool tx_fifo_enabled() const;
 	bool rx_fifo_enabled() const;
@@ -134,6 +159,12 @@ public:
 	mb8aa4181_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	template <typename T> void set_flash_tag(T &&tag) { m_flash.set_tag(std::forward<T>(tag)); }
+	void set_boot_mode(u32 value) { m_boot_mode = value; }
+	template <unsigned N, typename T> void set_i2c_bus(T &&tag) { m_i2c_chip.set_tag(std::forward<T>(tag)); m_i2c_channel = N; }
+	template <typename T> void set_usb_link(T &&tag, bool host) { m_usb_link.set_tag(std::forward<T>(tag)); m_usb_host_port = host; }
+
+	mb8aa4181_mfs_device &mfs(unsigned n) { return *m_mfs[n]; }
+	bool bus_locked() const { return cortex_m3_device::bus_locked(); }
 
 	template <unsigned N> auto txd_cb() { return m_mfs[N].lookup()->txd_cb(); }
 	template <unsigned N> auto sot_cb() { return m_mfs[N].lookup()->sot_cb(); }
@@ -166,6 +197,11 @@ protected:
 private:
 	required_region_ptr<u32> m_flash;
 	required_device_array<mb8aa4181_mfs_device, 8> m_mfs;
+	optional_device<mb8aa4181_device> m_i2c_chip;
+	optional_device<mb8aa4181_device> m_usb_link;
+	unsigned m_i2c_channel;
+	bool m_usb_host_port;
+	u32 m_boot_mode;
 	required_device<mb8aa4181_dsp_device> m_dsp;
 	memory_share_creator<u32> m_iram;
 	std::unordered_map<offs_t, u32> m_regs;
@@ -230,12 +266,28 @@ private:
 	bool m_usb_rx_pending;
 	bool m_usb_host = false;
 
+	u32 m_udma[0xa0];
+	u32 m_udma_enable[2];
+	u32 m_urx_max;
+	u32 m_utx_sent;
+	bool m_urx_active;
+	bool m_utx_active;
+	bool m_uin_pending;
+	emu_timer *m_udma_timer;
+
 	u32 usb_r(offs_t offset);
 	void usb_w(offs_t offset, u32 data, u32 mem_mask);
-	u32 usb_irq_r();
-	void usb_irq_w(offs_t offset, u32 data, u32 mem_mask);
+	u32 usb_irq_r() const;
 	void usb_rx_load();
 	void usb_update_irq();
+	u32 udma_r(offs_t offset);
+	void udma_w(offs_t offset, u32 data, u32 mem_mask);
+	u32 udma_request(unsigned group) const;
+	void udma_tx_start();
+	void udma_rx_start();
+	void udma_peer_tx();
+	void udma_try();
+	TIMER_CALLBACK_MEMBER(udma_done);
 
 	u32 unmapped_r(offs_t offset, u32 mem_mask);
 	void unmapped_w(offs_t offset, u32 data, u32 mem_mask);

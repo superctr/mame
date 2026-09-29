@@ -45,8 +45,10 @@ constexpr unsigned IRQ_DUALTIMER = 26;
 constexpr unsigned IRQ_PTIMER = 100;
 constexpr unsigned IRQ_MFS = 64;
 constexpr unsigned IRQ_ADC[2] = { 128, 129 };
-constexpr unsigned IRQ_USB_RX = 54;
-constexpr unsigned IRQ_USB_TX[2] = { 55, 56 };
+constexpr unsigned IRQ_UDMA_GROUP[2] = { 36, 52 };
+constexpr unsigned IRQ_UDMA_RX = 140;
+constexpr unsigned IRQ_UDMA_TX = 141;
+constexpr u32 USB_LINK_BYTE_NS = 20;
 constexpr unsigned IRQ_EVENT[8] = { 47, 49, 50, 51, 62, 63, 96, 97 };
 constexpr unsigned IRQ_DSP[mb8aa4181_dsp_device::IRQ_COUNT] = { 144, 145, 146, 147, 150, 149 };
 
@@ -69,6 +71,7 @@ mb8aa4181_mfs_device::mb8aa4181_mfs_device(const machine_config &mconfig, const 
 	, m_i2c_start_cb(*this, I2C_NACK)
 	, m_i2c_data_cb(*this, I2C_NACK)
 	, m_i2c_stop_cb(*this)
+	, m_i2c_peer(nullptr)
 {
 }
 
@@ -77,6 +80,8 @@ void mb8aa4181_mfs_device::device_start()
 	m_csio_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::csio_done), this);
 	m_i2c_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_master_done), this);
 	m_i2c_slave_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_slave_byte), this);
+	m_i2c_bus_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_bus_byte_done), this);
+	m_i2c_idle_timer = timer_alloc(FUNC(mb8aa4181_mfs_device::i2c_idle), this);
 
 	save_item(NAME(m_scr_smr));
 	save_item(NAME(m_ssr_escr));
@@ -104,6 +109,9 @@ void mb8aa4181_mfs_device::device_start()
 	save_item(NAME(m_i2c_slave_buf));
 	save_item(NAME(m_i2c_slave_count));
 	save_item(NAME(m_i2c_slave_head));
+	save_item(NAME(m_i2c_master));
+	save_item(NAME(m_i2c_state));
+	save_item(NAME(m_i2c_byte));
 }
 
 void mb8aa4181_mfs_device::device_reset()
@@ -129,7 +137,12 @@ void mb8aa4181_mfs_device::device_reset()
 	m_i2c_slave = false;
 	m_i2c_slave_count = 0;
 	m_i2c_slave_head = 0;
+	m_i2c_master = false;
+	m_i2c_state = I2C_IDLE;
+	m_i2c_byte = 0;
 	m_csio_timer->adjust(attotime::never);
+	m_i2c_bus_timer->adjust(attotime::never);
+	m_i2c_idle_timer->adjust(attotime::never);
 	m_i2c_timer->adjust(attotime::never);
 	m_i2c_slave_timer->adjust(attotime::never);
 	m_regs.clear();
@@ -487,7 +500,7 @@ u32 mb8aa4181_mfs_device::i2c_read(offs_t offset)
 	switch (offset)
 	{
 	case 0x00 / 4:
-		return (m_scr_smr & ~IBCR_ACT) | (m_i2c_active ? IBCR_ACT : 0);
+		return (m_scr_smr & ~IBCR_ACT) | ((m_i2c_active && !bus_locked()) ? IBCR_ACT : 0);
 	case 0x04 / 4:
 		return (m_ssr_escr & 0xff00) | m_ibsr;
 	case 0x08 / 4:
@@ -657,6 +670,192 @@ TIMER_CALLBACK_MEMBER(mb8aa4181_mfs_device::i2c_slave_byte)
 	update_irq();
 }
 
+bool mb8aa4181_mfs_device::bus_locked() const
+{
+	return downcast<const mb8aa4181_device &>(*owner()).bus_locked();
+}
+
+attotime mb8aa4181_mfs_device::i2c_bit_time() const
+{
+	return attotime::from_ticks((m_bgr & 0x7fff) + 1, clock());
+}
+
+bool mb8aa4181_mfs_device::i2c_tx_pending() const
+{
+	return m_tx_count;
+}
+
+u8 mb8aa4181_mfs_device::i2c_tx_pop()
+{
+	const u8 data = m_tx_fifo[m_tx_head];
+	m_tx_head = (m_tx_head + 1) % FIFO_SIZE;
+	m_tx_count--;
+	if (!m_tx_count)
+		m_fcr |= FCR_FDRQ;
+	return data;
+}
+
+void mb8aa4181_mfs_device::i2c_bus_master_start(bool restart)
+{
+	m_i2c_byte = i2c_tx_pending() ? i2c_tx_pop() : u8(m_tdr);
+	m_i2c_active = true;
+	m_i2c_master = true;
+	m_ssr_escr &= ~SSR_TDRE;
+	m_ibsr &= ~(IBSR_RACK | IBSR_RSA | IBSR_AL | IBSR_TRX);
+	m_ibsr |= IBSR_BB | IBSR_FBT | (BIT(m_i2c_byte, 0) ? 0 : IBSR_TRX);
+	if (restart)
+		m_ibsr |= IBSR_RSC;
+	m_i2c_state = I2C_ADDRESS;
+	m_i2c_bus_timer->adjust(i2c_bit_time() * 9);
+	m_i2c_peer->i2c_bus_start();
+}
+
+void mb8aa4181_mfs_device::i2c_bus_master_next()
+{
+	if (m_scr_smr & IBCR_INT)
+		return;
+	if (!(m_ibsr & IBSR_TRX) || !i2c_tx_pending())
+	{
+		m_i2c_state = I2C_HOLD;
+		return;
+	}
+	m_i2c_byte = i2c_tx_pop();
+	m_i2c_state = I2C_DATA;
+	m_i2c_bus_timer->adjust(i2c_bit_time() * 9);
+	m_i2c_peer->i2c_bus_busy();
+}
+
+void mb8aa4181_mfs_device::i2c_bus_master_stop()
+{
+	m_i2c_bus_timer->adjust(attotime::never);
+	m_i2c_peer->i2c_bus_stop();
+	m_i2c_active = false;
+	m_i2c_master = false;
+	m_i2c_state = I2C_IDLE;
+	m_scr_smr &= ~(IBCR_MSS | IBCR_INT);
+	m_ssr_escr |= SSR_TDRE;
+	m_ibsr = (m_ibsr & ~(IBSR_BB | IBSR_FBT | IBSR_TRX)) | IBSR_SPC;
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_mfs_device::i2c_bus_byte_done)
+{
+	bool ack;
+	if (m_i2c_state == I2C_ADDRESS)
+		ack = m_i2c_peer->i2c_bus_address(m_i2c_byte);
+	else if (m_i2c_state == I2C_DATA)
+	{
+		const u8 result = m_i2c_peer->i2c_bus_data(m_i2c_byte);
+		if (result == I2C_BUSY)
+		{
+			m_i2c_bus_timer->adjust(i2c_bit_time());
+			return;
+		}
+		ack = result == I2C_ACK;
+		m_ibsr &= ~IBSR_FBT;
+	}
+	else
+		return;
+
+	m_ibsr = ack ? (m_ibsr & ~IBSR_RACK) : (m_ibsr | IBSR_RACK);
+	if (ack && (m_ibsr & IBSR_TRX) && i2c_tx_pending())
+		i2c_bus_master_next();
+	else
+	{
+		m_i2c_state = I2C_HOLD;
+		m_scr_smr |= IBCR_INT;
+		if (!i2c_tx_pending())
+			m_ssr_escr |= SSR_TDRE;
+		m_i2c_peer->i2c_bus_busy();
+	}
+	update_irq();
+}
+
+void mb8aa4181_mfs_device::i2c_bus_start()
+{
+	if (!i2c_mode() || !BIT(m_i2c_address, 15))
+		return;
+	m_i2c_idle_timer->adjust(attotime::never);
+	if (m_i2c_active && !m_i2c_master)
+	{
+		m_ibsr |= IBSR_RSC;
+		m_i2c_active = false;
+	}
+	m_ibsr |= IBSR_BB;
+	update_irq();
+}
+
+void mb8aa4181_mfs_device::i2c_bus_busy()
+{
+	m_i2c_idle_timer->adjust(attotime::never);
+}
+
+bool mb8aa4181_mfs_device::i2c_bus_address(u8 address)
+{
+	if (!i2c_mode() || !BIT(m_i2c_address, 15))
+		return false;
+	const u8 mask = BIT(m_i2c_address, 8, 7);
+	const bool match = BIT(m_i2c_address, 7) && ((address >> 1) & mask) == (m_i2c_address & mask);
+	m_ibsr &= ~(IBSR_RSA | IBSR_TRX | IBSR_AL | IBSR_RACK);
+	m_ibsr |= IBSR_BB;
+	if (match)
+	{
+		m_i2c_active = true;
+		m_i2c_master = false;
+		m_ibsr |= IBSR_FBT | (BIT(address, 0) ? IBSR_TRX : 0);
+	}
+	else if (!m_i2c_master)
+		m_i2c_active = false;
+	update_irq();
+	return match;
+}
+
+u8 mb8aa4181_mfs_device::i2c_bus_data(u8 data)
+{
+	if (!i2c_mode() || !m_i2c_active || m_i2c_master)
+		return I2C_NACK;
+	if (m_scr_smr & IBCR_INT)
+		return I2C_BUSY;
+	m_ibsr &= ~IBSR_FBT;
+	if (m_rx_count == FIFO_SIZE)
+	{
+		m_scr_smr |= IBCR_INT;
+		update_irq();
+		return I2C_BUSY;
+	}
+	m_rx_fifo[(m_rx_head + m_rx_count) % FIFO_SIZE] = data;
+	m_rx_count++;
+	if (m_rx_count >= std::max<u8>(m_rx_threshold, 1))
+		m_ssr_escr |= SSR_RDRF;
+	if (m_rx_count == FIFO_SIZE)
+		m_scr_smr |= IBCR_INT;
+	m_i2c_idle_timer->adjust(i2c_bit_time() * 8);
+	update_irq();
+	return I2C_ACK;
+}
+
+void mb8aa4181_mfs_device::i2c_bus_stop()
+{
+	if (!i2c_mode())
+		return;
+	m_i2c_idle_timer->adjust(attotime::never);
+	if (m_i2c_active && !m_i2c_master)
+	{
+		m_ibsr |= IBSR_SPC;
+		m_i2c_active = false;
+	}
+	m_ibsr &= ~(IBSR_BB | IBSR_FBT | IBSR_TRX);
+	update_irq();
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_mfs_device::i2c_idle)
+{
+	if ((m_fcr & 0x800) && m_rx_count && !(m_ssr_escr & SSR_RDRF))
+	{
+		m_ssr_escr |= SSR_RDRF;
+		update_irq();
+	}
+}
+
 void mb8aa4181_mfs_device::i2c_write(offs_t offset, u32 data, u32 mem_mask)
 {
 	switch (offset)
@@ -671,6 +870,26 @@ void mb8aa4181_mfs_device::i2c_write(offs_t offset, u32 data, u32 mem_mask)
 			m_scr_smr &= ~(IBCR_INT | IBCR_BER);
 		if (!i2c_mode())
 			break;
+		if (m_i2c_peer)
+		{
+			const bool scc = ACCESSING_BITS_8_15 && (value & IBCR_ACT);
+			const bool int_clear = ACCESSING_BITS_8_15 && !(value & IBCR_INT) && (old & IBCR_INT);
+			if ((m_scr_smr & ~old & IBCR_MSS) && BIT(m_i2c_address, 15) && !(m_ibsr & IBSR_BB))
+			{
+				m_ibsr &= ~(IBSR_RSC | IBSR_SPC);
+				i2c_bus_master_start(false);
+			}
+			else if ((old & ~m_scr_smr & IBCR_MSS) && m_i2c_active && m_i2c_master)
+				i2c_bus_master_stop();
+			else if (scc && m_i2c_active && m_i2c_master && (old & IBCR_INT))
+			{
+				m_scr_smr &= ~IBCR_INT;
+				i2c_bus_master_start(true);
+			}
+			else if (int_clear && m_i2c_active && m_i2c_master && m_i2c_state == I2C_HOLD)
+				i2c_bus_master_next();
+			break;
+		}
 		if ((m_scr_smr & ~old & IBCR_MSS) && BIT(m_i2c_address, 15))
 		{
 			if (m_ibsr & IBSR_BB)
@@ -708,6 +927,8 @@ void mb8aa4181_mfs_device::i2c_write(offs_t offset, u32 data, u32 mem_mask)
 		}
 		if (m_tx_count == FIFO_SIZE)
 			m_fcr &= ~FCR_FDRQ;
+		if (m_i2c_peer && m_i2c_active && m_i2c_master && m_i2c_state == I2C_HOLD && !(m_scr_smr & IBCR_INT))
+			i2c_bus_master_next();
 		break;
 
 	case 0x0c / 4:
@@ -772,6 +993,11 @@ mb8aa4181_device::mb8aa4181_device(const machine_config &mconfig, const char *ta
 	: cortex_m3_device(mconfig, MB8AA4181, tag, owner, clock, address_map_constructor(FUNC(mb8aa4181_device::internal_map), this))
 	, m_flash(*this, finder_base::DUMMY_TAG)
 	, m_mfs(*this, "mfs%u", 0U)
+	, m_i2c_chip(*this, finder_base::DUMMY_TAG)
+	, m_usb_link(*this, finder_base::DUMMY_TAG)
+	, m_i2c_channel(0)
+	, m_usb_host_port(false)
+	, m_boot_mode(BOOT_SERIAL_FLASH)
 	, m_dsp(*this, "dsp")
 	, m_iram(*this, "iram", IRAM_SIZE, ENDIANNESS_LITTLE)
 	, m_gpio_out_cb(*this)
@@ -829,7 +1055,7 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x40002000, 0x4000200b).rw(FUNC(mb8aa4181_device::dmaflag_r), FUNC(mb8aa4181_device::dmaflag_w));
 	map(0x40005000, 0x4000503f).rw(FUNC(mb8aa4181_device::sfi_r), FUNC(mb8aa4181_device::sfi_w));
 	map(0x40017040, 0x40017047).r(FUNC(mb8aa4181_device::timebase_r));
-	map(0x40003288, 0x4000328b).rw(FUNC(mb8aa4181_device::usb_irq_r), FUNC(mb8aa4181_device::usb_irq_w));
+	map(0x40003000, 0x4000329f).rw(FUNC(mb8aa4181_device::udma_r), FUNC(mb8aa4181_device::udma_w));
 	map(0x40010000, 0x400103ff).rw(FUNC(mb8aa4181_device::usb_r), FUNC(mb8aa4181_device::usb_w));
 	map(0x40040500, 0x4004057f).rw(FUNC(mb8aa4181_device::converter_r), FUNC(mb8aa4181_device::converter_w));
 	map(0x40023000, 0x4002301f).rw(FUNC(mb8aa4181_device::exint_reg_r), FUNC(mb8aa4181_device::exint_reg_w));
@@ -840,7 +1066,7 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x4002d000, 0x4002d03f).rw(FUNC(mb8aa4181_device::gpio_r), FUNC(mb8aa4181_device::gpio_w));
 	map(0x4002e000, 0x4002e03f).rw(FUNC(mb8aa4181_device::ptimer_r), FUNC(mb8aa4181_device::ptimer_w));
 	map(0x4002de20, 0x4002de3f).w(FUNC(mb8aa4181_device::event_w));
-	map(0x4002dfec, 0x4002dfef).lr32(NAME([] () { return BOOT_SERIAL_FLASH; }));
+	map(0x4002dfec, 0x4002dfef).lr32(NAME([this] () { return m_boot_mode; }));
 	map(0x40100000, 0x4017ffff).rw(m_dsp, FUNC(mb8aa4181_dsp_device::read), FUNC(mb8aa4181_dsp_device::write));
 	map(0x40045000, 0x40045fff).ram();
 }
@@ -856,6 +1082,9 @@ void mb8aa4181_device::device_start()
 	m_adc_timer[0] = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
 	m_adc_timer[1] = timer_alloc(FUNC(mb8aa4181_device::adc_done), this);
 	m_sfi_timer = timer_alloc(FUNC(mb8aa4181_device::sfi_done), this);
+	m_udma_timer = timer_alloc(FUNC(mb8aa4181_device::udma_done), this);
+	if (m_i2c_chip)
+		m_mfs[m_i2c_channel]->set_i2c_peer(&m_i2c_chip->mfs(m_i2c_channel));
 	m_remap = 0;
 	m_system_reset = false;
 	std::fill_n(m_sfi, 16, 0);
@@ -898,6 +1127,13 @@ void mb8aa4181_device::device_start()
 	save_item(NAME(m_usb_rx_position));
 	save_item(NAME(m_usb_rx_pending));
 	save_item(NAME(m_usb_host));
+	save_item(NAME(m_udma));
+	save_item(NAME(m_udma_enable));
+	save_item(NAME(m_urx_max));
+	save_item(NAME(m_utx_sent));
+	save_item(NAME(m_urx_active));
+	save_item(NAME(m_utx_active));
+	save_item(NAME(m_uin_pending));
 }
 
 void mb8aa4181_device::device_reset()
@@ -921,6 +1157,14 @@ void mb8aa4181_device::device_reset()
 	m_usb_rx_head = m_usb_rx_count = 0;
 	m_usb_rx_length = m_usb_rx_position = 0;
 	m_usb_rx_pending = false;
+	std::fill_n(m_udma, std::size(m_udma), 0);
+	std::fill_n(m_udma_enable, 2, ~u32(0));
+	m_urx_max = 0;
+	m_utx_sent = 0;
+	m_urx_active = false;
+	m_utx_active = false;
+	m_uin_pending = false;
+	m_udma_timer->adjust(attotime::never);
 	std::fill_n(m_converter, 4, 0.0);
 	m_adc_ctrl = m_adc_config = 0;
 	std::fill_n(m_adc_status, 2, 0);
@@ -1332,22 +1576,17 @@ void mb8aa4181_device::usb_rx_load()
 
 void mb8aa4181_device::usb_update_irq()
 {
-	const u32 irq = usb_irq_r();
-	set_irq_line(IRQ_USB_RX, BIT(irq, 2) ? ASSERT_LINE : CLEAR_LINE);
-	for (int i = 0; i < 2; i++)
-		set_irq_line(IRQ_USB_TX[i], BIT(irq, 3 + i) ? ASSERT_LINE : CLEAR_LINE);
+	for (unsigned group = 0; group < 2; group++)
+	{
+		const u32 active = udma_request(group) & m_udma_enable[group];
+		for (unsigned bit = 2; bit < 5; bit++)
+			set_irq_line(IRQ_UDMA_GROUP[group] + bit, BIT(active, bit) ? ASSERT_LINE : CLEAR_LINE);
+	}
 }
 
-u32 mb8aa4181_device::usb_irq_r()
+u32 mb8aa4181_device::usb_irq_r() const
 {
-	return (m_usb_rx_pending ? 0x04 : 0) | (~m_usb[0x14 / 4] & 0x30) >> 1;
-}
-
-void mb8aa4181_device::usb_irq_w(offs_t offset, u32 data, u32 mem_mask)
-{
-	if (BIT(mem_mask, 2) && !BIT(data, 2))
-		m_usb_rx_pending = false;
-	usb_update_irq();
+	return (m_usb_rx_pending ? 0x04 : 0) | ((~m_usb[0x14 / 4] & 0x30) >> 1 & (m_utx_active ? ~u32(0x08) : ~u32(0)));
 }
 
 u32 mb8aa4181_device::usb_r(offs_t offset)
@@ -1402,6 +1641,150 @@ void mb8aa4181_device::usb_w(offs_t offset, u32 data, u32 mem_mask)
 	}
 	if (offset == 0x14 / 4)
 		usb_update_irq();
+}
+
+
+//  USB DMA
+
+u32 mb8aa4181_device::udma_request(unsigned group) const
+{
+	if (group)
+		return usb_irq_r();
+	if (!m_usb_link || !m_usb_host_port)
+		return 0;
+	return (m_utx_active ? 0 : 0x04) | (m_uin_pending ? 0x08 : 0);
+}
+
+u32 mb8aa4181_device::udma_r(offs_t offset)
+{
+	switch (offset)
+	{
+	case 0x280 / 4:
+		return udma_request(0);
+	case 0x284 / 4:
+		return m_udma_enable[0];
+	case 0x288 / 4:
+		return udma_request(1);
+	case 0x28c / 4:
+		return m_udma_enable[1];
+	default:
+		return offset < std::size(m_udma) ? m_udma[offset] : 0;
+	}
+}
+
+void mb8aa4181_device::udma_w(offs_t offset, u32 data, u32 mem_mask)
+{
+	switch (offset)
+	{
+	case 0x280 / 4:
+		if (BIT(mem_mask, 3) && !BIT(data, 3))
+			m_uin_pending = false;
+		break;
+	case 0x284 / 4:
+		COMBINE_DATA(&m_udma_enable[0]);
+		break;
+	case 0x288 / 4:
+		if (BIT(mem_mask, 2) && !BIT(data, 2))
+			m_usb_rx_pending = false;
+		break;
+	case 0x28c / 4:
+		COMBINE_DATA(&m_udma_enable[1]);
+		break;
+	case 0x14 / 4:
+		COMBINE_DATA(&m_udma[offset]);
+		m_urx_max = m_udma[offset];
+		break;
+	case 0x20 / 4:
+		COMBINE_DATA(&m_udma[offset]);
+		if (data & mem_mask & 0xc0000000)
+			udma_rx_start();
+		break;
+	case 0x24 / 4:
+		m_udma[offset] &= ~(data & mem_mask);
+		break;
+	case 0xa0 / 4:
+		COMBINE_DATA(&m_udma[offset]);
+		if (data & mem_mask & 0xc0000000)
+			udma_tx_start();
+		break;
+	default:
+		if (offset < std::size(m_udma))
+			COMBINE_DATA(&m_udma[offset]);
+		break;
+	}
+	usb_update_irq();
+}
+
+void mb8aa4181_device::udma_tx_start()
+{
+	m_utx_active = true;
+	m_utx_sent = 0;
+	usb_update_irq();
+	if (m_usb_link)
+		m_usb_link->udma_peer_tx();
+	udma_try();
+}
+
+void mb8aa4181_device::udma_rx_start()
+{
+	m_urx_active = true;
+	usb_update_irq();
+	udma_try();
+	if (m_usb_link)
+		m_usb_link->udma_try();
+}
+
+void mb8aa4181_device::udma_peer_tx()
+{
+	if (m_usb_host_port)
+		m_uin_pending = true;
+	else
+		m_usb_rx_pending = true;
+	usb_update_irq();
+}
+
+void mb8aa4181_device::udma_try()
+{
+	if (!m_usb_link || !m_utx_active || !m_usb_link->m_urx_active || !m_udma_timer->remaining().is_never())
+		return;
+	const u32 left = m_udma[0x94 / 4] - m_utx_sent;
+	const u32 count = std::min(left, m_usb_link->m_urx_max);
+	m_udma_timer->adjust(attotime::from_nsec(u64(USB_LINK_BYTE_NS) * std::max<u32>(count, 1)), count);
+}
+
+TIMER_CALLBACK_MEMBER(mb8aa4181_device::udma_done)
+{
+	mb8aa4181_device &peer = *m_usb_link;
+	const u32 count = param;
+	address_space &src = space(AS_PROGRAM);
+	address_space &dst = peer.space(AS_PROGRAM);
+	const u32 from = m_udma[0x9c / 4] + m_utx_sent;
+	const u32 to = peer.m_udma[0x1c / 4];
+	for (u32 i = 0; i < count; i++)
+		dst.write_byte(to + i, src.read_byte(from + i));
+	m_utx_sent += count;
+
+	peer.m_urx_active = false;
+	peer.m_udma[0x14 / 4] = count;
+	peer.m_udma[0x20 / 4] &= ~0xc0000000;
+	peer.set_irq_line(IRQ_UDMA_RX, ASSERT_LINE);
+	peer.set_irq_line(IRQ_UDMA_RX, CLEAR_LINE);
+
+	if (m_utx_sent >= m_udma[0x94 / 4])
+	{
+		if (m_usb_host_port)
+			peer.m_usb_rx_pending = false;
+		else
+			peer.m_uin_pending = false;
+		m_utx_active = false;
+		m_udma[0xa0 / 4] &= ~0xc0000000;
+		set_irq_line(IRQ_UDMA_TX, ASSERT_LINE);
+		set_irq_line(IRQ_UDMA_TX, CLEAR_LINE);
+	}
+	else
+		peer.udma_peer_tx();
+	usb_update_irq();
+	peer.usb_update_irq();
 }
 
 
