@@ -730,6 +730,32 @@ static INPUT_PORTS_START(sh01a)
 	PORT_ADJUSTER(128, "Knob 11") PORT_MINMAX(0, 255)
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(tb03)
+	PORT_INCLUDE(d05)
+	PORT_START("MUX0")
+	PORT_ADJUSTER(128, "Selector (4 positions)") PORT_MINMAX(0, 255)
+	PORT_START("MUX1")
+	PORT_ADJUSTER(128, "Selector (5 positions)") PORT_MINMAX(0, 255)
+	PORT_START("MUX2")
+	PORT_ADJUSTER(128, "Accent") PORT_MINMAX(0, 255)
+	PORT_START("MUX3")
+	PORT_ADJUSTER(128, "Decay") PORT_MINMAX(0, 255)
+	PORT_START("MUX4")
+	PORT_ADJUSTER(128, "Env Mod") PORT_MINMAX(0, 255)
+	PORT_START("MUX5")
+	PORT_ADJUSTER(128, "Resonance") PORT_MINMAX(0, 255)
+	PORT_START("MUX6")
+	PORT_ADJUSTER(128, "Cut Off Freq") PORT_MINMAX(0, 255)
+	PORT_START("MUX7")
+	PORT_ADJUSTER(128, "Tuning") PORT_MINMAX(0, 255)
+	PORT_START("MUX8")
+	PORT_ADJUSTER(128, "Effect 1") PORT_MINMAX(0, 255)
+	PORT_START("MUX9")
+	PORT_ADJUSTER(128, "Effect 2") PORT_MINMAX(0, 255)
+	PORT_START("MUX10")
+	PORT_ADJUSTER(128, "Effect 3") PORT_MINMAX(0, 255)
+INPUT_PORTS_END
+
 static INPUT_PORTS_START(tr08)
 	PORT_INCLUDE(d05)
 
@@ -1096,6 +1122,9 @@ void boutique_state::ju06a(machine_config &config)
 void boutique_state::tb03(machine_config &config)
 {
 	boutique(config, 0xfff9, 24.576_MHz_XTAL);
+	m_subcpu->gpio_out_cb<4>().set(FUNC(boutique_state::subcpu_porte_w));
+	m_subcpu->adc_in_cb<12>().set(FUNC(boutique_state::panel_rising_r<0>));
+	m_subcpu->adc_in_cb<11>().set(FUNC(boutique_state::panel_rising_r<1>));
 }
 
 void boutique_state::tr09(machine_config &config)
@@ -1257,7 +1286,7 @@ SYST(2015, jp08,  0, 0, jp08,  d05,   boutique_state, init_boutique, "Roland", "
 SYST(2015, ju06,  0, 0, ju06,  d05,   boutique_state, init_boutique, "Roland", "JU-06 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2015, jx03,  0, 0, jx03,  d05,   boutique_state, init_boutique, "Roland", "JX-03 Synthesizer Module", MACHINE_NOT_WORKING)
 SYST(2019, ju06a, 0, 0, ju06a, d05,   boutique_state, init_boutique, "Roland", "JU-06A Synthesizer Module", MACHINE_NOT_WORKING)
-SYST(2016, tb03,  0, 0, tb03,  d05,   boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(2016, tb03,  0, 0, tb03,  tb03,  boutique_state, init_boutique, "Roland", "TB-03 Bass Line", MACHINE_NOT_WORKING)
 SYST(2016, tr09,  0, 0, tr09,  tr09,  boutique_state, init_boutique, "Roland", "TR-09 Rhythm Composer", MACHINE_NOT_WORKING)
 SYST(2018, vp03,  0, 0, vp03,  d05,   boutique_state, init_boutique, "Roland", "VP-03 Vocoder", MACHINE_NOT_WORKING)
 SYST(2017, d05,   0, 0, d05,   d05, boutique_state, init_boutique, "Roland", "D-05 Linear Synthesizer", MACHINE_NOT_WORKING)
