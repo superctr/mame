@@ -189,9 +189,7 @@ void ve500_state::ve500(machine_config &config)
 	mb8aa4181_dsp_device &dsp = *m_maincpu->subdevice<mb8aa4181_dsp_device>("dsp");
 	dsp.set_clock(24.576_MHz_XTAL);
 	dsp.set_audio_inputs(true);
-	auto &mic(MICROPHONE(config, "mic", 2).front());
-	mic.add_route(0, dsp, 1.0, 0);
-	mic.add_route(1, dsp, 1.0, 1);
+	MICROPHONE(config, "mic", 1).front_center().add_route(0, dsp, 1.0, 1);
 	dsp.add_route(0, "speaker", 1.0, 0);
 	dsp.add_route(1, "speaker", 1.0, 1);
 
@@ -211,4 +209,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(2015, ve500, 0, 0, ve500, ve500, ve500_state, empty_init, "Boss", "VE-500 Vocal Performer", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+SYST(2015, ve500, 0, 0, ve500, ve500, ve500_state, empty_init, "Boss", "VE-500 Vocal Performer", MACHINE_NOT_WORKING)
