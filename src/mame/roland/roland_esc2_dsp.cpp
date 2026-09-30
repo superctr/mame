@@ -1031,7 +1031,12 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		}
 		if (w >> 8)
 			op.flags |= F_CONDITIONAL;
-		if (low >= 0x10 && low < 0x80)
+		if ((w & 0xfff8) == 0x0028)
+		{
+			op.type = OP_D_CALL_REGISTER;
+			op.x = w & 7;
+		}
+		else if (low >= 0x10 && low < 0x80)
 		{
 			u8 others[MAX_OPS];
 			unsigned m = 0;
@@ -1451,6 +1456,11 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 				transfer = op.value;
 				kind = op.type == OP_D_CALL ? TRANSFER_CALL : TRANSFER_JUMP;
 			}
+			break;
+		case OP_D_CALL_REGISTER:
+			has = false;
+			transfer = s32(std::floor(r[x] * 32768.0)) & 0xffff;
+			kind = TRANSFER_CALL;
 			break;
 		case OP_D_NOTIFY:
 			has = false;
