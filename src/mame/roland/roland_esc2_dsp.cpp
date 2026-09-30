@@ -904,10 +904,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_ADVANCE;
 		else if ((w & 0x8fff) == 0x8f6b)
 			op.type = OP_C_CLAMP;
-		else if ((w & 0x8ffe) == 0x8f80)
+		else if ((w & 0x8ff8) == 0x8f80)
 		{
 			op.type = OP_C_BIT;
-			op.y = w & 1;
+			op.y = w & 7;
 		}
 		else if ((w & 0x8ff8) == 0x8f40)
 			op.type = OP_C_FRACTION;
