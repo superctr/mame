@@ -1001,8 +1001,6 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		{
 			op.type = OP_C_SCALE;
 			op.q = std::ldexp(1.0, int(op.y));
-			if (w == 0xfc90 || w == 0xfcd0)
-				op.flags |= F_FUNCTION;
 		}
 		else if ((w & 0x8e38) == 0x8c20)
 			op.type = OP_C_RIGHT_SHIFT;
@@ -1415,7 +1413,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		case OP_C_UNARY6: value = noise(r[y]); is_function = true; break;
 		case OP_C_SCALE:
 			value = r[x] * op.q;
-			is_function = op.flags & F_FUNCTION;
+			is_function = true;
 			break;
 		case OP_C_SHIFT:
 		{
@@ -1433,6 +1431,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		{
 			const double t = std::trunc(std::ldexp(r[x], 32));
 			value = std::fabs(t) < 0x1p62 ? std::ldexp(double(s64(t) >> y), -32) : std::ldexp(t, -32 - int(y));
+			is_function = true;
 			break;
 		}
 
