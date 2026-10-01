@@ -50,16 +50,16 @@
     SCI and SCIF, the SD-90's IrDA channel and SCIF.
 
     State: **the SD-80 runs.**  It boots, inflates the program into the
-    SDRAM at 0x08001000, reaches its play screen, takes MIDI on the SCIF,
-    and its panel, LEDs and value dial work; there is nothing to hear,
-    because the wave mask ROMs are undumped.  The SCI's MIDI port is the
-    core's to implement, and the answer its USB controller gives at
-    power-on is a stub of two bytes.  The SD-90 boots its loader out of the
-    flash into the SDRAM at 0x883de000, gets past the word its loader polls
-    after each of the commands it sends the tone generator, paints the
-    =EDIROL= logo of its own on its graphic panel, inflates its program and
-    enters it, and stops in the driver for its own area 6 device, polling
-    +8 for the 1 that would say a command had been taken.
+    SDRAM at 0x08001000, reaches its play screen, takes MIDI on both
+    inputs, and its panel, LEDs and value dial work; there is nothing to
+    hear, because the wave mask ROMs are undumped.  The answer its USB
+    controller gives at power-on is a stub of two bytes.  The SD-90 boots
+    its loader out of the flash into the SDRAM at 0x883de000, gets past the
+    word its loader polls after each of the commands it sends the tone
+    generator, paints the =EDIROL= logo of its own on its graphic panel,
+    inflates its program and enters it, and stops in the driver for its
+    own area 6 device, polling +8 for the 1 that would say a command had
+    been taken.
 
 ****************************************************************************/
 
@@ -67,6 +67,7 @@
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
+#include "cpu/sh/sh3_sci.h"
 #include "cpu/sh/sh3_scif.h"
 #include "cpu/sh/sh3comn.h"
 #include "cpu/sh/sh4.h"
@@ -96,6 +97,8 @@ public:
 		, m_lcd(*this, "lcd")
 		, m_glcd(*this, "glcd")
 		, m_dial(*this, "DIAL")
+		, m_midi_sw(*this, "MIDI_SW")
+		, m_mdout2(*this, "mdout2")
 		, m_leds(*this, "led_%u", 0U)
 	{
 	}
@@ -120,6 +123,7 @@ protected:
 	template <int Device> void sd90_area6_w(offs_t offset, u8 data);
 
 	void led_w(offs_t offset, u8 data);
+	void out2_update();
 	u64 scp_r();
 	bool enca() const { return m_encoder_phase != 1 && m_encoder_phase != 2; }
 	TIMER_CALLBACK_MEMBER(step_encoder);
@@ -132,6 +136,8 @@ protected:
 	u8 m_dial_last = 0;
 	s8 m_dial_pending = 0;
 	u8 m_encoder_phase = 0;
+	u8 m_in1_rxd = 1;
+	u8 m_scif_txd = 1;
 
 	emu_timer *m_encoder_timer = nullptr;
 
@@ -140,6 +146,8 @@ protected:
 	optional_device<hd44780_device> m_lcd;
 	optional_device<st7565_device> m_glcd;
 	optional_ioport m_dial;
+	optional_ioport m_midi_sw;
+	optional_device<midi_port_device> m_mdout2;
 	output_finder<LEDS> m_leds;
 };
 
@@ -153,6 +161,8 @@ void sd90_state::machine_start()
 	save_item(NAME(m_dial_last));
 	save_item(NAME(m_dial_pending));
 	save_item(NAME(m_encoder_phase));
+	save_item(NAME(m_in1_rxd));
+	save_item(NAME(m_scif_txd));
 }
 
 
@@ -392,12 +402,22 @@ void sd90_state::sd80(machine_config &config)
 	m_xv[0]->switch_callback().set_ioport("PANEL");
 	m_xv[0]->led_callback().set(FUNC(sd90_state::led_w));
 
-	// which of the two jacks the SCIF is has not been read; the other is
-	// the SCI at 0xfffffe80, which this core carries as registers only
-	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
-	mdin.rxd_handler().set(m_maincpu->scif(), FUNC(sh3_scif_device::rxd_w));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
-	m_maincpu->scif().txd_handler().set("mdout", FUNC(midi_port_device::write_txd));
+	// MIDI IN 1 and OUT 1 are the SCI, IN 2 and OUT 2 the SCIF; SW2 on the
+	// rear panel gives OUT 2 to IN 1's thru instead
+	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
+	mdin1.rxd_handler().set([this] (int state) { m_maincpu->sci().rxd_w(state); m_in1_rxd = state; out2_update(); });
+	MIDI_PORT(config, "mdout1", midiout_slot, "midiout");
+	m_maincpu->sci().txd_handler().set("mdout1", FUNC(midi_port_device::write_txd));
+
+	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
+	mdin2.rxd_handler().set(m_maincpu->scif(), FUNC(sh3_scif_device::rxd_w));
+	MIDI_PORT(config, m_mdout2, midiout_slot, "midiout");
+	m_maincpu->scif().txd_handler().set([this] (int state) { m_scif_txd = state; out2_update(); });
+}
+
+void sd90_state::out2_update()
+{
+	m_mdout2->write_txd(BIT(m_midi_sw->read(), 0) ? m_in1_rxd : m_scif_txd);
 }
 
 void sd90_state::sd90(machine_config &config)
@@ -449,6 +469,11 @@ static INPUT_PORTS_START(sd80)
 
 	PORT_START("DIAL")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
+
+	PORT_START("MIDI_SW")
+	PORT_CONFNAME(0x01, 0x00, "MIDI OUT 2")
+	PORT_CONFSETTING(   0x00, "OUT 2")
+	PORT_CONFSETTING(   0x01, "IN 1 THRU")
 INPUT_PORTS_END
 
 
