@@ -23,7 +23,7 @@
     - IC17 512 KB program ROM on /CS0, 2 x 32 KB battery backed SRAM on /CS1
 
     Interrupts: IRQ0 gate array, IRQ1 XP, IRQ2 sub CPU.  The analog inputs
-    read the backup battery (AN0) and the rear COMPUTER selector (AN1-AN3).
+    read the backup battery (AN0) and the rear COMPUTER selector (AN1).
 
     SC-88VL: compact (1U half-rack) version of SC-88 with standby function
 
@@ -224,7 +224,8 @@ void roland_sc88_state::machine_reset()
 //  strobe transfers both and raises interrupt source 0 when done.
 //
 //    00     LEDs                 04     1 + pending interrupt source (read)
-//    01-02  ?                    05     interrupt mask, bit n masks source n
+//    01     LED commons          05     interrupt mask, bit n masks source n
+//    02     written ff at boot
 //    03/07  LCD setup            1e     LCD strobe    1f  LCD command
 //                                20-2c  LCD data FIFO
 //-------------------------------------------------
@@ -454,11 +455,10 @@ u16 roland_sc88_state::battery_r()
 	return 0x2a0;
 }
 
-// the rear selector is a resistor ladder into three inputs; until the
-// thresholds are known each position pulls one input high
+// the rear selector is a resistor ladder in four equal steps; the firmware reads it once at boot
 u16 roland_sc88_state::computer_sw_r()
 {
-	return m_computer_sw.read_safe(0) ? 0x3ff : 0;
+	return m_computer_sw.read_safe(0) * 0x3ff / 3;
 }
 
 
@@ -657,8 +657,8 @@ static INPUT_PORTS_START(sc88)
 	PORT_START("COMPUTER")
 	PORT_CONFNAME(0x03, 0x00, "Computer Switch")
 	PORT_CONFSETTING(0x00, "MIDI")
-	PORT_CONFSETTING(0x01, "PC-1")
-	PORT_CONFSETTING(0x02, "PC-2")
+	PORT_CONFSETTING(0x01, "PC-2")
+	PORT_CONFSETTING(0x02, "PC-1")
 	PORT_CONFSETTING(0x03, "Mac")
 INPUT_PORTS_END
 
@@ -709,8 +709,8 @@ static INPUT_PORTS_START(sc88pro)
 	PORT_START("COMPUTER")
 	PORT_CONFNAME(0x03, 0x00, "Computer Switch")
 	PORT_CONFSETTING(0x00, "MIDI")
-	PORT_CONFSETTING(0x01, "PC-1")
-	PORT_CONFSETTING(0x02, "PC-2")
+	PORT_CONFSETTING(0x01, "PC-2")
+	PORT_CONFSETTING(0x02, "PC-1")
 	PORT_CONFSETTING(0x03, "Mac")
 INPUT_PORTS_END
 
@@ -720,8 +720,6 @@ void roland_sc88_state::sc88(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::main_map);
 	m_maincpu->read_adc<0>().set(FUNC(roland_sc88_state::battery_r));
 	m_maincpu->read_adc<1>().set(FUNC(roland_sc88_state::computer_sw_r));
-	m_maincpu->read_adc<2>().set(FUNC(roland_sc88_state::computer_sw_r));
-	m_maincpu->read_adc<3>().set(FUNC(roland_sc88_state::computer_sw_r));
 	m_maincpu->read_port4().set(FUNC(roland_sc88_state::port4_r));
 	m_maincpu->write_port4().set(FUNC(roland_sc88_state::port4_w));
 	m_maincpu->read_port5().set(FUNC(roland_sc88_state::port5_r));
@@ -805,8 +803,6 @@ void roland_sc88_state::vegspro(machine_config &config)
 	m_maincpu->read_adc<0>().set(FUNC(roland_sc88_state::battery_r));
 	// the expansion board has no rear selector, but the SC-88Pro's firmware still polls the ladder
 	m_maincpu->read_adc<1>().set(FUNC(roland_sc88_state::computer_sw_r));
-	m_maincpu->read_adc<2>().set(FUNC(roland_sc88_state::computer_sw_r));
-	m_maincpu->read_adc<3>().set(FUNC(roland_sc88_state::computer_sw_r));
 	m_maincpu->read_port4().set(FUNC(roland_sc88_state::port4_r));
 	m_maincpu->write_port4().set(FUNC(roland_sc88_state::port4_w));
 	m_maincpu->read_port8().set(FUNC(roland_sc88_state::port8_r));
