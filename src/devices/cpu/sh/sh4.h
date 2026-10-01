@@ -97,7 +97,8 @@ enum
 	SH4_INTC_IRDATXI,
 	SH4_INTC_ITI,
 	SH4_INTC_RCMI,
-	SH4_INTC_ROVI
+	SH4_INTC_ROVI,
+	SH4_INTC_ADI
 };
 
 #define SH4_FPU_PZERO 0
@@ -350,7 +351,7 @@ protected:
 
 		int irq = 0;
 		int z = -1;
-		for (int a = 0; a <= SH4_INTC_ROVI; a++)
+		for (int a = 0; a <= SH4_INTC_ADI; a++)
 		{
 			if (m_exception_requesting[a])
 			{
@@ -644,6 +645,9 @@ public:
 	sh3_scif_device &irda();
 	sh3_scif_device &scif();
 
+	template <unsigned Channel> auto read_adc() { return m_read_adc[Channel].bind(); }
+	void adtrg_w(int state);
+
 protected:
 	// construction/destruction
 	sh3_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness);
@@ -661,6 +665,12 @@ protected:
 	uint8_t sh3_wdt_count();
 	TIMER_CALLBACK_MEMBER(sh3_wdt_overflow);
 	emu_timer *m_wdt_timer;
+
+	void sh3_adc_irq_update();
+	void sh3_adc_start();
+	TIMER_CALLBACK_MEMBER(sh3_adc_convert);
+	emu_timer *m_adc_timer;
+	devcb_read16::array<8> m_read_adc;
 
 	static uint8_t port_direction(uint16_t cr);
 	uint8_t port_read(int port, uint8_t dr, uint16_t cr);
@@ -909,22 +919,7 @@ protected:
 	void cmcor_w(offs_t offset, uint16_t data, uint16_t mem_mask);
 
 	// AD 7709
-	uint8_t addrah_r(offs_t offset, uint8_t mem_mask);
-	void addrah_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addral_r(offs_t offset, uint8_t mem_mask);
-	void addral_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrbh_r(offs_t offset, uint8_t mem_mask);
-	void addrbh_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrbl_r(offs_t offset, uint8_t mem_mask);
-	void addrbl_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrch_r(offs_t offset, uint8_t mem_mask);
-	void addrch_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrcl_r(offs_t offset, uint8_t mem_mask);
-	void addrcl_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrdh_r(offs_t offset, uint8_t mem_mask);
-	void addrdh_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t addrdl_r(offs_t offset, uint8_t mem_mask);
-	void addrdl_w(offs_t offset, uint8_t data, uint8_t mem_mask);
+	uint8_t addr_r(offs_t offset);
 	uint8_t adcsr_r(offs_t offset, uint8_t mem_mask);
 	void adcsr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
 	uint8_t adcr_r(offs_t offset, uint8_t mem_mask);
@@ -1102,16 +1097,13 @@ protected:
 	uint16_t m_cmcor;
 
 	// AD 7709
-	uint8_t m_addrah;
-	uint8_t m_addral;
-	uint8_t m_addrbh;
-	uint8_t m_addrbl;
-	uint8_t m_addrch;
-	uint8_t m_addrcl;
-	uint8_t m_addrdh;
-	uint8_t m_addrdl;
+	uint16_t m_addr[4];
+	uint8_t m_adtemp;
 	uint8_t m_adcsr;
 	uint8_t m_adcr;
+	bool m_adf_read;
+	int m_adc_channel;
+	int m_adtrg;
 
 	// DA 7709
 	uint8_t m_dadr0;

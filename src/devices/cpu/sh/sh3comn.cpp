@@ -1085,6 +1085,7 @@ void sh3_base_device::ipre_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 		m_exception_priority[a] = INTPRI((m_ipre & 0x0f00) >> 8, a);
 	for (int a = SH4_INTC_SCIFERI; a <= SH4_INTC_SCIFTXI; a++)
 		m_exception_priority[a] = INTPRI((m_ipre & 0x00f0) >> 4, a);
+	m_exception_priority[SH4_INTC_ADI] = INTPRI(m_ipre & 0x000f, SH4_INTC_ADI);
 	sh4_exception_recompute();
 }
 
@@ -1234,125 +1235,94 @@ void sh3_base_device::cmcor_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 	logerror("'%s' (%08x): CMT unmapped internal write %04x & %04x (CMCOR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
-// AD 7709
-uint8_t sh3_base_device::addrah_r(offs_t offset, uint8_t mem_mask)
+// AD 7709: a 10-bit successive approximation converter over two groups of
+// four channels, started by ADST or by a falling edge on ADTRG
+void sh3_base_device::sh3_adc_irq_update()
 {
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRAH) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrah);
-	return m_addrah;
+	if ((m_adcsr & 0xc0) == 0xc0)
+		sh4_exception_request(SH4_INTC_ADI);
+	else
+		sh4_exception_unrequest(SH4_INTC_ADI);
 }
 
-void sh3_base_device::addrah_w(offs_t offset, uint8_t data, uint8_t mem_mask)
+void sh3_base_device::sh3_adc_start()
 {
-	COMBINE_DATA(&m_addrah);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRAH)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	m_adc_channel = (m_adcsr & 0x10) ? (m_adcsr & 4) : (m_adcsr & 7);
+	m_adc_timer->adjust(attotime::from_hz(m_pm_clock) * ((m_adcsr & 0x08) ? 266 : 536));
 }
 
-uint8_t sh3_base_device::addral_r(offs_t offset, uint8_t mem_mask)
+TIMER_CALLBACK_MEMBER(sh3_base_device::sh3_adc_convert)
 {
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRAL) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addral);
-	return m_addral;
+	m_addr[m_adc_channel & 3] = (m_read_adc[m_adc_channel]() & 0x3ff) << 6;
+
+	const bool multi = m_adcsr & 0x10;
+	const bool scan = multi && (m_adcr & 0x20);
+	if (!multi || m_adc_channel == (m_adcsr & 7))
+	{
+		m_adcsr |= 0x80;
+		sh3_adc_irq_update();
+		if (!scan)
+		{
+			m_adcsr &= ~0x20;
+			return;
+		}
+		m_adc_channel = m_adcsr & 4;
+	}
+	else
+		m_adc_channel++;
+	m_adc_timer->adjust(attotime::from_hz(m_pm_clock) * ((m_adcsr & 0x08) ? 256 : 512));
 }
 
-void sh3_base_device::addral_w(offs_t offset, uint8_t data, uint8_t mem_mask)
+void sh3_base_device::adtrg_w(int state)
 {
-	COMBINE_DATA(&m_addral);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRAL)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	if (m_adtrg && !state && (m_adcr & 0xc0) == 0xc0 && !(m_adcsr & 0x20))
+	{
+		m_adcsr |= 0x20;
+		sh3_adc_start();
+	}
+	m_adtrg = state;
 }
 
-uint8_t sh3_base_device::addrbh_r(offs_t offset, uint8_t mem_mask)
+uint8_t sh3_base_device::addr_r(offs_t offset)
 {
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRBH) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrbh);
-	return m_addrbh;
-}
-
-void sh3_base_device::addrbh_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrbh);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRBH)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::addrbl_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRBL) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrbl);
-	return m_addrbl;
-}
-
-void sh3_base_device::addrbl_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrbl);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRBL)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::addrch_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRCH) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrch);
-	return m_addrch;
-}
-
-void sh3_base_device::addrch_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrch);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRCH)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::addrcl_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRCL) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrcl);
-	return m_addrcl;
-}
-
-void sh3_base_device::addrcl_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrcl);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRCL)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::addrdh_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRDH) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrdh);
-	return m_addrdh;
-}
-
-void sh3_base_device::addrdh_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrdh);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRDH)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::addrdl_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADDRDL) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_addrdl);
-	return m_addrdl;
-}
-
-void sh3_base_device::addrdl_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_addrdl);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADDRDL)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	if (offset & 1)
+		return m_adtemp;
+	if (!machine().side_effects_disabled())
+		m_adtemp = m_addr[offset >> 1] & 0xff;
+	return m_addr[offset >> 1] >> 8;
 }
 
 uint8_t sh3_base_device::adcsr_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADCSR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_adcsr);
+	if ((m_adcsr & 0x80) && !machine().side_effects_disabled())
+		m_adf_read = true;
 	return m_adcsr;
 }
 
 void sh3_base_device::adcsr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
-	COMBINE_DATA(&m_adcsr);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADCSR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	const uint8_t old = m_adcsr;
+	uint8_t adf = m_adcsr & 0x80;
+	if (!(data & 0x80) && m_adf_read)
+		adf = 0;
+	m_adf_read = false;
+	m_adcsr = adf | (data & 0x7f);
+
+	if (!(m_adcsr & 0x20))
+		m_adc_timer->adjust(attotime::never);
+	else if (!(old & 0x20))
+		sh3_adc_start();
+	sh3_adc_irq_update();
 }
 
 uint8_t sh3_base_device::adcr_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): AD unmapped internal read mask %02x (ADCR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_adcr);
-	return m_adcr;
+	return m_adcr | 0x07;
 }
 
 void sh3_base_device::adcr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
-	COMBINE_DATA(&m_adcr);
-	logerror("'%s' (%08x): AD unmapped internal write %02x & %02x (ADCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	m_adcr = (data & 0xe0) | 0x07;
 }
 
 // DA 7709

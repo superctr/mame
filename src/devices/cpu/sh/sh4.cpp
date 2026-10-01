@@ -841,14 +841,8 @@ void sh3_base_device::cmt_7709_map(address_map& map)
 
 void sh3_base_device::ad_7709_map(address_map& map)
 {
-	map(0x04000080, 0x04000080).rw(FUNC(sh3_base_device::addrah_r), FUNC(sh3_base_device::addrah_w));
-	map(0x04000082, 0x04000082).rw(FUNC(sh3_base_device::addral_r), FUNC(sh3_base_device::addral_w));
-	map(0x04000084, 0x04000084).rw(FUNC(sh3_base_device::addrbh_r), FUNC(sh3_base_device::addrbh_w));
-	map(0x04000086, 0x04000086).rw(FUNC(sh3_base_device::addrbl_r), FUNC(sh3_base_device::addrbl_w));
-	map(0x04000088, 0x04000088).rw(FUNC(sh3_base_device::addrch_r), FUNC(sh3_base_device::addrch_w));
-	map(0x0400008a, 0x0400008a).rw(FUNC(sh3_base_device::addrcl_r), FUNC(sh3_base_device::addrcl_w));
-	map(0x0400008c, 0x0400008c).rw(FUNC(sh3_base_device::addrdh_r), FUNC(sh3_base_device::addrdh_w));
-	map(0x0400008e, 0x0400008e).rw(FUNC(sh3_base_device::addrdl_r), FUNC(sh3_base_device::addrdl_w));
+	for (int i = 0; i < 8; i++)
+		map(0x04000080 + 2 * i, 0x04000080 + 2 * i).lr8(NAME(([this, i] () { return addr_r(i); })));
 	map(0x04000090, 0x04000090).rw(FUNC(sh3_base_device::adcsr_r), FUNC(sh3_base_device::adcsr_w));
 	map(0x04000092, 0x04000092).rw(FUNC(sh3_base_device::adcr_r), FUNC(sh3_base_device::adcr_w));
 }
@@ -954,6 +948,8 @@ sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type
 	, m_irda(*this, "irda")
 	, m_scif(*this, "scif")
 	, m_wdt_timer(nullptr)
+	, m_adc_timer(nullptr)
+	, m_read_adc(*this, 0)
 {
 	m_cpu_type = CPU_TYPE_SH3;
 	m_am = SH34_AM;
@@ -2744,16 +2740,13 @@ void sh3_base_device::device_reset()
 	m_cmcor = 0xffff;
 
 	// AD 7709
-	m_addrah = 0;
-	m_addral = 0;
-	m_addrbh = 0;
-	m_addrbl = 0;
-	m_addrch = 0;
-	m_addrcl = 0;
-	m_addrdh = 0;
-	m_addrdl = 0;
+	std::fill(std::begin(m_addr), std::end(m_addr), 0);
+	m_adtemp = 0;
 	m_adcsr = 0;
 	m_adcr = 0x07;
+	m_adf_read = false;
+	m_adc_channel = 0;
+	m_adc_timer->adjust(attotime::never);
 
 	// DA 7709
 	m_dadr0 = 0;
@@ -3116,6 +3109,7 @@ void sh3_base_device::device_start()
 	sh34_base_device::device_start();
 
 	m_wdt_timer = timer_alloc(FUNC(sh3_base_device::sh3_wdt_overflow), this);
+	m_adc_timer = timer_alloc(FUNC(sh3_base_device::sh3_adc_convert), this);
 
 	// UBC
 	m_bara = 0;
@@ -3300,16 +3294,14 @@ void sh3_base_device::device_start()
 	save_item(NAME(m_cmcor));
 
 	// AD 7709
-	save_item(NAME(m_addrah));
-	save_item(NAME(m_addral));
-	save_item(NAME(m_addrbh));
-	save_item(NAME(m_addrbl));
-	save_item(NAME(m_addrch));
-	save_item(NAME(m_addrcl));
-	save_item(NAME(m_addrdh));
-	save_item(NAME(m_addrdl));
+	m_adtrg = 1;
+	save_item(NAME(m_addr));
+	save_item(NAME(m_adtemp));
 	save_item(NAME(m_adcsr));
 	save_item(NAME(m_adcr));
+	save_item(NAME(m_adf_read));
+	save_item(NAME(m_adc_channel));
+	save_item(NAME(m_adtrg));
 
 	// DA 7709
 	save_item(NAME(m_dadr0));
