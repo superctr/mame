@@ -803,7 +803,7 @@ static INPUT_PORTS_START(sc88vl)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level <")
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level >")
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
-	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_UNUSED) // SD7 is strapped to SSC2 on the main board
 
 	// rear panel selector, read through the analog inputs as a resistor ladder
 	PORT_START("COMPUTER")
