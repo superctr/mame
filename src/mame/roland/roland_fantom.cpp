@@ -83,7 +83,9 @@
     modulation lever, the D-Beam, aftertouch, the hold pedal and, behind a
     4053 that PTD7 switches, the two control pedals and the four realtime
     control knobs; it converts a group of four channels on each falling
-    edge of ADTRG, which is the D-Beam emitter's drive inverted.
+    edge of ADTRG, which is the D-Beam emitter's drive inverted: the
+    firmware drives the emitter from the SCI, sending 0xff about 180 times
+    a second, so each frame's start bit is one pulse.
 
     The floppy drive is on the FDC37C78's DS1 and MTR1, and the firmware
     moves its sectors on DMA channel 0, edge-triggered, one byte a request.
@@ -99,6 +101,7 @@
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
 #include "cpu/sh/sh3comn.h"
+#include "cpu/sh/sh3_sci.h"
 #include "cpu/sh/sh3_scif.h"
 #include "cpu/sh/sh4.h"
 #include "imagedev/floppy.h"
@@ -341,7 +344,6 @@ private:
 	template <int N> u16 adc_r();
 
 	TIMER_CALLBACK_MEMBER(encoder_tick);
-	TIMER_CALLBACK_MEMBER(dbeam_tick);
 
 	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -362,7 +364,6 @@ private:
 	output_finder<LEDS> m_leds;
 
 	emu_timer *m_encoder_timer = nullptr;
-	emu_timer *m_dbeam_timer = nullptr;
 	emu_timer *m_fdc_dack_timer = nullptr;
 	u8 m_encoder_last = 0;
 	int m_encoder_pending = 0;
@@ -376,7 +377,6 @@ private:
 void fantom_state::machine_start()
 {
 	m_encoder_timer = timer_alloc(FUNC(fantom_state::encoder_tick), this);
-	m_dbeam_timer = timer_alloc(FUNC(fantom_state::dbeam_tick), this);
 	m_fdc_dack_timer = timer_alloc(FUNC(fantom_state::fdc_dack_end), this);
 
 	save_item(NAME(m_encoder_last));
@@ -393,7 +393,6 @@ void fantom_state::machine_reset()
 	m_encoder_pending = 0;
 	m_encoder_phase = 0;
 	m_encoder_timer->adjust(attotime::from_msec(2), 0, attotime::from_msec(2));
-	m_dbeam_timer->adjust(attotime::from_msec(5), 0, attotime::from_msec(5));
 }
 
 
@@ -500,9 +499,8 @@ u64 fantom_state::portf_r()
 //  pedal, and AN5 to AN7 the two pedal jacks and the
 //  four realtime control knobs behind ADSEL.  The
 //  converter is triggered by ADTRG, the inverse of the
-//  D-Beam emitter's drive XDBPLS, which the SCI's
-//  transmitter makes; a pulse every 5 ms stands in
-//  for it.
+//  D-Beam emitter's drive XDBPLS, which is the SCI's
+//  transmit data line.
 //-------------------------------------------------
 
 template <int N>
@@ -515,12 +513,6 @@ u16 fantom_state::adc_r()
 	case 7: return m_analog[m_adsel ? 10 : 9]->read();
 	default: return m_analog[N]->read();
 	}
-}
-
-TIMER_CALLBACK_MEMBER(fantom_state::dbeam_tick)
-{
-	m_maincpu->adtrg_w(0);
-	m_maincpu->adtrg_w(1);
 }
 
 
@@ -715,6 +707,10 @@ void fantom_state::fantom(machine_config &config)
 	m_xv->add_route(1, "outa", 1.0, 1);
 	m_xv->add_route(2, "outb", 1.0, 0);
 	m_xv->add_route(3, "outb", 1.0, 1);
+
+	// SCPT0, the SCI's TxD, is XDBPLS, the D-Beam emitter's drive, and
+	// through IC6C the A/D converter's ADTRG
+	m_maincpu->sci().txd_handler().set([this] (int state) { m_maincpu->adtrg_w(!state); });
 
 	// MIDI on the SH7709's IrDA channel
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
