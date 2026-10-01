@@ -85,9 +85,12 @@
     control knobs; it converts a group of four channels on each falling
     edge of ADTRG, which is the D-Beam emitter's drive inverted.
 
+    The floppy drive is on the FDC37C78's DS1 and MTR1, and the firmware
+    moves its sectors on DMA channel 0, edge-triggered, one byte a request.
+
     State: boots to the PERFORMANCE PLAY screen, takes MIDI and plays, and
-    the keyboard, panel buttons, value encoder and analogue controls work.
-    The floppy controller's DMA request is not connected.
+    the keyboard, panel buttons, value encoder, analogue controls and the
+    floppy drive work.
 
 ****************************************************************************/
 
@@ -328,6 +331,12 @@ private:
 	void portc_w(u64 data);
 	void portd_w(u64 data);
 	u64 portf_r();
+	void porth_w(u64 data);
+	void fdc_drq_w(int state);
+	void fdc_dack();
+	TIMER_CALLBACK_MEMBER(fdc_dack_end);
+	u8 fdc_data_r();
+	void fdc_data_w(u8 data);
 	void led_w(offs_t offset, u8 data);
 	template <int N> u16 adc_r();
 
@@ -339,7 +348,7 @@ private:
 
 	required_device<sh7709_device> m_maincpu;
 	required_device<tc58fvb321_device> m_flash;
-	required_device<n82077aa_device> m_fdc;
+	required_device<smc37c78_device> m_fdc;
 	required_device<roland_xv_device> m_xv;
 	required_device<roland_srjv80_slot_device> m_exp;
 	required_device_array<roland_srx_slot_device, 2> m_srx;
@@ -354,11 +363,13 @@ private:
 
 	emu_timer *m_encoder_timer = nullptr;
 	emu_timer *m_dbeam_timer = nullptr;
+	emu_timer *m_fdc_dack_timer = nullptr;
 	u8 m_encoder_last = 0;
 	int m_encoder_pending = 0;
 	u8 m_encoder_phase = 0;
 	u8 m_adsel = 0;
 	u8 m_lcdenb = 0;
+	u8 m_fdc_drq = 0;
 };
 
 
@@ -366,12 +377,14 @@ void fantom_state::machine_start()
 {
 	m_encoder_timer = timer_alloc(FUNC(fantom_state::encoder_tick), this);
 	m_dbeam_timer = timer_alloc(FUNC(fantom_state::dbeam_tick), this);
+	m_fdc_dack_timer = timer_alloc(FUNC(fantom_state::fdc_dack_end), this);
 
 	save_item(NAME(m_encoder_last));
 	save_item(NAME(m_encoder_pending));
 	save_item(NAME(m_encoder_phase));
 	save_item(NAME(m_adsel));
 	save_item(NAME(m_lcdenb));
+	save_item(NAME(m_fdc_drq));
 }
 
 void fantom_state::machine_reset()
@@ -512,6 +525,64 @@ TIMER_CALLBACK_MEMBER(fantom_state::dbeam_tick)
 
 
 //-------------------------------------------------
+//  the floppy controller's DMA: XFDCREQ is DREQ0,
+//  which the firmware runs edge-triggered in dual
+//  address mode against the data register, with DACK
+//  marking the controller's side of each transfer, so
+//  an access to the data register while the request
+//  is up is the DMA's.  Each DACK releases the request
+//  until the controller raises it for the next byte.
+//  PTH7 is its terminal count.
+//-------------------------------------------------
+
+void fantom_state::fdc_drq_w(int state)
+{
+	m_fdc_drq = state;
+	m_fdc_dack_timer->adjust(attotime::never);
+	m_maincpu->dreq_w<0>(state);
+}
+
+TIMER_CALLBACK_MEMBER(fantom_state::fdc_dack_end)
+{
+	m_maincpu->dreq_w<0>(m_fdc_drq);
+}
+
+void fantom_state::fdc_dack()
+{
+	if (m_fdc_drq)
+	{
+		m_maincpu->dreq_w<0>(0);
+		m_fdc_dack_timer->adjust(attotime::from_usec(1));
+	}
+}
+
+u8 fantom_state::fdc_data_r()
+{
+	if (!m_fdc_drq || machine().side_effects_disabled())
+		return m_fdc->fifo_r();
+	const u8 data = m_fdc->dma_r();
+	fdc_dack();
+	return data;
+}
+
+void fantom_state::fdc_data_w(u8 data)
+{
+	if (!m_fdc_drq)
+		m_fdc->fifo_w(data);
+	else
+	{
+		m_fdc->dma_w(data);
+		fdc_dack();
+	}
+}
+
+void fantom_state::porth_w(u64 data)
+{
+	m_fdc->tc_w(BIT(data, 7));
+}
+
+
+//-------------------------------------------------
 //  the panel LEDs, a matrix on the scan strobes LS0-LS3 and the lines
 //  LD0-LD2 as the panel schematic draws it; the BEAT LED is two colours
 //  on line 0 of strobes 0 and 1
@@ -555,7 +626,8 @@ void fantom_state::fantom_map(address_map &map)
 	map(0x00000000, 0x003fffff).rw(m_flash, FUNC(tc58fvb321_device::read), FUNC(tc58fvb321_device::write));
 	map(0x0c000000, 0x0cffffff).ram();
 	map(0x10000000, 0x10000003).r(m_keyscan, FUNC(fantom_keyscan_device::read));
-	map(0x14000000, 0x14000007).m(m_fdc, FUNC(n82077aa_device::map));
+	map(0x14000000, 0x14000007).m(m_fdc, FUNC(smc37c78_device::map));
+	map(0x14000005, 0x14000005).rw(FUNC(fantom_state::fdc_data_r), FUNC(fantom_state::fdc_data_w));
 	map(0x18000000, 0x180001ff).mirror(0x7e00).rw(m_xv, FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x18008000, 0x1800ffff).rw(m_lcdc, FUNC(m66273_device::read), FUNC(m66273_device::write));
 }
@@ -565,6 +637,7 @@ void fantom_state::fantom_io_map(address_map &map)
 	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(fantom_state::portc_r), FUNC(fantom_state::portc_w));
 	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(fantom_state::portd_w));
 	map(SH3_PORT_F, SH3_PORT_F + 7).r(FUNC(fantom_state::portf_r));
+	map(SH3_PORT_H, SH3_PORT_H + 7).w(FUNC(fantom_state::porth_w));
 }
 
 
@@ -605,9 +678,10 @@ void fantom_state::fantom(machine_config &config)
 	FANTOM_KEYSCAN(config, m_keyscan, 10000);     // the time stamp unit, a choice
 	m_keyscan->int_handler().set_inputline(m_maincpu, 2);   // IRQ2, low level
 
-	N82077AA(config, m_fdc, 24_MHz_XTAL, n82077aa_device::mode_t::PS2);   // FDC37C78
+	SMC37C78(config, m_fdc, 24_MHz_XTAL);
 	m_fdc->intrq_wr_callback().set_inputline(m_maincpu, 3);               // IRQ3
-	FLOPPY_CONNECTOR(config, "fdc:0", "35hd", FLOPPY_35_HD, true, floppy_image_device::default_pc_floppy_formats);
+	m_fdc->drq_wr_callback().set(FUNC(fantom_state::fdc_drq_w));          // DREQ0
+	FLOPPY_CONNECTOR(config, "fdc:1", "35hd", FLOPPY_35_HD, true, floppy_image_device::default_pc_floppy_formats);    // on DS1 and MTR1
 
 	// the LM320191 panel on the M66273FP's four-bit output
 	screen_device &screen(SCREEN(config, "screen").set_lcd());
