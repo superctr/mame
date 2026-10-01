@@ -44,9 +44,9 @@ protected:
 	std::array<u32, 8> m_pending;
 	std::array<u16, 8> m_ipr;
 
-	u16 m_isr, m_icr;
+	u16 m_icr;
 
-	u8 m_lines;
+	u8 m_lines, m_edge, m_isr_read;
 	bool m_level_sense_bit = true;
 
 	required_device<sh_mcu_device> m_cpu;
@@ -54,6 +54,8 @@ protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 
+	bool is_level(int irq) const { return bool(BIT(m_icr, 7-irq)) == m_level_sense_bit; }
+	u8 irq_requests() const;
 	void update_irq();
 };
 
