@@ -1914,6 +1914,18 @@ if SOUNDS["ROLANDRPP324"] then
 end
 
 ---------------------------------------------------
+-- Roland MR3 effect processor
+--@src/devices/sound/roland_mr3.h,SOUNDS["ROLANDMR3"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDMR3"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_mr3.cpp",
+		MAME_DIR .. "src/devices/sound/roland_mr3.h",
+	}
+end
+
+---------------------------------------------------
 -- Roland XV tone generator
 --@src/devices/sound/roland_xv.h,SOUNDS["ROLANDXV"] = true
 ---------------------------------------------------
