@@ -248,11 +248,42 @@ int sh34_base_device::sh4_dma_transfer_device(int channel, uint32_t chcr, uint32
 	return 1;
 }
 
+// the SH-3's DS bit: DREQ is detected on its falling edge, a transfer unit
+// per request, rather than on its low level
+static constexpr uint32_t SH3_CHCR_DS = 0x00000040;
+
 void sh34_base_device::sh4_dreq_w(int channel, int state)
 {
+	const int old = m_dreq[channel];
 	m_dreq[channel] = state;
-	if (state)
-		sh4_dmac_check(channel);
+	if (!state)
+		return;
+
+	if (m_cpu_type != CPU_TYPE_SH4 && channel < 2)
+	{
+		const uint32_t chcr = channel ? m_chcr1 : m_chcr0;
+		if ((chcr & SH3_CHCR_DS) && old)
+			return;
+	}
+	sh4_dmac_check(channel);
+}
+
+void sh34_base_device::sh3_dma_unit(int channel)
+{
+	uint32_t &sar = channel ? m_sar1 : m_sar0;
+	uint32_t &dar = channel ? m_dar1 : m_dar0;
+	uint32_t &dmatcr = channel ? m_dmatcr1 : m_dmatcr0;
+	uint32_t &chcr = channel ? m_chcr1 : m_chcr0;
+
+	uint32_t one = 1;
+	sh4_dma_transfer(channel, 0, chcr, &sar, &dar, &one);
+	dmatcr = (dmatcr - 1) & 0x00ffffff;
+	if (!dmatcr)
+	{
+		chcr |= CHCR_TE;
+		if (chcr & CHCR_IE)
+			sh4_exception_request(channel ? SH4_INTC_DMTE1 : SH4_INTC_DMTE0);
+	}
 }
 
 void sh34_base_device::sh4_dmac_check(int channel)
@@ -297,7 +328,9 @@ void sh34_base_device::sh4_dmac_check(int channel)
 			return;
 		if (!m_dma_timer_active[channel] && !(chcr & CHCR_TE) && !(m_dmaor & (DMAOR_AE | DMAOR_NMIF)))
 		{
-			if (rs > 3 || rs < 2)
+			if (rs < 2 && m_cpu_type != CPU_TYPE_SH4 && (chcr & SH3_CHCR_DS))
+				sh3_dma_unit(channel);
+			else if (rs > 3 || rs < 2)
 				sh4_dma_transfer(channel, 1, chcr, &sar, &dar, &dmatcr);
 			else if ((m_dmaor & DMAOR_DDT) == 0)
 				sh4_dma_transfer_device(channel, chcr, &sar, &dar, &dmatcr); // tell device we are ready to transfer

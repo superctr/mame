@@ -414,6 +414,7 @@ protected:
 	int sh4_dma_transfer_device(int channel, uint32_t chcr, uint32_t *sar, uint32_t *dar, uint32_t *dmatcr);
 	void sh4_dmac_check(int channel);
 	void sh4_dreq_w(int channel, int state);
+	void sh3_dma_unit(int channel);
 	uint32_t sar0_r(offs_t offset, uint32_t mem_mask);
 	void sar0_w(offs_t offset, uint32_t data, uint32_t mem_mask);
 	uint32_t dar0_r(offs_t offset, uint32_t mem_mask);
