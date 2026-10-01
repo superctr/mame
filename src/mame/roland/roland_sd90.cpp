@@ -60,8 +60,8 @@
     generator, paints the =EDIROL= logo of its own on its graphic panel,
     inflates its program and enters it, steps its USB controller through
     the power-on states and sends it its program, and reaches its AUDIO
-    LEVEL screen; it has no panel inputs yet, and its MR3 port answers
-    zero.
+    LEVEL screen.  Its buttons work, and the MR3 passes the firmware's own
+    check on the test mode's device page.
 
 ****************************************************************************/
 
@@ -73,6 +73,7 @@
 #include "cpu/sh/sh3_scif.h"
 #include "cpu/sh/sh3comn.h"
 #include "cpu/sh/sh4.h"
+#include "sound/roland_mr3.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
 #include "video/st7565.h"
@@ -96,6 +97,7 @@ public:
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
 		, m_xv(*this, "xv%u", 0U)
+		, m_mr3(*this, "mr3")
 		, m_lcd(*this, "lcd")
 		, m_glcd(*this, "glcd")
 		, m_dial(*this, "DIAL")
@@ -121,8 +123,8 @@ protected:
 
 	template <int Channel> u8 uipc_r(offs_t offset);
 	template <int Channel> void uipc_w(offs_t offset, u8 data);
-	template <int Device> u8 sd90_area6_r(offs_t offset);
-	template <int Device> void sd90_area6_w(offs_t offset, u8 data);
+	u8 usb_r(offs_t offset);
+	void usb_w(offs_t offset, u8 data);
 
 	void led_w(offs_t offset, u8 data);
 	void out2_update();
@@ -147,6 +149,7 @@ protected:
 
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
+	optional_device<roland_mr3_device> m_mr3;
 	optional_device<hd44780_device> m_lcd;
 	optional_device<st7565_device> m_glcd;
 	optional_ioport m_dial;
@@ -305,16 +308,8 @@ void sd90_state::uipc_w(offs_t offset, u8 data)
 //  and then sends nothing; there is no controller program to run it.
 //-------------------------------------------------
 
-template <int Device>
-u8 sd90_state::sd90_area6_r(offs_t offset)
+u8 sd90_state::usb_r(offs_t offset)
 {
-	if (Device == 0)
-	{
-		if (!machine().side_effects_disabled())
-			LOGMASKED(LOG_UIPC, "%s: mr3 read %x\n", machine().describe_context(), offset);
-		return 0;
-	}
-
 	switch (offset)
 	{
 	case 0x08: return 1;
@@ -325,15 +320,8 @@ u8 sd90_state::sd90_area6_r(offs_t offset)
 	}
 }
 
-template <int Device>
-void sd90_state::sd90_area6_w(offs_t offset, u8 data)
+void sd90_state::usb_w(offs_t offset, u8 data)
 {
-	if (Device == 0)
-	{
-		LOGMASKED(LOG_UIPC, "%s: mr3 write %x = %02x\n", machine().describe_context(), offset, data);
-		return;
-	}
-
 	if (offset < 0x10)
 	{
 		if (offset != 0x0a && offset != 0x0d)
@@ -369,8 +357,8 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x1800003f).rw(FUNC(sd90_state::sd90_area6_r<0>), FUNC(sd90_state::sd90_area6_w<0>));    // the MR3
-	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));    // the USB controller
+	map(0x18000000, 0x1800003f).m(m_mr3, FUNC(roland_mr3_device::map));
+	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::usb_r), FUNC(sd90_state::usb_w));
 }
 
 
@@ -480,6 +468,11 @@ void sd90_state::sd90(machine_config &config)
 	ST7565(config, m_glcd, 0);
 	m_glcd->set_panel(128, 64, 131, -1);
 	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
+	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
+
+	// the AFX processor; which lanes carry the audio to and from the XVs
+	// is unread, so nothing is routed yet
+	ROLAND_MR3(config, m_mr3, 16.9344_MHz_XTAL);
 
 	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
@@ -518,6 +511,30 @@ INPUT_PORTS_END
 
 
 static INPUT_PORTS_START(sd90)
+	// in the tone generator's numbering, strobe times eight plus line;
+	// SYSTEM, INST/DRUM SET and MIC/GUITAR held at power-on enter the test
+	// mode, where PART > and PART < step its pages
+	PORT_START("PANEL0")
+	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part >") PORT_CODE(KEYCODE_CLOSEBRACE)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part <") PORT_CODE(KEYCODE_OPENBRACE)
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inst/Drum Set") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Page Down") PORT_CODE(KEYCODE_PGDN)
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Page Up") PORT_CODE(KEYCODE_PGUP)
+	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("System") PORT_CODE(KEYCODE_S)
+	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Bypass") PORT_CODE(KEYCODE_B)
+	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Edit") PORT_CODE(KEYCODE_D)
+	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Select") PORT_CODE(KEYCODE_A)
+
+	PORT_START("PANEL1")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Track Down") PORT_CODE(KEYCODE_4)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Digital In") PORT_CODE(KEYCODE_3)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Line In") PORT_CODE(KEYCODE_2)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Mic/Guitar") PORT_CODE(KEYCODE_1)
 INPUT_PORTS_END
 
 
