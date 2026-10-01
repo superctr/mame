@@ -1050,9 +1050,12 @@ void mb8aa4181_device::internal_map(address_map &map)
 	map(0x40020050, 0x40020053).lrw32(
 			NAME([this] () { return m_remap; }),
 			NAME([this] (u32 data) { m_remap = data; }));
-	map(0x40012420, 0x40012423).w(FUNC(mb8aa4181_device::dma_start_w));
-	map(0x40012520, 0x40012523).w(FUNC(mb8aa4181_device::dma_start_w));
+	map(0x40012420, 0x40012423).lw32(NAME([this] (u32 data) { rom_dma(0x40012420, data); }));
+	map(0x40012520, 0x40012523).lw32(NAME([this] (u32 data) { rom_dma(0x40012520, data); }));
 	map(0x40002000, 0x4000200b).rw(FUNC(mb8aa4181_device::dmaflag_r), FUNC(mb8aa4181_device::dmaflag_w));
+	map(0x40002100, 0x400021ff).lrw32(
+			NAME([this] (offs_t offset) { return m_pl080[offset]; }),
+			NAME([this] (offs_t offset, u32 data, u32 mem_mask) { COMBINE_DATA(&m_pl080[offset]); }));
 	map(0x40005000, 0x4000503f).rw(FUNC(mb8aa4181_device::sfi_r), FUNC(mb8aa4181_device::sfi_w));
 	map(0x40017040, 0x40017047).r(FUNC(mb8aa4181_device::timebase_r));
 	map(0x40003000, 0x4000329f).rw(FUNC(mb8aa4181_device::udma_r), FUNC(mb8aa4181_device::udma_w));
@@ -1094,6 +1097,7 @@ void mb8aa4181_device::device_start()
 
 	save_item(NAME(m_gpio_out));
 	save_item(NAME(m_dma_flags));
+	save_item(NAME(m_pl080));
 	save_item(NAME(m_converter));
 	save_item(NAME(m_adc_ctrl));
 	save_item(NAME(m_adc_config));
@@ -1147,6 +1151,7 @@ void mb8aa4181_device::device_reset()
 
 	m_regs.clear();
 	m_dma_flags = 0;
+	std::fill_n(m_pl080, std::size(m_pl080), 0);
 	std::fill_n(m_sfi, 16, 0);
 	std::fill_n(m_exint, 8, 0);
 	m_exint_pending = 0;
@@ -1431,12 +1436,7 @@ void mb8aa4181_device::adc_w(offs_t offset, u32 data, u32 mem_mask)
 
 //  DMA
 
-void mb8aa4181_device::dma_start_w(u32 data)
-{
-	rom_dma(data);
-}
-
-void mb8aa4181_device::rom_dma(u32 desc)
+void mb8aa4181_device::rom_dma(u32 start, u32 desc)
 {
 	address_space &space = this->space(AS_PROGRAM);
 	for (int guard = 0; desc && (desc & ~0x1ff) != 0x40012600 && guard < 0x10000; guard++)
@@ -1465,7 +1465,13 @@ void mb8aa4181_device::rom_dma(u32 desc)
 		}
 		desc = next;
 	}
-	m_dma_flags |= 1 << 5;
+	for (unsigned channel = 0; channel < 8; channel++)
+	{
+		const u32 *const regs = &m_pl080[8 * channel];
+		const u32 target = regs[1] - 0x40002100;
+		if (BIT(regs[4], 0) && regs[0] == start && target < 0x100 && !(target & 0x1f))
+			m_dma_flags |= 1 << (target >> 5);
+	}
 }
 
 u32 mb8aa4181_device::dmaflag_r(offs_t offset)

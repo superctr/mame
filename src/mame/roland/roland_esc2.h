@@ -216,6 +216,7 @@ private:
 
 	u32 m_gpio_out[8];
 	u32 m_dma_flags;
+	u32 m_pl080[8 * 8];
 	u32 m_sfi[16];
 	u32 m_exint[8];
 	u8 m_exint_level;
@@ -304,8 +305,7 @@ private:
 
 	u32 dmaflag_r(offs_t offset);
 	void dmaflag_w(offs_t offset, u32 data, u32 mem_mask);
-	void rom_dma(u32 desc);
-	void dma_start_w(u32 data);
+	void rom_dma(u32 start, u32 desc);
 
 	void event_w(offs_t offset, u32 data, u32 mem_mask);
 
