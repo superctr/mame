@@ -44,7 +44,8 @@
                 controller's IBF and IRQ3 its OBF, IRQ5 a pin read back on
                 SCPDR, the SCI and the SCIF
         SD-90   TMU0, TMU1, the watchdog, IRQ0 and IRQ1 the two XVs, IRQ2
-                its 0x18800000 mailbox, PINT0-7, the IrDA channel and the SCIF
+                its USB controller at 0x18800000, PINT0-7, the IrDA channel and
+                the SCIF
 
     So both machines' MIDI is two channels of the CPU's own: the SD-80's
     SCI and SCIF, the SD-90's IrDA channel and SCIF.
@@ -57,9 +58,10 @@
     its loader out of the flash into the SDRAM at 0x883de000, gets past the
     word its loader polls after each of the commands it sends the tone
     generator, paints the =EDIROL= logo of its own on its graphic panel,
-    inflates its program and enters it, and stops in the driver for its
-    own area 6 device, polling +8 for the 1 that would say a command had
-    been taken.
+    inflates its program and enters it, steps its USB controller through
+    the power-on states and sends it its program, and reaches its AUDIO
+    LEVEL screen; it has no panel inputs yet, and its MR3 port answers
+    zero.
 
 ****************************************************************************/
 
@@ -108,7 +110,7 @@ public:
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
-	virtual void machine_reset() override ATTR_COLD { m_uipc_step = 0; }
+	virtual void machine_reset() override ATTR_COLD { m_uipc_step = 0; m_usb_state = 0; }
 
 	void common(machine_config &config) ATTR_COLD;
 
@@ -138,6 +140,8 @@ protected:
 	u8 m_encoder_phase = 0;
 	u8 m_in1_rxd = 1;
 	u8 m_scif_txd = 1;
+	u8 m_usb_state = 0;
+	u8 m_usb_reg[0x10]{};
 
 	emu_timer *m_encoder_timer = nullptr;
 
@@ -163,6 +167,8 @@ void sd90_state::machine_start()
 	save_item(NAME(m_encoder_phase));
 	save_item(NAME(m_in1_rxd));
 	save_item(NAME(m_scif_txd));
+	save_item(NAME(m_usb_state));
+	save_item(NAME(m_usb_reg));
 }
 
 
@@ -284,24 +290,58 @@ void sd90_state::uipc_w(offs_t offset, u8 data)
 
 
 //-------------------------------------------------
-//  what the SD-90 has there instead: the MR3 by its driver's shape, and a
-//  command port -- write the command to +8, read +8 back for 1, wait for
-//  a result code at +13 and take the reply from +16 -- which is where the
-//  machine now stops
+//  what the SD-90 has there instead: the MR3's host port at 0x18000000,
+//  and at 0x18800000 its USB controller, a window of 48 bytes the two
+//  CPUs share, on IRQ2.  +8 is the controller's reason byte, +10 the
+//  host's, +13 a count or a state, and +16 on a 32-byte buffer of words,
+//  USB-MIDI event packets once the link runs.
+//
+//  At power-on the host steps the controller through five states: it
+//  waits for +8 to read 1 and +13 to read the state it expects, writes
+//  zero to +8, and waits again.  In state 3 a nonzero +16 asks for the
+//  controller's program, which the host then sends, 32 KiB of 740-family
+//  code out of its own flash, in 32-byte pieces each posted with +10 = 7.
+//  The controller here takes every step at once and asks for its program,
+//  and then sends nothing; there is no controller program to run it.
 //-------------------------------------------------
 
 template <int Device>
 u8 sd90_state::sd90_area6_r(offs_t offset)
 {
-	if (!machine().side_effects_disabled())
-		LOGMASKED(LOG_UIPC, "%s: %s read %x\n", machine().describe_context(), Device ? "mailbox" : "mr3", offset);
-	return 0;
+	if (Device == 0)
+	{
+		if (!machine().side_effects_disabled())
+			LOGMASKED(LOG_UIPC, "%s: mr3 read %x\n", machine().describe_context(), offset);
+		return 0;
+	}
+
+	switch (offset)
+	{
+	case 0x08: return 1;
+	case 0x0a: return 0;
+	case 0x0d: return m_usb_state;
+	case 0x10: return m_usb_state == 3 ? 1 : 0;
+	default:   return offset < 0x10 ? m_usb_reg[offset] : 0;
+	}
 }
 
 template <int Device>
 void sd90_state::sd90_area6_w(offs_t offset, u8 data)
 {
-	LOGMASKED(LOG_UIPC, "%s: %s write %x = %02x\n", machine().describe_context(), Device ? "mailbox" : "mr3", offset, data);
+	if (Device == 0)
+	{
+		LOGMASKED(LOG_UIPC, "%s: mr3 write %x = %02x\n", machine().describe_context(), offset, data);
+		return;
+	}
+
+	if (offset < 0x10)
+	{
+		if (offset != 0x0a && offset != 0x0d)
+			LOGMASKED(LOG_UIPC, "%s: usb write %x = %02x\n", machine().describe_context(), offset, data);
+		m_usb_reg[offset] = data;
+	}
+	if (offset == 0x08 && data == 0 && m_usb_state < 5)
+		m_usb_state++;
 }
 
 
@@ -330,7 +370,7 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x18000000, 0x1800003f).rw(FUNC(sd90_state::sd90_area6_r<0>), FUNC(sd90_state::sd90_area6_w<0>));    // the MR3
-	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));    // its mailbox
+	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::sd90_area6_r<1>), FUNC(sd90_state::sd90_area6_w<1>));    // the USB controller
 }
 
 
