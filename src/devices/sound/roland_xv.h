@@ -364,7 +364,7 @@ private:
 	address_space_config m_wave_config;
 	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
 	devcb_write_line m_int_callback;
-	devcb_read32 m_switch_callback;
+	devcb_read64 m_switch_callback;
 	devcb_write8 m_led_callback;
 	devcb_write8 m_lcd_callback;
 	sound_stream *m_stream;
@@ -384,9 +384,9 @@ private:
 	int m_scan_write;
 	int m_led_select;
 	u16 m_led[16];
-	u16 m_scan[8];
-	u32 m_switch_state;
-	u32 m_switch_changed;
+	u16 m_scan[16];
+	u64 m_switch_state;
+	u64 m_switch_changed;
 	u8 m_switch_index;
 	u16 m_irq_enable;
 	u16 m_irq_pending;

@@ -414,7 +414,7 @@ u16 roland_xv_device::word_peek(int word)
 
 	case FIFO:
 		if (m_scan_select >= 0)
-			return m_scan[(m_scan_select + m_scan_read) & 7];
+			return m_scan[(m_scan_select + m_scan_read) & 15];
 		if (m_led_select >= 0)
 			return m_led[(m_led_select + m_scan_read) & 15];
 		return m_fifo[m_fifo_read];
@@ -487,7 +487,7 @@ void roland_xv_device::word_w(int word, u16 data)
 	case FIFO:
 		if (m_scan_select >= 0)
 		{
-			const int w = (m_scan_select + m_scan_write) & 7;
+			const int w = (m_scan_select + m_scan_write) & 15;
 			m_scan[w] = (m_scan[w] & 0x1111) | (data & 0xeeee);
 			m_scan_write++;
 		}
@@ -838,22 +838,22 @@ void roland_xv_device::raise_irq(int reason, int voice)
 //  word back.  A change raises reason 14 with the switch's number, strobe
 //  times eight plus line, in word 0x1c, one switch per interrupt.  The
 //  LEDs are the words behind 0x260+n, again two a strobe, a brightness
-//  nibble per line.  Only four strobes are modelled here.
+//  nibble per line.
 //-------------------------------------------------
 
 TIMER_CALLBACK_MEMBER(roland_xv_device::scan_switches)
 {
-	const u32 now = m_switch_callback();
-	const u32 changed = now ^ m_switch_state;
+	const u64 now = m_switch_callback();
+	const u64 changed = now ^ m_switch_state;
 	if (!changed)
 		return;
-	for (int n = 0; n < 32; n++)
+	for (int n = 0; n < 64; n++)
 		if (BIT(changed, n))
 		{
 			const int shift = (n & 3) * 4;
 			u16 &w = m_scan[n >> 2];
 			w = (w & ~(1 << shift)) | ((BIT(now, n) ^ 1) << shift) | ((BIT(now, n) ? 2 : 4) << shift);
-			m_switch_changed |= 1 << n;
+			m_switch_changed |= u64(1) << n;
 		}
 	m_switch_state = now;
 	present_switch();
@@ -865,7 +865,7 @@ void roland_xv_device::present_switch()
 	if (BIT(m_irq_pending, IRQ_SWITCH) || !m_switch_changed)
 		return;
 	const int n = std::countr_zero(m_switch_changed);
-	m_switch_changed &= ~(1 << n);
+	m_switch_changed &= ~(u64(1) << n);
 	m_switch_index = n;
 	m_irq_pending |= 1 << IRQ_SWITCH;
 }
