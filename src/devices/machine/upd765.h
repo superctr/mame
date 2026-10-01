@@ -489,6 +489,19 @@ public:
 	smc37c78_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	virtual void map(address_map &map) override ATTR_COLD;
+
+	uint8_t config_r(offs_t offset);
+	void config_w(offs_t offset, uint8_t data);
+
+protected:
+	virtual void device_start() override ATTR_COLD;
+	virtual void device_reset() override ATTR_COLD;
+
+private:
+	uint8_t config_key;
+	bool config_mode;
+	uint8_t config_index;
+	uint8_t config_regs[16];
 };
 
 class upd72065_device : public upd765_family_device {

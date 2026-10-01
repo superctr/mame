@@ -108,6 +108,7 @@ void fdc9266_device::map(address_map &map)
 
 void smc37c78_device::map(address_map &map)
 {
+	map(0x0, 0x1).rw(FUNC(smc37c78_device::config_r), FUNC(smc37c78_device::config_w));
 	map(0x2, 0x2).rw(FUNC(smc37c78_device::dor_r), FUNC(smc37c78_device::dor_w));
 	map(0x3, 0x3).rw(FUNC(smc37c78_device::tdr_r), FUNC(smc37c78_device::tdr_w));
 	map(0x4, 0x4).rw(FUNC(smc37c78_device::msr_r), FUNC(smc37c78_device::dsr_w));
@@ -3276,6 +3277,60 @@ smc37c78_device::smc37c78_device(const machine_config &mconfig, const char *tag,
 	select_connected = true;
 	select_multiplexed = false;
 	recalibrate_steps = 80;
+}
+
+void smc37c78_device::device_start()
+{
+	ps2_fdc_device::device_start();
+
+	save_item(NAME(config_key));
+	save_item(NAME(config_mode));
+	save_item(NAME(config_index));
+	save_item(NAME(config_regs));
+}
+
+void smc37c78_device::device_reset()
+{
+	ps2_fdc_device::device_reset();
+
+	config_key = 0;
+	config_mode = false;
+	config_index = 0;
+	std::fill(std::begin(config_regs), std::end(config_regs), 0);
+}
+
+// the configuration port: two writes of 55 to the index port enter the
+// configuration state, AA leaves it, and in it the index port selects a
+// register that the data port reads and writes
+uint8_t smc37c78_device::config_r(offs_t offset)
+{
+	if (!config_mode)
+		return 0xff;
+	if (offset == 0)
+		return config_index;
+	return config_index < std::size(config_regs) ? config_regs[config_index] : 0xff;
+}
+
+void smc37c78_device::config_w(offs_t offset, uint8_t data)
+{
+	if (offset == 0)
+	{
+		if (!config_mode)
+		{
+			config_mode = config_key == 0x55 && data == 0x55;
+			config_key = config_mode ? 0 : data;
+		}
+		else if (data == 0xaa)
+			config_mode = false;
+		else
+			config_index = data;
+	}
+	else if (config_mode)
+	{
+		LOGREGS("config register %02x = %02x\n", config_index, data);
+		if (config_index < std::size(config_regs))
+			config_regs[config_index] = data;
+	}
 }
 
 n82077aa_device::n82077aa_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) : ps2_fdc_device(mconfig, N82077AA, tag, owner, clock)
