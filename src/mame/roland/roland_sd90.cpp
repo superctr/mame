@@ -60,8 +60,10 @@
     generator, paints the =EDIROL= logo of its own on its graphic panel,
     inflates its program and enters it, steps its USB controller through
     the power-on states and sends it its program, and reaches its AUDIO
-    LEVEL screen.  Its buttons work, and the MR3 passes the firmware's own
-    check on the test mode's device page.
+    LEVEL screen.  Its buttons work, the MR3 passes the firmware's own
+    check on the test mode's device page, and its audio is routed between
+    IC19 and the DACs as the firmware's mixer suggests, unconfirmed while
+    the wave ROMs are undumped.
 
 ****************************************************************************/
 
@@ -386,9 +388,7 @@ void sd90_state::common(machine_config &config)
 	// mode 1, then x 2 for the CPU out of the boot block's FRQCR
 	SH7709(config, m_maincpu, 24_MHz_XTAL / 2 * 8, ENDIANNESS_BIG);
 
-	// OUTPUT 1 and OUTPUT 2, one PCM1716E each; which chip's DAC pairs they
-	// are, and which way the transport link runs, is unread, so the XV-5080's
-	// arrangement stands in
+	// OUTPUT 1 and OUTPUT 2, one PCM1716E each
 	SPEAKER(config, "out1", 2).front();
 	SPEAKER(config, "out2", 2).front();
 
@@ -396,10 +396,6 @@ void sd90_state::common(machine_config &config)
 	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &sd90_state::xv_wave_map);
 	m_xv[0]->int_callback().set_inputline(m_maincpu, 0);    // IRQ0
 	m_xv[0]->set_link(m_xv[1]);
-	m_xv[0]->add_route(0, "out1", 1.0, 0);
-	m_xv[0]->add_route(1, "out1", 1.0, 1);
-	m_xv[0]->add_route(2, "out2", 1.0, 0);
-	m_xv[0]->add_route(3, "out2", 1.0, 1);
 
 	ROLAND_XV(config, m_xv[1], 16.9344_MHz_XTAL);   // IC27, with IC30
 	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &sd90_state::xv_wave_map);
@@ -410,6 +406,13 @@ void sd90_state::sd80(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
+
+	// which of IC19's DAC pairs each PCM1716E takes, and which way the
+	// transport link runs, is unread, so the XV-5080's arrangement stands in
+	m_xv[0]->add_route(0, "out1", 1.0, 0);
+	m_xv[0]->add_route(1, "out1", 1.0, 1);
+	m_xv[0]->add_route(2, "out2", 1.0, 0);
+	m_xv[0]->add_route(3, "out2", 1.0, 1);
 
 	// the display is on IC19's own LCD pins, LP0-LP7 with RS and LE, and
 	// the CPU's D/A channel 1 sets its contrast, which is not modelled
@@ -470,9 +473,18 @@ void sd90_state::sd90(machine_config &config)
 	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
 	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
 
-	// the AFX processor; which lanes carry the audio to and from the XVs
-	// is unread, so nothing is routed yet
+	// the AFX processor stands between the tone generator and the DACs,
+	// INST on its input lanes 0/1 and the mix on its output lanes 0/1 and
+	// 4/5; which XV pair is INST and which mix pairs the DACs take is
+	// unread, so these stand in.  The audio inputs and the computer's WAVE
+	// lanes have nothing behind them.
 	ROLAND_MR3(config, m_mr3, 16.9344_MHz_XTAL);
+	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
+	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
+	m_mr3->add_route(0, "out1", 1.0, 0);
+	m_mr3->add_route(1, "out1", 1.0, 1);
+	m_mr3->add_route(4, "out2", 1.0, 0);
+	m_mr3->add_route(5, "out2", 1.0, 1);
 
 	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
