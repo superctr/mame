@@ -16,6 +16,7 @@
 #pragma once
 
 #include "sh.h"
+#include "sh3_sci.h"
 #include "sh7709_scif.h"
 
 #define SH4_INT_NONE    -1
@@ -646,6 +647,8 @@ class sh3_base_device : public sh34_base_device
 public:
 	virtual ~sh3_base_device();
 
+	auto sci_txd_handler() { return m_sci.lookup()->txd_handler(); }
+	void sci_rxd_w(int state) { m_sci->rxd_w(state); }
 
 	template <unsigned Channel> auto read_adc() { return m_read_adc[Channel].bind(); }
 	void adtrg_w(int state);
@@ -654,10 +657,12 @@ protected:
 	// construction/destruction
 	sh3_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness);
 
+	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 	virtual void device_start() override ATTR_COLD;
 	virtual void execute_set_input(int irqline, int state) override;
 	virtual void device_reset() override ATTR_COLD;
 
+	required_device<sh3_sci_device> m_sci;
 
 	virtual void sh3_cpg_update();
 	void sh3_wdt_update();
@@ -886,21 +891,6 @@ protected:
 	uint16_t ipre_r(offs_t offset, uint16_t mem_mask);
 	void ipre_w(offs_t offset, uint16_t data, uint16_t mem_mask);
 
-	// SCI
-	uint8_t scsmr_r(offs_t offset, uint8_t mem_mask);
-	void scsmr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scbrr_r(offs_t offset, uint8_t mem_mask);
-	void scbrr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scscr_r(offs_t offset, uint8_t mem_mask);
-	void scscr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t sctdr_r(offs_t offset, uint8_t mem_mask);
-	void sctdr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scssr_r(offs_t offset, uint8_t mem_mask);
-	void scssr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scrdr_r(offs_t offset, uint8_t mem_mask);
-	void scscmr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
-	uint8_t scscmr_r(offs_t offset, uint8_t mem_mask);
-
 	// SCI 7708
 	uint8_t scsptr_r(offs_t offset, uint8_t mem_mask);
 	void scsptr_w(offs_t offset, uint8_t data, uint8_t mem_mask);
@@ -1075,16 +1065,7 @@ protected:
 	uint16_t m_iprd;
 	uint16_t m_ipre;
 
-	// SCI
-	uint8_t m_scsmr;
-	uint8_t m_scbrr;
-	uint8_t m_scscr;
-	uint8_t m_sctdr;
-	uint8_t m_scssr;
-	uint8_t m_scrdr;
-	uint8_t m_scscmr;
-
-	// SCI 7709
+	// SCI 7708
 	uint8_t m_scsptr;
 
 	// CMT 7709
