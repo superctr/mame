@@ -83,6 +83,7 @@ public:
 		, m_lcd(*this, "lcd")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_computer_sw(*this, "COMPUTER")
+		, m_mdout(*this, "mdout")
 		, m_leds(*this, "led%u", 0U)
 	{
 	}
@@ -125,6 +126,12 @@ private:
 	u8 port8_r();
 	u16 battery_r();
 	u16 computer_sw_r();
+	void midi_in_a_w(int state);
+	void midi_in_b_rear_w(int state);
+	void midi_in_b_front_w(int state);
+	void sub_txd_w(int state);
+	void sub_pb_w(u8 data);
+	void midi_out_update();
 
 	required_device<h8510_device> m_maincpu;
 	optional_device<sc88_sub_device> m_subcpu;
@@ -135,6 +142,7 @@ private:
 	optional_device<hd44780_device> m_lcd;
 	optional_ioport_array<4> m_keys;
 	optional_ioport m_computer_sw;
+	required_device<midi_port_device> m_mdout;
 	output_finder<9> m_leds;
 
 	u8 m_ga_regs[0x100]{};
@@ -146,6 +154,10 @@ private:
 	emu_timer *m_lcd_timer = nullptr;
 	bool m_xp_int = false;
 	bool m_lsp_mute = true;
+	u8 m_midi_switches = 0;
+	int m_midi_in_a = 1;
+	int m_midi_in_b[2] = { 1, 1 };
+	int m_sub_txd = 1;
 };
 
 
@@ -189,6 +201,10 @@ void roland_sc88_state::machine_start()
 	save_item(NAME(m_lcd_command_pending));
 	save_item(NAME(m_xp_int));
 	save_item(NAME(m_lsp_mute));
+	save_item(NAME(m_midi_switches));
+	save_item(NAME(m_midi_in_a));
+	save_item(NAME(m_midi_in_b));
+	save_item(NAME(m_sub_txd));
 }
 
 void roland_sc88_state::machine_reset()
@@ -378,6 +394,54 @@ u8 roland_sc88_state::port5_r()
 u8 roland_sc88_state::port8_r()
 {
 	return m_xp_int ? 0xfd : 0xff;
+}
+
+
+//-------------------------------------------------
+//  MIDI switches: the sub CPU's PB4 turns the OUT/THRU connector over to
+//  MIDI IN A, PB5 picks the front MIDI IN B over the rear one
+//-------------------------------------------------
+
+void roland_sc88_state::midi_in_a_w(int state)
+{
+	m_midi_in_a = state;
+	m_subcpu->rxd_w<0>(state);
+	midi_out_update();
+}
+
+void roland_sc88_state::midi_in_b_rear_w(int state)
+{
+	m_midi_in_b[0] = state;
+	if (!BIT(m_midi_switches, 5))
+		m_subcpu->rxd_w<1>(state);
+}
+
+void roland_sc88_state::midi_in_b_front_w(int state)
+{
+	m_midi_in_b[1] = state;
+	if (BIT(m_midi_switches, 5))
+		m_subcpu->rxd_w<1>(state);
+}
+
+void roland_sc88_state::sub_txd_w(int state)
+{
+	m_sub_txd = state;
+	midi_out_update();
+}
+
+void roland_sc88_state::sub_pb_w(u8 data)
+{
+	const u8 changed = (m_midi_switches ^ data) & 0x30;
+	m_midi_switches = data & 0x30;
+	if (BIT(changed, 5))
+		m_subcpu->rxd_w<1>(m_midi_in_b[BIT(data, 5)]);
+	if (BIT(changed, 4))
+		midi_out_update();
+}
+
+void roland_sc88_state::midi_out_update()
+{
+	m_mdout->write_txd(BIT(m_midi_switches, 4) ? m_midi_in_a : m_sub_txd);
 }
 
 
@@ -671,13 +735,17 @@ void roland_sc88_state::sc88(machine_config &config)
 	m_subcpu->keys_callback<1>().set_ioport("KEY1");
 	m_subcpu->keys_callback<2>().set_ioport("KEY2");
 	m_subcpu->keys_callback<3>().set_ioport("KEY3");
-	m_subcpu->tx_callback().set("mdout", FUNC(midi_port_device::write_txd));
+	m_subcpu->tx_callback().set(FUNC(roland_sc88_state::sub_txd_w));
+	m_subcpu->pb_callback().set(FUNC(roland_sc88_state::sub_pb_w));
 
+	// MIDI IN A, MIDI IN B on the rear panel and MIDI IN B on the front
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
-	mdin.rxd_handler().set(m_subcpu, FUNC(sc88_sub_device::rxd_w<0>));
+	mdin.rxd_handler().set(FUNC(roland_sc88_state::midi_in_a_w));
 	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
-	mdin2.rxd_handler().set(m_subcpu, FUNC(sc88_sub_device::rxd_w<1>));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+	mdin2.rxd_handler().set(FUNC(roland_sc88_state::midi_in_b_rear_w));
+	midi_port_device &mdin3(MIDI_PORT(config, "mdin3", midiin_slot, "midiin"));
+	mdin3.rxd_handler().set(FUNC(roland_sc88_state::midi_in_b_front_w));
+	MIDI_PORT(config, m_mdout, midiout_slot, "midiout");
 
 	SCREEN(config, m_screen).set_lcd();
 	m_screen->set_refresh_hz(80);
