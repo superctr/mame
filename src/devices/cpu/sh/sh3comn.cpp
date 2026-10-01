@@ -6,6 +6,7 @@
 #include "sh4.h"
 #include "sh4comn.h"
 #include "sh3comn.h"
+#include "sh3_sci.h"
 #include "sh3_scif.h"
 #include "sh4tmu.h"
 #include "sh4dmac.h"
@@ -321,6 +322,7 @@ void sh3_base_device::sh3_cpg_update()
 	const int pll = m_cpu_clock * ifc;
 	m_bus_clock = pll / stc;
 	m_pm_clock = pll / pfc;
+	m_sci->set_unscaled_clock(m_pm_clock);
 	m_irda->set_unscaled_clock(m_pm_clock);
 	m_scif->set_unscaled_clock(m_pm_clock);
 }
@@ -929,6 +931,8 @@ void sh3_base_device::iprb_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 	m_exception_priority[SH4_INTC_ITI] = INTPRI((m_iprb & 0xf000) >> 12, SH4_INTC_ITI);
 	m_exception_priority[SH4_INTC_RCMI] = INTPRI((m_iprb & 0x0f00) >> 8, SH4_INTC_RCMI);
 	m_exception_priority[SH4_INTC_ROVI] = INTPRI((m_iprb & 0x0f00) >> 8, SH4_INTC_ROVI);
+	for (int a = SH4_INTC_SCI1ERI; a <= SH4_INTC_SCI1TEI; a++)
+		m_exception_priority[a] = INTPRI((m_iprb & 0x00f0) >> 4, a);
 	sh4_exception_recompute();
 }
 
@@ -1087,90 +1091,6 @@ void sh3_base_device::ipre_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 		m_exception_priority[a] = INTPRI((m_ipre & 0x00f0) >> 4, a);
 	m_exception_priority[SH4_INTC_ADI] = INTPRI(m_ipre & 0x000f, SH4_INTC_ADI);
 	sh4_exception_recompute();
-}
-
-// SCI
-uint8_t sh3_base_device::scsmr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCSMR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scsmr);
-	return m_scsmr;
-}
-
-void sh3_base_device::scsmr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_scsmr);
-	logerror("'%s' (%08x): SCI unmapped internal write %02x & %02x (SCSMR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::scbrr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCBRR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scbrr);
-	return m_scbrr;
-}
-
-void sh3_base_device::scbrr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_scbrr);
-	logerror("'%s' (%08x): SCSI unmapped internal write %02x & %02x (SCBRR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::scscr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCSCR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scscr);
-	return m_scscr;
-}
-
-void sh3_base_device::scscr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_scscr);
-	logerror("'%s' (%08x): SCI unmapped internal write %02x & %02x (SCSCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::sctdr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCTDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_sctdr);
-	return m_sctdr;
-}
-
-void sh3_base_device::sctdr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_sctdr);
-	logerror("'%s' (%08x): SCI unmapped internal write %02x & %02x (SCTDR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::scssr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCSSR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scssr);
-	return m_scssr;
-}
-
-void sh3_base_device::scssr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	m_scssr = (m_scssr | (data & 1)) & (data | 6);
-	if (!(m_scssr & 0x80))
-	{
-		//printf("%c", m_sctdr);
-		m_scssr |= 0x80;
-	}
-	logerror("'%s' (%08x): SCI unmapped internal write %02x & %02x (SCSSR)\n", tag(), m_sh2_state->pc, data, mem_mask);
-}
-
-uint8_t sh3_base_device::scrdr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCRDR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scrdr);
-	return m_scrdr;
-}
-
-uint8_t sh3_base_device::scscmr_r(offs_t offset, uint8_t mem_mask)
-{
-	logerror("'%s' (%08x): SCI unmapped internal read mask %02x (SCSCMR) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_scscmr);
-	return m_scscmr;
-}
-
-void sh3_base_device::scscmr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
-{
-	COMBINE_DATA(&m_scscmr);
-	logerror("'%s' (%08x): SCI unmapped internal write %02x & %02x (SCSCMR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
 // SCI 7708

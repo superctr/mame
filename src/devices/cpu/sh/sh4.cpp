@@ -26,6 +26,7 @@
 
 #include "emu.h"
 #include "sh4.h"
+#include "sh3_sci.h"
 #include "sh3_scif.h"
 
 #include "sh3comn.h"
@@ -822,13 +823,7 @@ void sh3_base_device::sci_7708_map(address_map& map)
 
 void sh3_base_device::sci_7709_map(address_map& map)
 {
-	map(0xfffffe80, 0xfffffe80).rw(FUNC(sh3_base_device::scsmr_r), FUNC(sh3_base_device::scsmr_w));
-	map(0xfffffe82, 0xfffffe82).rw(FUNC(sh3_base_device::scbrr_r), FUNC(sh3_base_device::scbrr_w));
-	map(0xfffffe84, 0xfffffe84).rw(FUNC(sh3_base_device::scscr_r), FUNC(sh3_base_device::scscr_w));
-	map(0xfffffe86, 0xfffffe86).rw(FUNC(sh3_base_device::sctdr_r), FUNC(sh3_base_device::sctdr_w));
-	map(0xfffffe88, 0xfffffe88).rw(FUNC(sh3_base_device::scssr_r), FUNC(sh3_base_device::scssr_w));
-	map(0xfffffe8a, 0xfffffe8a).r(FUNC(sh3_base_device::scrdr_r));
-	map(0xfffffe8c, 0xfffffe8c).rw(FUNC(sh3_base_device::scscmr_r), FUNC(sh3_base_device::scscmr_w));
+	map(0xfffffe80, 0xfffffe8f).m(m_sci, FUNC(sh3_sci_device::map));
 }
 
 void sh3_base_device::cmt_7709_map(address_map& map)
@@ -945,6 +940,7 @@ bool sh34_base_device::memory_translate(int spacenum, int intention, offs_t& add
 
 sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness)
 	: sh34_base_device(mconfig, type, tag, owner, clock, endianness, address_map_constructor(FUNC(sh3_base_device::sh3_internal_map), this))
+	, m_sci(*this, "sci")
 	, m_irda(*this, "irda")
 	, m_scif(*this, "scif")
 	, m_wdt_timer(nullptr)
@@ -957,6 +953,12 @@ sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type
 
 void sh3_base_device::device_add_mconfig(machine_config &config)
 {
+	SH3_SCI(config, m_sci, 0);
+	m_sci->eri_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1ERI) : sh4_exception_unrequest(SH4_INTC_SCI1ERI); });
+	m_sci->rxi_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1RXI) : sh4_exception_unrequest(SH4_INTC_SCI1RXI); });
+	m_sci->txi_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1TXI) : sh4_exception_unrequest(SH4_INTC_SCI1TXI); });
+	m_sci->tei_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1TEI) : sh4_exception_unrequest(SH4_INTC_SCI1TEI); });
+
 	SH3_SCIF(config, m_irda, 0);
 	m_irda->eri_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDAERI) : sh4_exception_unrequest(SH4_INTC_IRDAERI); });
 	m_irda->rxi_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDARXI) : sh4_exception_unrequest(SH4_INTC_IRDARXI); });
@@ -972,6 +974,11 @@ void sh3_base_device::device_add_mconfig(machine_config &config)
 
 sh3_base_device::~sh3_base_device()
 {
+}
+
+sh3_sci_device &sh3_base_device::sci()
+{
+	return *subdevice<sh3_sci_device>("sci");
 }
 
 sh3_scif_device &sh3_base_device::irda()
@@ -2721,16 +2728,7 @@ void sh3_base_device::device_reset()
 	m_iprd = 0;
 	m_ipre = 0;
 
-	// SCI
-	m_scsmr = 0;
-	m_scbrr = 0xff;
-	m_scscr = 0;
-	m_sctdr = 0xff;
-	m_scssr = 0x84;
-	m_scrdr = 0;
-	m_scscmr = 0;
-
-	// SCI 7709
+	// SCI 7708
 	m_scsptr = 0;
 
 	// CMT 7709
@@ -3275,16 +3273,7 @@ void sh3_base_device::device_start()
 	save_item(NAME(m_iprd));
 	save_item(NAME(m_ipre));
 
-	// SCI
-	save_item(NAME(m_scsmr));
-	save_item(NAME(m_scbrr));
-	save_item(NAME(m_scscr));
-	save_item(NAME(m_sctdr));
-	save_item(NAME(m_scssr));
-	save_item(NAME(m_scrdr));
-	save_item(NAME(m_scscmr));
-
-	// SCI 7709
+	// SCI 7708
 	save_item(NAME(m_scsptr));
 
 	// CMT 7709

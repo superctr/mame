@@ -226,10 +226,10 @@ static const int sh3_intevt2_exception_codes[] =
 	-1, /* SH4_INTC_ATI */
 	-1, /* SH4_INTC_PRI */
 	-1, /* SH4_INTC_CUI */
-	-1, /* SH4_INTC_SCI1ERI */
-	-1, /* SH4_INTC_SCI1RXI */
-	-1, /* SH4_INTC_SCI1TXI */
-	-1, /* SH4_INTC_SCI1TEI */
+	0x4E0, /* SH4_INTC_SCI1ERI */
+	0x500, /* SH4_INTC_SCI1RXI */
+	0x520, /* SH4_INTC_SCI1TXI */
+	0x540, /* SH4_INTC_SCI1TEI */
 
 	0x900, /* SH4_INTC_SCIFERI */
 	0x920, /* SH4_INTC_SCIFRXI */
