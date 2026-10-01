@@ -23,6 +23,7 @@
       IPCER0  code    01-07 channel voice message, (status >> 4) - 7
                       10-12 display exclusive (model 45), selecting the block
                       20-bf GS exclusive (model 42), selecting the parameter block
+                      e1    the MIDI OUT ring has room again
                       e7    continuation of an exclusive block
                       ee/ef universal exclusive (GM on / master volume)
       IPCER1  flags   bits 0-3 channel, bits 4-5 source (0 IN A, 1 IN B,
@@ -34,7 +35,10 @@
     the checksum (the F7 is not counted); they are guarded by block semaphore bit 0/1/2 (the source), which
     the main CPU clears after copying the block.  Bit 7 of IPCER2 marks the
     block as a request (RQ1) rather than a data set (DT1); the rest of the
-    byte is the length either way.
+    byte is the length either way.  The main CPU puts one device ID per
+    source in d0-d3; a Roland exclusive message for any other device than
+    that one or 7f is not passed on.  An exclusive message longer than the
+    main CPU's 8a-byte reassembly buffer is not passed on either.
 
     The code does not carry the address MSB directly.  It names one of the
     parameter blocks of the address map, and for most of them the low three
@@ -71,7 +75,14 @@
     under block semaphore bit 5.  The ring carries packets, not a byte
     stream: a length byte followed by that many bytes of MIDI, the next
     packet starting at the following multiple of four.  A packet may
-    straddle the wrap at c0.
+    straddle the wrap at c0.  A packet of FF 00 nn holds the line for nn
+    milliseconds; a bulk dump puts one between its messages.  The main CPU
+    sleeps while the ring has no room for its next packet, and the sub CPU
+    wakes it with message e1 whenever it has taken a packet off.
+
+    Port B: PB0-PB3 strobe the switch matrix, PB4 turns the MIDI OUT/THRU
+    connector over to MIDI IN A, PB5 picks the front MIDI IN B over the
+    rear one.
 
 ****************************************************************************/
 
@@ -96,6 +107,7 @@ constexpr int TX_RING_START = 0x24;
 constexpr int TX_RING_END = 0xc0;
 constexpr int TX_WRITE_PTR = 0xd5;
 constexpr int TX_READ_PTR = 0xd4;
+constexpr int DEVICE_ID = 0xd0;         // one per source, written by the main CPU
 
 struct exclusive_block { u8 model; u8 address; u8 code; bool paged; };
 
@@ -157,6 +169,7 @@ sc88_sub_device::sc88_sub_device(const machine_config &mconfig, const char *tag,
 	, m_int_cb(*this)
 	, m_keys_cb(*this, 0xff)
 	, m_tx_cb(*this)
+	, m_pb_cb(*this)
 	, m_rx(*this, "rx%u", 0U)
 	, m_dpram{}
 	, m_ipcm{}
@@ -219,6 +232,7 @@ void sc88_sub_device::device_reset()
 	m_sem = 0x80; // ready: the sub CPU has finished its own initialisation
 	m_spcon = 0;
 	m_pa = m_pa_dir = m_pb = m_pb_dir = 0;
+	m_pb_cb(0);
 	m_int_state = false;
 	m_int_cb(0);
 
@@ -270,8 +284,8 @@ void sc88_sub_device::port_w(u8 data)
 	{
 	case 0: m_pa = data; break;
 	case 1: m_pa_dir = data; break;
-	case 2: m_pb = data; break;
-	case 3: m_pb_dir = data; break;
+	case 2: m_pb = data; m_pb_cb(m_pb & m_pb_dir); break;
+	case 3: m_pb_dir = data; m_pb_cb(m_pb & m_pb_dir); break;
 	default: break;
 	}
 }
@@ -423,6 +437,11 @@ void sc88_sub_device::send_sysex(int src, source &s)
 	u8 request = 0;
 	if (x.size() >= 8 && x[0] == 0x41 && (x[2] == 0x42 || x[2] == 0x45) && (x[3] == 0x12 || x[3] == 0x11))
 	{
+		if (x[1] != m_dpram[DEVICE_ID + src] && x[1] != 0x7f)
+		{
+			LOGMASKED(LOG_MSG, "exclusive for device %02x ignored\n", x[1]);
+			return;
+		}
 		const exclusive_block *block = nullptr;
 		for (const exclusive_block &b : BLOCKS)
 			if (b.model == x[2] && b.address == x[4] && (b.paged || (x[5] & 0xf0) == 0))
@@ -517,10 +536,15 @@ TIMER_CALLBACK_MEMBER(sc88_sub_device::deliver_timer)
 
 u8 sc88_sub_device::ring_advance(u8 offset, u8 count)
 {
-	offset += count;
-	if (offset >= TX_RING_END)
-		offset -= TX_RING_END - TX_RING_START;
-	return offset;
+	const int next = offset + count;
+	return (next >= TX_RING_END) ? (next - (TX_RING_END - TX_RING_START)) : next;
+}
+
+void sc88_sub_device::tx_packet_done()
+{
+	m_dpram[TX_READ_PTR] = m_tx_rd = m_tx_end;
+	m_tx_left = 0;
+	queue(0xe1, 0x00, 0x00, 0x00);
 }
 
 TIMER_CALLBACK_MEMBER(sc88_sub_device::tx_timer)
@@ -541,15 +565,23 @@ TIMER_CALLBACK_MEMBER(sc88_sub_device::tx_timer)
 		m_tx_left = m_dpram[m_tx_rd];
 		m_tx_end = ring_advance(m_tx_rd, (m_tx_left + 4) & ~3);
 		m_tx_rd = ring_advance(m_tx_rd, 1);
+		if (m_tx_left >= 3 && m_dpram[m_tx_rd] == 0xff)
+		{
+			const u8 ms = m_dpram[ring_advance(m_tx_rd, 2)];
+			LOGMASKED(LOG_TX, "MIDI OUT pause %d ms\n", ms);
+			tx_packet_done();
+			m_tx_timer->adjust(attotime::from_msec(ms));
+			return;
+		}
 		if (!m_tx_left)
-			m_dpram[TX_READ_PTR] = m_tx_rd = m_tx_end;
+			tx_packet_done();
 	}
 
 	const u8 data = m_dpram[m_tx_rd];
 	LOGMASKED(LOG_TX, "MIDI OUT %02x\n", data);
 	m_tx_rd = ring_advance(m_tx_rd, 1);
 	if (!--m_tx_left)
-		m_dpram[TX_READ_PTR] = m_tx_rd = m_tx_end;
+		tx_packet_done();
 
 	// start bit, 8 data bits, stop bit
 	m_tx_shift = (u16(data) << 1) | 0x200;

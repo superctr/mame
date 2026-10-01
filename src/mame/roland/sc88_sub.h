@@ -53,8 +53,10 @@ public:
 	template <unsigned N> auto keys_callback() { return m_keys_cb[N].bind(); }
 	// serial data for the MIDI OUT connector
 	auto tx_callback() { return m_tx_cb.bind(); }
+	// port B pins: PB0-PB3 strobe the switch matrix, PB4 and PB5 drive the board's MIDI switches
+	auto pb_callback() { return m_pb_cb.bind(); }
 
-	// MIDI IN A (rear) and B (front), and the RS-422/RS-232 computer port
+	// MIDI IN A, MIDI IN B (rear or front, switched on the board) and the RS-422/RS-232 computer port
 	template <unsigned N> void rxd_w(int state) { m_rx[N]->rx_w(state); }
 
 	// /RST, driven from the main CPU's P4-0 on the SC-88VL
@@ -90,6 +92,7 @@ private:
 	void send_sysex(int src, source &s);
 	void queue(u8 code, u8 flags, u8 d1, u8 d2, std::vector<u8> &&block = {});
 	static u8 ring_advance(u8 offset, u8 count);
+	void tx_packet_done();
 	void deliver();
 	TIMER_CALLBACK_MEMBER(deliver_timer);
 	TIMER_CALLBACK_MEMBER(tx_timer);
@@ -99,6 +102,7 @@ private:
 	devcb_write_line m_int_cb;
 	devcb_read8::array<4> m_keys_cb;
 	devcb_write_line m_tx_cb;
+	devcb_write8 m_pb_cb;
 	required_device_array<sc88_sub_rx_device, 3> m_rx;
 
 	u8 m_dpram[0xd8];
