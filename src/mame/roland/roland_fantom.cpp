@@ -74,15 +74,20 @@
 
     The firmware composes every screen after the splash in SDRAM and moves
     it to the LCD controller's VRAM on DMA channel 1, with the controller's
-    cycle-steal enable as the request; the request is held asserted here.
-    The program flash keeps the machine's user data in its top half, and
-    the firmware identifies the chip by manufacturer code before it will
-    program it.
+    cycle-steal enable as the request.  The program flash keeps the
+    machine's user data in its top half, and the firmware identifies the
+    chip by manufacturer code before it will program it.
+
+    The value encoder is polled on port F every millisecond, a count per
+    whole quadrature cycle.  The A/D converter reads the bender, the
+    modulation lever, the D-Beam, aftertouch, the hold pedal and, behind a
+    4053 that PTD7 switches, the two control pedals and the four realtime
+    control knobs; it converts a group of four channels on each falling
+    edge of ADTRG, which is the D-Beam emitter's drive inverted.
 
     State: boots to the PERFORMANCE PLAY screen, takes MIDI and plays, and
-    the keyboard and panel buttons work.  The value encoder and the
-    analogue inputs have no inputs, and the floppy controller's DMA
-    request is not connected.
+    the keyboard, panel buttons, value encoder and analogue controls work.
+    The floppy controller's DMA request is not connected.
 
 ****************************************************************************/
 
@@ -98,6 +103,7 @@
 #include "machine/intelfsh.h"
 #include "machine/upd765.h"
 #include "sound/roland_xv.h"
+#include "video/m66273.h"
 #include "wavecard.h"
 
 #include "emupal.h"
@@ -297,7 +303,10 @@ public:
 		, m_srx(*this, "exp%c", 'b')
 		, m_eeprom(*this, "eeprom")
 		, m_keyscan(*this, "keyscan")
+		, m_lcdc(*this, "lcdc")
 		, m_velocity(*this, "VELOCITY")
+		, m_encoder(*this, "ENCODER")
+		, m_analog(*this, "AN%u", 0U)
 		, m_leds(*this, "led_%u", 0U)
 	{
 	}
@@ -317,12 +326,14 @@ private:
 
 	u64 portc_r();
 	void portc_w(u64 data);
+	void portd_w(u64 data);
+	u64 portf_r();
 	void led_w(offs_t offset, u8 data);
+	template <int N> u16 adc_r();
 
-	u8 vram_r(offs_t offset) { return m_vram[offset]; }
-	void vram_w(offs_t offset, u8 data) { m_vram[offset] = data; }
-	u8 lcdc_r(offs_t offset) { return m_lcdc[offset >> 1]; }
-	void lcdc_w(offs_t offset, u8 data) { m_lcdc[offset >> 1] = data; }
+	TIMER_CALLBACK_MEMBER(encoder_tick);
+	TIMER_CALLBACK_MEMBER(dbeam_tick);
+
 	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
@@ -334,66 +345,70 @@ private:
 	required_device_array<roland_srx_slot_device, 2> m_srx;
 	required_device<i2c_24c08_device> m_eeprom;
 	required_device<fantom_keyscan_device> m_keyscan;
+	required_device<m66273_device> m_lcdc;
 	required_ioport m_velocity;
+	required_ioport m_encoder;
+	required_ioport_array<11> m_analog;
 	enum { LED_BEAT_A, LED_BEAT_B, LED_REC, LED_RTC1, LED_RTC2, LED_RTC3, LED_RTC4, LED_ARPEGGIO, LED_RHYTHM, LED_PLAY, LED_DBEAM, LEDS };
 	output_finder<LEDS> m_leds;
 
-	static constexpr int LCD_WIDTH = 320, LCD_HEIGHT = 240;
-	static constexpr int VRAM_BYTES = LCD_WIDTH * LCD_HEIGHT / 4;
-
-	std::unique_ptr<u8[]> m_vram;
-	u8 m_lcdc[0x50]{};
+	emu_timer *m_encoder_timer = nullptr;
+	emu_timer *m_dbeam_timer = nullptr;
+	u8 m_encoder_last = 0;
+	int m_encoder_pending = 0;
+	u8 m_encoder_phase = 0;
+	u8 m_adsel = 0;
+	u8 m_lcdenb = 0;
 };
 
 
 void fantom_state::machine_start()
 {
-	m_vram = make_unique_clear<u8[]>(VRAM_BYTES);
-	save_pointer(NAME(m_vram), VRAM_BYTES);
-	save_item(NAME(m_lcdc));
+	m_encoder_timer = timer_alloc(FUNC(fantom_state::encoder_tick), this);
+	m_dbeam_timer = timer_alloc(FUNC(fantom_state::dbeam_tick), this);
+
+	save_item(NAME(m_encoder_last));
+	save_item(NAME(m_encoder_pending));
+	save_item(NAME(m_encoder_phase));
+	save_item(NAME(m_adsel));
+	save_item(NAME(m_lcdenb));
 }
 
 void fantom_state::machine_reset()
 {
-	// the M66273FP's cycle-steal window, which the firmware's frame transfer
-	// waits for on DMA channel 1: always open here
-	m_maincpu->dreq_w<1>(1);
+	m_encoder_last = m_encoder->read();
+	m_encoder_pending = 0;
+	m_encoder_phase = 0;
+	m_encoder_timer->adjust(attotime::from_msec(2), 0, attotime::from_msec(2));
+	m_dbeam_timer->adjust(attotime::from_msec(5), 0, attotime::from_msec(5));
 }
 
 
 void fantom_state::lcd_palette(palette_device &palette) const
 {
-	for (int i = 0; i < 4; i++)     // pen 0 dark, pen 3 fully lit
-		palette.set_pen_color(i, rgb_t(0xff * i / 3, 0xff * i / 3, 0xff * i / 3));
+	// the panel transmits where it is driven
+	for (int i = 0; i < m66273_device::LEVELS; i++)
+	{
+		const int level = 0xff * i / (m66273_device::LEVELS - 1);
+		palette.set_pen_color(i, rgb_t(level, level, level));
+	}
 }
 
 
 //-------------------------------------------------
-//  the display.  The M66273FP's own VRAM is 19 200 bytes and every byte of
-//  it is on the bus; the firmware sets the controller to single scan, four
-//  grey levels and eighty characters a line, which is a 320 x 240 panel
-//  with two bits a pixel, the leftmost pixel in the top bits.  R1's REV bit
-//  is set, so the largest value is the background.  Nothing else the
-//  controller does -- the scroll registers, the grey-scale pattern table it
-//  loads into R17 to R80 -- is emulated.
+//  the display: the M66273FP drives the LM320191 on
+//  its four-bit bus, and its LCDENB output switches
+//  the panel on
 //-------------------------------------------------
 
 u32 fantom_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	const bool on = BIT(m_lcdc[0], 0);      // R1 bit 0, LCDE
-	const int rev = BIT(m_lcdc[0], 1) ? 3 : 0;  // R1 bit 1, REV
-
-	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
+	if (!m_lcdenb)
 	{
-		u16 *dest = &bitmap.pix(y, cliprect.left());
-		for (int x = cliprect.left(); x <= cliprect.right(); x++)
-		{
-			const u8 byte = m_vram[y * (LCD_WIDTH / 4) + (x >> 2)];
-			const int level = (byte >> (6 - 2 * (x & 3))) & 3;
-			*dest++ = on ? (level ^ rev) : 0;
-		}
+		bitmap.fill(0, cliprect);
+		return 0;
 	}
-	return 0;
+	return m_lcdc->screen_update(screen, bitmap, cliprect);
 }
 
 
@@ -415,6 +430,84 @@ void fantom_state::portc_w(u64 data)
 	const bool scl_out = ((pccr >> 12) & 3) == 1;
 	m_eeprom->write_sda(sda_out ? BIT(data, 7) : 1);
 	m_eeprom->write_scl(scl_out ? BIT(data, 6) : 1);
+}
+
+
+//-------------------------------------------------
+//  port D: PTD7 is ADSEL, which switches the
+//  TC74HC4053 in front of AN5 to AN7 between CTL1,
+//  VR1 and VR3 (low) and CTL2, VR2 and VR4 (high)
+//-------------------------------------------------
+
+void fantom_state::portd_w(u64 data)
+{
+	m_adsel = BIT(data, 7);
+}
+
+
+//-------------------------------------------------
+//  the value encoder on PTF0 (ENCB) and PTF1 (ENCA),
+//  which the firmware polls every millisecond and
+//  counts a step per whole quadrature cycle.  The
+//  dial is played out at a phase every 2 ms.
+//-------------------------------------------------
+
+TIMER_CALLBACK_MEMBER(fantom_state::encoder_tick)
+{
+	const u8 dial = m_encoder->read();
+	m_encoder_pending += s8(dial - m_encoder_last);
+	m_encoder_last = dial;
+
+	if (m_encoder_pending > 0)
+	{
+		m_encoder_phase = (m_encoder_phase + 1) & 3;
+		if (m_encoder_phase == 0)
+			m_encoder_pending--;
+	}
+	else if (m_encoder_pending < 0)
+	{
+		m_encoder_phase = (m_encoder_phase - 1) & 3;
+		if (m_encoder_phase == 0)
+			m_encoder_pending++;
+	}
+}
+
+u64 fantom_state::portf_r()
+{
+	// ENCA, ENCB through a turn from rest: 11, 01, 00, 10
+	static const u8 phases[4] = { 0x3, 0x1, 0x0, 0x2 };
+	const u8 ab = phases[m_encoder_phase];
+	return 0xfc | BIT(ab, 0) | (BIT(ab, 1) << 1);
+}
+
+
+//-------------------------------------------------
+//  the A/D inputs: AN0 the bender, AN1 modulation,
+//  AN2 the D-Beam, AN3 aftertouch, AN4 the hold
+//  pedal, and AN5 to AN7 the two pedal jacks and the
+//  four realtime control knobs behind ADSEL.  The
+//  converter is triggered by ADTRG, the inverse of the
+//  D-Beam emitter's drive XDBPLS, which the SCI's
+//  transmitter makes; a pulse every 5 ms stands in
+//  for it.
+//-------------------------------------------------
+
+template <int N>
+u16 fantom_state::adc_r()
+{
+	switch (N)
+	{
+	case 5: return m_analog[m_adsel ? 6 : 5]->read();
+	case 6: return m_analog[m_adsel ? 8 : 7]->read();
+	case 7: return m_analog[m_adsel ? 10 : 9]->read();
+	default: return m_analog[N]->read();
+	}
+}
+
+TIMER_CALLBACK_MEMBER(fantom_state::dbeam_tick)
+{
+	m_maincpu->adtrg_w(0);
+	m_maincpu->adtrg_w(1);
 }
 
 
@@ -464,13 +557,14 @@ void fantom_state::fantom_map(address_map &map)
 	map(0x10000000, 0x10000003).r(m_keyscan, FUNC(fantom_keyscan_device::read));
 	map(0x14000000, 0x14000007).m(m_fdc, FUNC(n82077aa_device::map));
 	map(0x18000000, 0x180001ff).mirror(0x7e00).rw(m_xv, FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18008000, 0x1800caff).rw(FUNC(fantom_state::vram_r), FUNC(fantom_state::vram_w));
-	map(0x1800d000, 0x1800d09f).rw(FUNC(fantom_state::lcdc_r), FUNC(fantom_state::lcdc_w));
+	map(0x18008000, 0x1800ffff).rw(m_lcdc, FUNC(m66273_device::read), FUNC(m66273_device::write));
 }
 
 void fantom_state::fantom_io_map(address_map &map)
 {
 	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(fantom_state::portc_r), FUNC(fantom_state::portc_w));
+	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(fantom_state::portd_w));
+	map(SH3_PORT_F, SH3_PORT_F + 7).r(FUNC(fantom_state::portf_r));
 }
 
 
@@ -495,6 +589,14 @@ void fantom_state::fantom(machine_config &config)
 	SH7709(config, m_maincpu, 16.5_MHz_XTAL * 8, ENDIANNESS_BIG);   // HD6417709AF133
 	m_maincpu->set_addrmap(AS_PROGRAM, &fantom_state::fantom_map);
 	m_maincpu->set_addrmap(AS_IO, &fantom_state::fantom_io_map);
+	m_maincpu->read_adc<0>().set(FUNC(fantom_state::adc_r<0>));
+	m_maincpu->read_adc<1>().set(FUNC(fantom_state::adc_r<1>));
+	m_maincpu->read_adc<2>().set(FUNC(fantom_state::adc_r<2>));
+	m_maincpu->read_adc<3>().set(FUNC(fantom_state::adc_r<3>));
+	m_maincpu->read_adc<4>().set(FUNC(fantom_state::adc_r<4>));
+	m_maincpu->read_adc<5>().set(FUNC(fantom_state::adc_r<5>));
+	m_maincpu->read_adc<6>().set(FUNC(fantom_state::adc_r<6>));
+	m_maincpu->read_adc<7>().set(FUNC(fantom_state::adc_r<7>));
 
 	TC58FVB321(config, m_flash);    // the program flash, whose top half the firmware keeps its user data in
 
@@ -509,12 +611,18 @@ void fantom_state::fantom(machine_config &config)
 
 	// the LM320191 panel on the M66273FP's four-bit output
 	screen_device &screen(SCREEN(config, "screen").set_lcd());
-	screen.set_refresh_hz(60);
-	screen.set_size(LCD_WIDTH, LCD_HEIGHT);
+	screen.set_refresh_hz(62.5);
+	screen.set_size(320, 240);
 	screen.set_visarea_full();
 	screen.set_screen_update(FUNC(fantom_state::screen_update));
 	screen.set_palette("palette");
-	PALETTE(config, "palette", FUNC(fantom_state::lcd_palette), 4);
+	PALETTE(config, "palette", FUNC(fantom_state::lcd_palette), m66273_device::LEVELS);
+
+	// MPUCLK is LCDCCK, a clock out of the key scan chip, at a rate that is a guess
+	M66273(config, m_lcdc, 24_MHz_XTAL / 2);
+	m_lcdc->set_screen("screen");
+	m_lcdc->cse_callback().set([this] (int state) { m_maincpu->dreq_w<1>(!state); });
+	m_lcdc->lcdenb_callback().set([this] (int state) { m_lcdenb = state; });
 
 	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("xp-a", "xp-a");   // CN7, slot A
 	for (int slot = 0; slot < 2; slot++)                                     // CN10 and CN11, slots B and C
@@ -587,6 +695,43 @@ static INPUT_PORTS_START(fantom)
 	PORT_CONFSETTING(0x04, "f")
 	PORT_CONFSETTING(0x05, "ff")
 	PORT_CONFSETTING(0x06, "fff")
+
+	PORT_START("ENCODER")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_PGDN) PORT_CODE_INC(KEYCODE_PGUP)
+
+	// the A/D inputs, ten bits each
+	PORT_START("AN0")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Pitch Bend") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
+
+	PORT_START("AN1")
+	PORT_BIT(0x3ff, 0x000, IPT_PEDAL) PORT_NAME("Modulation") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
+
+	PORT_START("AN2")
+	PORT_BIT(0x3ff, 0x000, IPT_PEDAL3) PORT_NAME("D Beam") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
+
+	PORT_START("AN3")
+	PORT_BIT(0x3ff, 0x000, IPT_PEDAL2) PORT_NAME("Aftertouch") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
+
+	PORT_START("AN4")
+	PORT_BIT(0x3ff, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Hold Pedal") PORT_CODE(KEYCODE_TAB)
+
+	PORT_START("AN5")
+	PORT_BIT(0x3ff, 0x3ff, IPT_PADDLE) PORT_NAME("Control Pedal 1") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(6)
+
+	PORT_START("AN6")
+	PORT_BIT(0x3ff, 0x3ff, IPT_PADDLE) PORT_NAME("Control Pedal 2") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(7)
+
+	PORT_START("AN7")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Realtime Control Knob 1") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(2)
+
+	PORT_START("AN8")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Realtime Control Knob 2") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(3)
+
+	PORT_START("AN9")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Realtime Control Knob 3") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(4)
+
+	PORT_START("AN10")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Realtime Control Knob 4") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(0) PORT_PLAYER(5)
 
 #define FANTOM_KEY(port, bit, key, name, code) \
 	PORT_BIT(1 << (bit), IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME(name) code PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(fantom_state::key_changed), key)
