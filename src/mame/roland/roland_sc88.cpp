@@ -58,6 +58,7 @@
 
 #include "roland_sc88.lh"
 #include "roland_sc88pro.lh"
+#include "roland_sc88vl.lh"
 
 #define LOG_GA      (1U << 1)
 #define LOG_PORT    (1U << 2)
@@ -89,7 +90,6 @@ public:
 	}
 
 	void sc88(machine_config &config) ATTR_COLD;
-	void sc88vl(machine_config &config) ATTR_COLD;
 	void sc88pro(machine_config &config) ATTR_COLD;
 	void vegspro(machine_config &config) ATTR_COLD;
 
@@ -99,7 +99,6 @@ protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
 
-private:
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
@@ -122,7 +121,7 @@ private:
 	void lsp_mute_w(u8 data);
 	u8 port4_r();
 	u8 port5_r();
-	void port4_w(u8 data);
+	void port4_w(offs_t offset, u8 data, u8 mem_mask);
 	u8 port8_r();
 	u16 battery_r();
 	u16 computer_sw_r();
@@ -158,6 +157,29 @@ private:
 	int m_midi_in_a = 1;
 	int m_midi_in_b[2] = { 1, 1 };
 	int m_sub_txd = 1;
+};
+
+class roland_sc88vl_state : public roland_sc88_state
+{
+public:
+	roland_sc88vl_state(const machine_config &mconfig, device_type type, const char *tag)
+		: roland_sc88_state(mconfig, type, tag)
+		, m_model_label(*this, "model_label")
+	{
+	}
+
+	void sc88vl(machine_config &config) ATTR_COLD;
+
+protected:
+	virtual void machine_start() override ATTR_COLD;
+	virtual void machine_reset() override ATTR_COLD;
+
+private:
+	void port6_w(offs_t offset, u8 data, u8 mem_mask);
+	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	output_finder<> m_model_label;
+	bool m_lcd_lit = false;
 };
 
 
@@ -215,6 +237,21 @@ void roland_sc88_state::machine_reset()
 	m_lcd_fifo_count = 0;
 	m_lcd_command_pending = false;
 	m_lcd_timer->adjust(attotime::never);
+}
+
+void roland_sc88vl_state::machine_start()
+{
+	roland_sc88_state::machine_start();
+
+	m_model_label = 0;
+
+	save_item(NAME(m_lcd_lit));
+}
+
+void roland_sc88vl_state::machine_reset()
+{
+	roland_sc88_state::machine_reset();
+	m_lcd_lit = false;
 }
 
 
@@ -283,7 +320,8 @@ void roland_sc88_state::ga_w(offs_t offset, u8 data)
 		// 00 = LED data (ALL, MUTE, INST MAP, EQ, EDIT (upper, middle, lower),
 		// USER INST), gated by the common in 01 bit 0 (active low).  01 bit 1
 		// drives the SC-88Pro's second lens die directly (red; the green one is
-		// on the USER INST data line, and both lit show orange in EFX mode).
+		// on the USER INST data line, and both lit show orange in EFX mode), and
+		// the SC-88VL's STANDBY lamp.
 		const u8 data = m_ga_regs[0x00];
 		const u8 commons = m_ga_regs[0x01];
 		for (int i = 0; i < 8; i++)
@@ -377,12 +415,15 @@ u8 roland_sc88_state::port4_r()
 	return 0xff;
 }
 
-void roland_sc88_state::port4_w(u8 data)
+void roland_sc88_state::port4_w(offs_t offset, u8 data, u8 mem_mask)
 {
 	LOGMASKED(LOG_PORT, "%s: port 4 = %02x (contrast %2d, mute %s)\n", machine().describe_context(),
 			data, ~data >> 4 & 0x0f, BIT(data, 2) ? "off" : "on");
 	if (m_subcpu.found())
+	{
 		m_subcpu->reset_w(BIT(data, 0));
+		m_xp->set_output_gain(ALL_OUTPUTS, BIT(mem_mask, 2) && !BIT(data, 2) ? 0.0 : 1.0);
+	}
 }
 
 // port 5 is the option strap block: P5-2, P5-3 and P5-4 trim the master output ramp by 1.5, 3 and 6 dB,
@@ -390,6 +431,12 @@ void roland_sc88_state::port4_w(u8 data)
 u8 roland_sc88_state::port5_r()
 {
 	return 0x2d;
+}
+
+// P6-0 is LCDBL: the glass and its backlight are dark while it is low
+void roland_sc88vl_state::port6_w(offs_t offset, u8 data, u8 mem_mask)
+{
+	m_lcd_lit = BIT(mem_mask, 0) && BIT(data, 0);
 }
 
 u8 roland_sc88_state::port8_r()
@@ -524,6 +571,7 @@ void roland_sc88_state::lcd_palette(palette_device &palette) const
 {
 	palette.set_pen_color(0, rgb_t(0xf8, 0xc8, 0x40)); // background
 	palette.set_pen_color(1, rgb_t(0x20, 0x10, 0x00)); // segment on
+	palette.set_pen_color(2, rgb_t::black()); // backlight off
 }
 
 static constexpr int LCD_CHAR_PITCH = 35;
@@ -546,6 +594,16 @@ static void lcd_fill(bitmap_ind16 &bitmap, int x, int y, int w, int h, int state
 	for (int yy = y; yy < y + h; yy++)
 		for (int xx = x; xx < x + w; xx++)
 			bitmap.pix(yy, xx) = state;
+}
+
+u32 roland_sc88vl_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+{
+	if (!m_lcd_lit)
+	{
+		bitmap.fill(2, cliprect);
+		return 0;
+	}
+	return m_lcd->screen_update(screen, bitmap, cliprect);
 }
 
 HD44780_PIXEL_UPDATE(roland_sc88_state::lcd_pixel_update)
@@ -714,6 +772,48 @@ static INPUT_PORTS_START(sc88pro)
 	PORT_CONFSETTING(0x03, "Mac")
 INPUT_PORTS_END
 
+// the SC-88's matrix less the user instrument keys and PREVIEW; the POWER/STANDBY key
+// SW401 takes the position the SC-88 leaves free (service notes, May 1995, p.13)
+static INPUT_PORTS_START(sc88vl)
+	PORT_START("KEY0")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Power")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("EQ")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("SC-55 Map")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Instrument <")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Instrument >")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Mute")
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("All")
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEY1")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("MIDI Ch <")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("MIDI Ch >")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Chorus <")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Chorus >")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pan <")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Pan >")
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part >")
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEY2")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key Shift / Delay <")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key Shift / Delay >")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Reverb <")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Reverb >")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level <")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level >")
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	// rear panel selector, read through the analog inputs as a resistor ladder
+	PORT_START("COMPUTER")
+	PORT_CONFNAME(0x03, 0x00, "Computer Switch")
+	PORT_CONFSETTING(0x00, "MIDI")
+	PORT_CONFSETTING(0x01, "PC-2")
+	PORT_CONFSETTING(0x02, "PC-1")
+	PORT_CONFSETTING(0x03, "Mac")
+INPUT_PORTS_END
+
 void roland_sc88_state::sc88(machine_config &config)
 {
 	HD6415108(config, m_maincpu, 20_MHz_XTAL);
@@ -752,7 +852,7 @@ void roland_sc88_state::sc88(machine_config &config)
 	m_screen->set_visarea_full();
 	m_screen->set_palette("palette");
 
-	PALETTE(config, "palette", FUNC(roland_sc88_state::lcd_palette), 2);
+	PALETTE(config, "palette", FUNC(roland_sc88_state::lcd_palette), 3);
 
 	HD44780(config, m_lcd, 270'000);
 	m_lcd->set_lcd_size(2, 40);
@@ -770,9 +870,14 @@ void roland_sc88_state::sc88(machine_config &config)
 	m_xp->add_route(3, "speaker", 1.0, 1);
 }
 
-void roland_sc88_state::sc88vl(machine_config &config)
+void roland_sc88vl_state::sc88vl(machine_config &config)
 {
 	sc88(config);
+	m_maincpu->write_port6().set(FUNC(roland_sc88vl_state::port6_w));
+	m_subcpu->keys_callback<3>().set_constant(0xff);
+	m_screen->set_screen_update(FUNC(roland_sc88vl_state::screen_update));
+
+	config.set_default_layout(layout_roland_sc88vl);
 }
 
 void roland_sc88_state::sc88pro(machine_config &config)
@@ -930,7 +1035,7 @@ ROM_END
 
 
 SYST(1994, sc88, 0, 0, sc88, sc88, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88", 0)
-SYST(1995, sc88vl, sc88, 0, sc88vl, sc88, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88VL", MACHINE_NOT_WORKING) // needs its own panel layout and input assignments
+SYST(1995, sc88vl, sc88, 0, sc88vl, sc88vl, roland_sc88vl_state, init_sc88, "Roland", "Sound Canvas SC-88VL", 0)
 SYST(1996, sc88pro, 0, 0, sc88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88Pro", 0)
 //SYST(1998, sk88pro, 0, 0, sk88pro, sc88, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
 SYST(1998, vegspro, 0, 0, vegspro, 0, roland_sc88_state, init_sc88, "Roland", "VE-GSPro Voice Expansion Board", MACHINE_NOT_WORKING)
