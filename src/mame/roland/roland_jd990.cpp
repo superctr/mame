@@ -55,10 +55,11 @@
     order, CSP1 feeds CSP2 over the TR bus, and the IFCS demultiplexes
     CSP2's eight output slots; the levels are calibrated against Jade.
 
-    The panel is 32 switches on five columns of the ISP's scan plus the
-    VALUE knob's push switch; the names come from pressing each position
-    in emulation against the owner's manual.  PERFORM has not answered
-    on any position and three positions are unplaced.
+    The panel is 32 switches on five columns of the ISP's scan, with the
+    VALUE and VOLUME knobs' push switches on column 0; the names come
+    from pressing each position in emulation against the owner's manual.
+    The lamps are a latch on the same column selects, which the ISP
+    loads from a table the firmware keeps in work RAM.
 
     The wave ROMs are stored with the EP's address and data lines
     permuted, the SC-55's map per 1 MB region (ep/docs/wave_rom_lines.md);
@@ -166,6 +167,8 @@ public:
 		, m_exp(*this, "exp")
 		, m_card(*this, "card")
 		, m_waverom(*this, "waverom")
+		, m_ram(*this, "nvram")
+		, m_rambank(*this, "rambank")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
 		, m_leds(*this, "led%u", 0U)
@@ -206,6 +209,8 @@ private:
 	required_device<roland_srjv80_slot_device> m_exp;
 	required_device<roland_sopcm1_slot_device> m_card;
 	required_region_ptr<u8> m_waverom;
+	required_shared_ptr<u16> m_ram;
+	required_memory_bank m_rambank;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
 	output_finder<20> m_leds;
@@ -252,6 +257,7 @@ void roland_jd990_state::machine_start()
 		}
 	}
 	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
+	m_rambank->set_base(&m_ram[0x4000]);
 
 	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
 	m_isp_fxm = timer_alloc(FUNC(roland_jd990_state::isp_fxm), this);
@@ -443,12 +449,12 @@ void roland_jd990_state::csp_w(offs_t offset, u8 data)
 void roland_jd990_state::mem_map(address_map &map)
 {
 	map(0x00000, 0x7ffff).rom().region("progrom", 0);
-	map(0x08000, 0x0ffff).mirror(0x80000).ram().share("nvram_hi");
-	map(0x80000, 0x87fff).ram().share("nvram_lo");
+	map(0x08000, 0x0ffff).bankrw(m_rambank);
+	map(0x80000, 0x8ffff).ram().share(m_ram);
 	map(0xe0000, 0xe7fff).rw(FUNC(roland_jd990_state::page_e_r), FUNC(roland_jd990_state::page_e_w));
 	map(0xe0000, 0xe007f).rw(m_ep, FUNC(roland_ep_device::read), FUNC(roland_ep_device::write));
 	map(0xe4000, 0xe407f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
-	map(0xe8000, 0xeffff).ram().share("nvram_hi");
+	map(0xe8000, 0xeffff).bankrw(m_rambank);
 	map(0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
 	map(0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
 	map(0xfa000, 0xfa000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
@@ -553,8 +559,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->read_port<h8570_device::PORT_11>().set(FUNC(roland_jd990_state::port11_r));
 	m_maincpu->write_port6().set(FUNC(roland_jd990_state::port6_w));
 
-	NVRAM(config, "nvram_lo", nvram_device::DEFAULT_ALL_0);
-	NVRAM(config, "nvram_hi", nvram_device::DEFAULT_ALL_0);
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
