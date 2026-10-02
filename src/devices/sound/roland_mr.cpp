@@ -2,12 +2,12 @@
 // copyright-holders:superctr
 /***************************************************************************
 
-    Roland MR3 effect processor
+    Roland MR effect processor
 
 ***************************************************************************/
 
 #include "emu.h"
-#include "roland_mr3.h"
+#include "roland_mr.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,7 +19,7 @@
 #include "logmacro.h"
 
 
-DEFINE_DEVICE_TYPE(ROLAND_MR3, roland_mr3_device, "roland_mr3", "Roland MR3")
+DEFINE_DEVICE_TYPE(ROLAND_MR, roland_mr_device, "roland_mr", "Roland MR")
 
 namespace {
 
@@ -48,24 +48,24 @@ constexpr bool condition(int arg, s64 value)
 } // anonymous namespace
 
 
-roland_mr3_device::roland_mr3_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: device_t(mconfig, ROLAND_MR3, tag, owner, clock)
+roland_mr_device::roland_mr_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: device_t(mconfig, ROLAND_MR, tag, owner, clock)
 	, device_sound_interface(mconfig, *this)
 	, m_stream(nullptr)
 {
 }
 
-void roland_mr3_device::map(address_map &map)
+void roland_mr_device::map(address_map &map)
 {
-	map(0x00, 0x03).rw(FUNC(roland_mr3_device::data_r), FUNC(roland_mr3_device::data_w));
-	map(0x04, 0x05).w(FUNC(roland_mr3_device::command_w));
+	map(0x00, 0x03).rw(FUNC(roland_mr_device::data_r), FUNC(roland_mr_device::data_w));
+	map(0x04, 0x05).w(FUNC(roland_mr_device::command_w));
 	map(0x06, 0x07).lw8(NAME([this] (offs_t offset, u8 data) { control_w(0x06 + offset, data); }));
-	map(0x08, 0x0f).r(FUNC(roland_mr3_device::result_r));
+	map(0x08, 0x0f).r(FUNC(roland_mr_device::result_r));
 	map(0x1a, 0x1a).lw8(NAME([this] (u8 data) { control_w(0x1a, data); }));
-	map(0x1e, 0x1e).r(FUNC(roland_mr3_device::status_r));
+	map(0x1e, 0x1e).r(FUNC(roland_mr_device::status_r));
 }
 
-void roland_mr3_device::device_start()
+void roland_mr_device::device_start()
 {
 	m_stream = stream_alloc(LANES, LANES, clock() / CLOCKS_PER_SAMPLE);
 
@@ -101,7 +101,7 @@ void roland_mr3_device::device_start()
 		decode(pc);
 }
 
-void roland_mr3_device::device_reset()
+void roland_mr_device::device_reset()
 {
 	m_data = 0;
 	m_last_command = 0;
@@ -127,13 +127,13 @@ void roland_mr3_device::device_reset()
 	m_pending_count = 0;
 }
 
-void roland_mr3_device::device_clock_changed()
+void roland_mr_device::device_clock_changed()
 {
 	if (m_stream)
 		m_stream->set_sample_rate(clock() / CLOCKS_PER_SAMPLE);
 }
 
-void roland_mr3_device::device_post_load()
+void roland_mr_device::device_post_load()
 {
 	for (int pc = 0; pc < ROWS; pc++)
 		decode(pc);
@@ -144,17 +144,17 @@ void roland_mr3_device::device_post_load()
 //  host port
 //-------------------------------------------------
 
-u32 roland_mr3_device::data_r()
+u32 roland_mr_device::data_r()
 {
 	return m_data;
 }
 
-void roland_mr3_device::data_w(offs_t offset, u32 data, u32 mem_mask)
+void roland_mr_device::data_w(offs_t offset, u32 data, u32 mem_mask)
 {
 	COMBINE_DATA(&m_data);
 }
 
-void roland_mr3_device::command_w(offs_t offset, u16 data, u16 mem_mask)
+void roland_mr_device::command_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	m_stream->update();
 
@@ -191,19 +191,19 @@ void roland_mr3_device::command_w(offs_t offset, u16 data, u16 mem_mask)
 	decode((addr + 1) & (ROWS - 1));
 }
 
-u16 roland_mr3_device::result_r(offs_t offset)
+u16 roland_mr_device::result_r(offs_t offset)
 {
 	if (!machine().side_effects_disabled())
 		m_stream->update();
 	return u16(narrow(m_result[offset & (RESULTS - 1)]) >> 8);
 }
 
-u8 roland_mr3_device::status_r()
+u8 roland_mr_device::status_r()
 {
 	return 0;
 }
 
-void roland_mr3_device::control_w(offs_t offset, u8 data)
+void roland_mr_device::control_w(offs_t offset, u8 data)
 {
 	LOGMASKED(LOG_HOST, "%s: control %02x = %02x\n", machine().describe_context(), offset, data);
 	m_control[offset & 0x1f] = data;
@@ -214,7 +214,7 @@ void roland_mr3_device::control_w(offs_t offset, u8 data)
 //  decoding
 //-------------------------------------------------
 
-void roland_mr3_device::decode(int pc)
+void roland_mr_device::decode(int pc)
 {
 	const u32 word = m_program[pc];
 	const int ctl = (word >> 22) & 31;
@@ -360,12 +360,12 @@ void roland_mr3_device::decode(int pc)
 //  arithmetic
 //-------------------------------------------------
 
-s64 roland_mr3_device::saturate(s64 value)
+s64 roland_mr_device::saturate(s64 value)
 {
 	return std::clamp<s64>(value, -WIDE_ONE, WIDE_ONE - ONE);
 }
 
-s64 roland_mr3_device::wrap(s64 value)
+s64 roland_mr_device::wrap(s64 value)
 {
 	s64 v = (value + WIDE_ONE) % (2 * WIDE_ONE);
 	if (v < 0)
@@ -373,7 +373,7 @@ s64 roland_mr3_device::wrap(s64 value)
 	return v - WIDE_ONE;
 }
 
-s64 roland_mr3_device::read_cell(int cell) const
+s64 roland_mr_device::read_cell(int cell) const
 {
 	switch (cell)
 	{
@@ -386,13 +386,13 @@ s64 roland_mr3_device::read_cell(int cell) const
 	}
 }
 
-void roland_mr3_device::write_cell(int cell, s64 value)
+void roland_mr_device::write_cell(int cell, s64 value)
 {
 	if (cell > 4)
 		m_ring[(cell - m_ring_pos) & (CELLS - 1)] = value;
 }
 
-int roland_mr3_device::eram_index(int offset) const
+int roland_mr_device::eram_index(int offset) const
 {
 	const int i = offset - m_eram_pos;
 	return i < 0 ? i + ERAM_WORDS : i;
@@ -403,7 +403,7 @@ int roland_mr3_device::eram_index(int offset) const
 //  the comparison gate
 //-------------------------------------------------
 
-bool roland_mr3_device::blanked(int pc, int path) const
+bool roland_mr_device::blanked(int pc, int path) const
 {
 	for (int i = m_blank_count - 1; i >= 0; i--)
 		if (m_blank[i].row == pc)
@@ -411,7 +411,7 @@ bool roland_mr3_device::blanked(int pc, int path) const
 	return false;
 }
 
-void roland_mr3_device::gate(int armed, s64 value, int path)
+void roland_mr_device::gate(int armed, s64 value, int path)
 {
 	int n = 0;
 	static constexpr int windows[2][3] = { { 4, 5, 0 }, { 6, 7, 8 } };
@@ -421,7 +421,7 @@ void roland_mr3_device::gate(int armed, s64 value, int path)
 	m_blank_count = n;
 }
 
-void roland_mr3_device::arm(int pc, int path, bool holds)
+void roland_mr_device::arm(int pc, int path, bool holds)
 {
 	for (int i = 0; i < m_pending_count; i++)
 		if (m_pending[i].row + 1 == pc && m_pending[i].holds)
@@ -430,7 +430,7 @@ void roland_mr3_device::arm(int pc, int path, bool holds)
 		m_pending[m_pending_count++] = pending_entry{ s16(pc), u8(path), holds };
 }
 
-void roland_mr3_device::settle(int pc)
+void roland_mr_device::settle(int pc)
 {
 	int n = 0;
 	for (int i = 0; i < m_pending_count; i++)
@@ -449,7 +449,7 @@ void roland_mr3_device::settle(int pc)
 //  execution
 //-------------------------------------------------
 
-int roland_mr3_device::step(int pc)
+int roland_mr_device::step(int pc)
 {
 	const row &r = m_rows[pc];
 	const int path = r.path;
@@ -656,7 +656,7 @@ int roland_mr3_device::step(int pc)
 	return taken;
 }
 
-void roland_mr3_device::execute_sample()
+void roland_mr_device::execute_sample()
 {
 	int target = -1;
 	bool slot = false;
@@ -695,7 +695,7 @@ void roland_mr3_device::execute_sample()
 	m_second_pos ^= 1;
 }
 
-void roland_mr3_device::sound_stream_update(sound_stream &stream)
+void roland_mr_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
