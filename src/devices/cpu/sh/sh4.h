@@ -98,7 +98,9 @@ enum
 	SH4_INTC_ITI,
 	SH4_INTC_RCMI,
 	SH4_INTC_ROVI,
-	SH4_INTC_ADI
+	SH4_INTC_ADI,
+	SH4_INTC_PINT0_7,
+	SH4_INTC_PINT8_15
 };
 
 #define SH4_FPU_PZERO 0
@@ -351,7 +353,7 @@ protected:
 
 		int irq = 0;
 		int z = -1;
-		for (int a = 0; a <= SH4_INTC_ADI; a++)
+		for (int a = 0; a <= SH4_INTC_PINT8_15; a++)
 		{
 			if (m_exception_requesting[a])
 			{
@@ -650,6 +652,7 @@ public:
 
 	template <unsigned Channel> auto read_adc() { return m_read_adc[Channel].bind(); }
 	void adtrg_w(int state);
+	template <unsigned Line> void pint_w(int state);
 
 protected:
 	// construction/destruction
@@ -672,6 +675,7 @@ protected:
 
 	void sh3_adc_irq_update();
 	void sh3_adc_start();
+	void sh3_pint_update();
 	TIMER_CALLBACK_MEMBER(sh3_adc_convert);
 	emu_timer *m_adc_timer;
 	devcb_read16::array<8> m_read_adc;
@@ -1066,6 +1070,7 @@ protected:
 	uint16_t m_pinter;
 	uint16_t m_iprd;
 	uint16_t m_ipre;
+	uint16_t m_pint_in;
 
 	// SCI 7708
 	uint8_t m_scsptr;

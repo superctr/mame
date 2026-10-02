@@ -3264,12 +3264,15 @@ void sh3_base_device::device_start()
 	save_item(NAME(m_iprb));
 
 	// INTC 7709
+	m_pint_in = 0xffff;
+
 	save_item(NAME(m_irr0));
 	save_item(NAME(m_irr1));
 	save_item(NAME(m_irr2));
 	save_item(NAME(m_icr1));
 	save_item(NAME(m_icr2));
 	save_item(NAME(m_pinter));
+	save_item(NAME(m_pint_in));
 	save_item(NAME(m_iprd));
 	save_item(NAME(m_ipre));
 

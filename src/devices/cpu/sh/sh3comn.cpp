@@ -1027,7 +1027,7 @@ uint16_t sh3_base_device::icr2_r(offs_t offset, uint16_t mem_mask)
 void sh3_base_device::icr2_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_icr2);
-	logerror("'%s' (%08x): INTC unmapped internal write %04x & %04x (ICR2)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	sh3_pint_update();
 }
 
 uint16_t sh3_base_device::pinter_r(offs_t offset, uint16_t mem_mask)
@@ -1039,7 +1039,45 @@ uint16_t sh3_base_device::pinter_r(offs_t offset, uint16_t mem_mask)
 void sh3_base_device::pinter_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_pinter);
-	logerror("'%s' (%08x): INTC unmapped internal write %04x & %04x (PINTER)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	sh3_pint_update();
+}
+
+//  PINT0-PINT15 are level sensed: ICR2 picks the level each pin asserts at,
+//  PINTER enables it, and each group of eight is one request
+template <unsigned Line> void sh3_base_device::pint_w(int state)
+{
+	m_pint_in = (m_pint_in & ~(1 << Line)) | ((state ? 1 : 0) << Line);
+	sh3_pint_update();
+}
+
+template void sh3_base_device::pint_w<0>(int state);
+template void sh3_base_device::pint_w<1>(int state);
+template void sh3_base_device::pint_w<2>(int state);
+template void sh3_base_device::pint_w<3>(int state);
+template void sh3_base_device::pint_w<4>(int state);
+template void sh3_base_device::pint_w<5>(int state);
+template void sh3_base_device::pint_w<6>(int state);
+template void sh3_base_device::pint_w<7>(int state);
+template void sh3_base_device::pint_w<8>(int state);
+template void sh3_base_device::pint_w<9>(int state);
+template void sh3_base_device::pint_w<10>(int state);
+template void sh3_base_device::pint_w<11>(int state);
+template void sh3_base_device::pint_w<12>(int state);
+template void sh3_base_device::pint_w<13>(int state);
+template void sh3_base_device::pint_w<14>(int state);
+template void sh3_base_device::pint_w<15>(int state);
+
+void sh3_base_device::sh3_pint_update()
+{
+	const u16 active = ~(m_pint_in ^ m_icr2) & m_pinter;
+	if (active & 0x00ff)
+		sh4_exception_request(SH4_INTC_PINT0_7);
+	else
+		sh4_exception_unrequest(SH4_INTC_PINT0_7);
+	if (active & 0xff00)
+		sh4_exception_request(SH4_INTC_PINT8_15);
+	else
+		sh4_exception_unrequest(SH4_INTC_PINT8_15);
 }
 
 uint16_t sh3_base_device::iprc_r(offs_t offset, uint16_t mem_mask)
@@ -1071,6 +1109,8 @@ void sh3_base_device::iprd_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 	logerror("'%s' (%08x): INTC internal write %04x & %04x (IPRD)\n", tag(), m_sh2_state->pc, data, mem_mask);
 	m_exception_priority[SH4_INTC_IRL4] = INTPRI((m_iprd & 0x000f) >> 0, SH4_INTC_IRL4);
 	m_exception_priority[SH4_INTC_IRL5] = INTPRI((m_iprd & 0x00f0) >> 4, SH4_INTC_IRL5);
+	m_exception_priority[SH4_INTC_PINT8_15] = INTPRI((m_iprd & 0x0f00) >> 8, SH4_INTC_PINT8_15);
+	m_exception_priority[SH4_INTC_PINT0_7] = INTPRI((m_iprd & 0xf000) >> 12, SH4_INTC_PINT0_7);
 	sh4_exception_recompute();
 }
 
