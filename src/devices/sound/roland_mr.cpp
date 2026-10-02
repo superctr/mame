@@ -392,6 +392,14 @@ void roland_mr_device::write_cell(int cell, s64 value)
 		m_ring[(cell - m_ring_pos) & (CELLS - 1)] = value;
 }
 
+s32 roland_mr_device::eram_word(s64 value)
+{
+	int shift = Q + 1 - ERAM_BITS - 2 * (ERAM_EXPONENTS - 1);
+	while (shift < Q + 1 - ERAM_BITS && (value >> shift) != sext(u32(value >> shift), ERAM_BITS))
+		shift += 2;
+	return s32((value >> shift) << shift);
+}
+
 int roland_mr_device::eram_index(int offset) const
 {
 	const int i = offset - m_eram_pos;
@@ -483,7 +491,7 @@ int roland_mr_device::step(int pc)
 		if (r.stores)
 		{
 			operand = narrow(aged(path));
-			m_eram[where] = s32(operand) & ~((1 << (Q + 1 - ERAM_BITS)) - 1);
+			m_eram[where] = eram_word(operand);
 		}
 		else
 			operand = m_eram[where];

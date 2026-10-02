@@ -14,6 +14,7 @@ public:
 	static constexpr int CELLS = 256;
 	static constexpr int ERAM_WORDS = 0x5000;
 	static constexpr int ERAM_BITS = 14;
+	static constexpr int ERAM_EXPONENTS = 4;
 	static constexpr int LANES = 8;
 	static constexpr int RESULTS = 4;
 	static constexpr u32 CLOCKS_PER_SAMPLE = 384;
@@ -91,6 +92,7 @@ private:
 	static s64 saturate(s64 value);
 	static s64 narrow(s64 value) { return saturate(value) >> Q; }
 	static s64 wrap(s64 value);
+	static s32 eram_word(s64 value);
 	int eram_index(int offset) const;
 
 	sound_stream *m_stream;
