@@ -596,8 +596,8 @@ void sd90_state::sd90(machine_config &config)
 	// The output buses are:
 	//   0-1: Analog Out 1
 	//   2-3: Analog Out 2
-	//   4-5: Digital out
-	//   6-7: Record out (to USB)
+	//   4-5: Digital Out
+	//   6-7: Record Out (to USB)
 	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
 	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
 	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
@@ -715,5 +715,5 @@ ROM_END
 
 
 //    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY   FULLNAME  FLAGS
-SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, empty_init, "Roland", "SD-90 Studio Canvas", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, empty_init, "Roland", "SD-80 Studio Canvas", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, empty_init, "Roland", "Studio Canvas SD-90", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, empty_init, "Roland", "Studio Canvas SD-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
