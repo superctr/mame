@@ -50,24 +50,12 @@
     So both machines' MIDI is two channels of the CPU's own: the SD-80's
     SCI and SCIF, the SD-90's IrDA channel and SCIF.
 
-    State: **the SD-80 runs.**  It boots, inflates the program into the
-    SDRAM at 0x08001000, reaches its play screen, takes MIDI on both
-    inputs, and its panel, LEDs and value dial work; there is nothing to
-    hear, because the wave mask ROMs are undumped.  The answer its USB
-    controller gives at power-on is a stub of two bytes.  The SD-90 boots
-    its loader out of the flash into the SDRAM at 0x883de000, gets past the
-    word its loader polls after each of the commands it sends the tone
-    generator, paints the =EDIROL= logo of its own on its graphic panel,
-    inflates its program and enters it, steps its USB controller through
-    the power-on states and sends it its program, and reaches its AUDIO
-    LEVEL screen.  Its buttons and its V1-V3 encoders work, the MR3 passes
-    the firmware's own check on the test mode's device page, and its audio
-    is routed between IC19 and the DACs as the firmware's mixer suggests,
-    unconfirmed while the wave ROMs are undumped.  Out of the box it starts
-    in USB mode, where MIDI IN goes to the computer rather than the sound
-    generator; a flash with no settings saved is given a record with MIDI
-    Start Up saved as MIDI, so its two MIDI inputs play parts A and B, and
-    SYSTEM saves to the flash as the hardware does.
+    TODO:
+    - the wave mask ROMs are undumped
+    - the USB controller is a stub: no USB MIDI or audio, so the SD-90
+      is given a settings record that starts it in MIDI mode
+    - which XV DAC pairs feed the MR3 and DACs is unconfirmed
+    - the SD-90's analog and digital inputs, and its digital output
 
 ****************************************************************************/
 
@@ -599,13 +587,17 @@ void sd90_state::sd90(machine_config &config)
 	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
 	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
 
-	// the AFX processor stands between the tone generator and the DACs,
-	// INST on its input lanes 0/1.  Its output lanes 0/1 are OUTPUT 1, under
-	// MASTER; 2/3 are OUTPUT 2, INST alone or the Surround RV's rear as the
-	// SYSTEM setting picks; 4/5, also under MASTER, the digital output; 6/7,
-	// under REC, the computer's recording.  Which XV pair is INST is unread.
-	// The audio inputs, the digital output and USB audio have nothing behind
-	// them.
+	// The MR3 chip acts as the system mixer.
+	// The input buses are:
+	//   0-1: Internal tone generator
+	//   2-3: Analog In
+	//   4-5: Digital In
+	//   6-7: Wave (from USB)
+	// The output buses are:
+	//   0-1: Analog Out 1
+	//   2-3: Analog Out 2
+	//   4-5: Digital out
+	//   6-7: Record out (to USB)
 	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
 	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
 	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
@@ -613,6 +605,10 @@ void sd90_state::sd90(machine_config &config)
 	m_mr3->add_route(1, "out1", 1.0, 1);
 	m_mr3->add_route(2, "out2", 1.0, 0);
 	m_mr3->add_route(3, "out2", 1.0, 1);
+	//m_mr3->add_route(4, "digout", 1.0, 0);
+	//m_mr3->add_route(5, "digout", 1.0, 1);
+	//m_mr3->add_route(6, "recout", 1.0, 0);
+	//m_mr3->add_route(7, "recout", 1.0, 1);
 
 	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
