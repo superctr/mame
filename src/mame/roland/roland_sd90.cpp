@@ -146,6 +146,8 @@ protected:
 	TIMER_CALLBACK_MEMBER(step_encoder);
 	u64 knob_a_r();
 	u64 knob_b_r();
+	void knob_clear_w(u64 data);
+	void update_knobs();
 	TIMER_CALLBACK_MEMBER(step_knobs);
 
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -162,7 +164,8 @@ protected:
 	u8 m_usb_reg[0x10]{};
 	u8 m_knob_last[3]{};
 	s8 m_knob_pending[3]{};
-	u8 m_knob_phase[3]{};
+	bool m_knob_latched[3]{};
+	bool m_knob_up[3]{};
 
 	emu_timer *m_encoder_timer = nullptr;
 	emu_timer *m_knob_timer = nullptr;
@@ -199,7 +202,8 @@ void sd90_state::machine_start()
 	save_item(NAME(m_usb_reg));
 	save_item(NAME(m_knob_last));
 	save_item(NAME(m_knob_pending));
-	save_item(NAME(m_knob_phase));
+	save_item(NAME(m_knob_latched));
+	save_item(NAME(m_knob_up));
 }
 
 void sd90_state::machine_reset()
@@ -291,16 +295,17 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_encoder)
 
 
 //-------------------------------------------------
-//  the SD-90's V1-V3 encoders: phase A of each on PTC1-PTC3, which are
-//  PINT1-PINT3, and phase B on PTL1-PTL3; a detent is a quadrature cycle
-//  and both phases rest high
+//  the SD-90's V1-V3 encoders: each detent latches PTC1-PTC3, which are
+//  PINT1-PINT3, low, with the direction on PTL1-PTL3, high for up; the
+//  handler counts while the latch is low and clears it by pulsing
+//  PTC5-PTC7 low
 //-------------------------------------------------
 
 u64 sd90_state::knob_a_r()
 {
 	u8 data = 0xff;
 	for (int i = 0; i < 3; i++)
-		if (m_knob_phase[i] == 1 || m_knob_phase[i] == 2)
+		if (m_knob_latched[i])
 			data &= ~(2 << i);
 	return data;
 }
@@ -309,9 +314,25 @@ u64 sd90_state::knob_b_r()
 {
 	u8 data = 0xff;
 	for (int i = 0; i < 3; i++)
-		if (m_knob_phase[i] >= 2)
+		if (!m_knob_up[i])
 			data &= ~(2 << i);
 	return data;
+}
+
+void sd90_state::knob_clear_w(u64 data)
+{
+	for (int i = 0; i < 3; i++)
+		if (((data >> (16 + 2 * (5 + i))) & 3) == 1 && !BIT(data, 5 + i))
+			m_knob_latched[i] = false;
+	update_knobs();
+}
+
+void sd90_state::update_knobs()
+{
+	const u8 a = knob_a_r();
+	m_maincpu->pint_w<1>(BIT(a, 1));
+	m_maincpu->pint_w<2>(BIT(a, 2));
+	m_maincpu->pint_w<3>(BIT(a, 3));
 }
 
 TIMER_CALLBACK_MEMBER(sd90_state::step_knobs)
@@ -321,19 +342,14 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_knobs)
 		const u8 now = m_knob[i]->read();
 		m_knob_pending[i] += s8(now - m_knob_last[i]);
 		m_knob_last[i] = now;
-		if (!m_knob_pending[i])
+		if (!m_knob_pending[i] || m_knob_latched[i])
 			continue;
 
-		const int step = m_knob_pending[i] > 0 ? 1 : -1;
-		m_knob_phase[i] = (m_knob_phase[i] + step) & 3;
-		if (!m_knob_phase[i])
-			m_knob_pending[i] -= step;
+		m_knob_up[i] = m_knob_pending[i] > 0;
+		m_knob_pending[i] += m_knob_up[i] ? -1 : 1;
+		m_knob_latched[i] = true;
 	}
-
-	const u8 a = knob_a_r();
-	m_maincpu->pint_w<1>(BIT(a, 1));
-	m_maincpu->pint_w<2>(BIT(a, 2));
-	m_maincpu->pint_w<3>(BIT(a, 3));
+	update_knobs();
 }
 
 
@@ -465,7 +481,7 @@ void sd90_state::sd80_io_map(address_map &map)
 
 void sd90_state::sd90_io_map(address_map &map)
 {
-	map(SH3_PORT_C, SH3_PORT_C + 7).r(FUNC(sd90_state::knob_a_r));
+	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(sd90_state::knob_a_r), FUNC(sd90_state::knob_clear_w));
 	map(SH3_PORT_L, SH3_PORT_L + 7).r(FUNC(sd90_state::knob_b_r));
 }
 
