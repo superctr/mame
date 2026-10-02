@@ -80,7 +80,7 @@
 #include "cpu/sh/sh3comn.h"
 #include "cpu/sh/sh4.h"
 #include "machine/intelfsh.h"
-#include "sound/roland_mr3.h"
+#include "sound/roland_mr.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
 #include "video/st7565.h"
@@ -169,7 +169,7 @@ protected:
 
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
-	optional_device<roland_mr3_device> m_mr3;
+	optional_device<roland_mr_device> m_mr3;
 	optional_device<intelfsh16_device> m_flash;
 	optional_device<hd44780_device> m_lcd;
 	optional_device<st7565_device> m_glcd;
@@ -453,7 +453,7 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x1800003f).m(m_mr3, FUNC(roland_mr3_device::map));
+	map(0x18000000, 0x1800003f).m(m_mr3, FUNC(roland_mr_device::map));
 	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::usb_r), FUNC(sd90_state::usb_w));
 }
 
@@ -588,7 +588,7 @@ void sd90_state::sd90(machine_config &config)
 	// 4/5; which XV pair is INST and which mix pairs the DACs take is
 	// unread, so these stand in.  The audio inputs and the computer's WAVE
 	// lanes have nothing behind them.
-	ROLAND_MR3(config, m_mr3, 16.9344_MHz_XTAL);
+	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
 	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
 	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
 	m_mr3->add_route(0, "out1", 1.0, 0);

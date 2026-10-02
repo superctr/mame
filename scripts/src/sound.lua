@@ -1822,14 +1822,14 @@ if SOUNDS["ROLANDLP"] then
 end
 
 ---------------------------------------------------
--- Roland MR3 effect processor
---@src/devices/sound/roland_mr3.h,SOUNDS["ROLANDMR3"] = true
+-- Roland MR effect processor
+--@src/devices/sound/roland_mr.h,SOUNDS["ROLANDMR"] = true
 ---------------------------------------------------
 
-if SOUNDS["ROLANDMR3"] then
+if SOUNDS["ROLANDMR"] then
 	files {
-		MAME_DIR .. "src/devices/sound/roland_mr3.cpp",
-		MAME_DIR .. "src/devices/sound/roland_mr3.h",
+		MAME_DIR .. "src/devices/sound/roland_mr.cpp",
+		MAME_DIR .. "src/devices/sound/roland_mr.h",
 	}
 end
 

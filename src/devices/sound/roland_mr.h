@@ -1,11 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:superctr
-#ifndef MAME_SOUND_ROLAND_MR3_H
-#define MAME_SOUND_ROLAND_MR3_H
+#ifndef MAME_SOUND_ROLAND_MR_H
+#define MAME_SOUND_ROLAND_MR_H
 
 #pragma once
 
-class roland_mr3_device : public device_t, public device_sound_interface
+class roland_mr_device : public device_t, public device_sound_interface
 {
 public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
@@ -25,7 +25,7 @@ public:
 		CMD_14 = 0x1400, CMD_1A = 0x1a00
 	};
 
-	roland_mr3_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+	roland_mr_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	void map(address_map &map) ATTR_COLD;
 
@@ -124,6 +124,6 @@ private:
 	u8 m_pending_count;
 };
 
-DECLARE_DEVICE_TYPE(ROLAND_MR3, roland_mr3_device)
+DECLARE_DEVICE_TYPE(ROLAND_MR, roland_mr_device)
 
-#endif // MAME_SOUND_ROLAND_MR3_H
+#endif // MAME_SOUND_ROLAND_MR_H
