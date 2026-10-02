@@ -60,10 +60,14 @@
     generator, paints the =EDIROL= logo of its own on its graphic panel,
     inflates its program and enters it, steps its USB controller through
     the power-on states and sends it its program, and reaches its AUDIO
-    LEVEL screen.  Its buttons work, the MR3 passes the firmware's own
-    check on the test mode's device page, and its audio is routed between
-    IC19 and the DACs as the firmware's mixer suggests, unconfirmed while
-    the wave ROMs are undumped.
+    LEVEL screen.  Its buttons and its V1-V3 encoders work, the MR3 passes
+    the firmware's own check on the test mode's device page, and its audio
+    is routed between IC19 and the DACs as the firmware's mixer suggests,
+    unconfirmed while the wave ROMs are undumped.  Out of the box it starts
+    in USB mode, where MIDI IN goes to the computer rather than the sound
+    generator; a flash with no settings saved is given a record with MIDI
+    Start Up saved as MIDI, so its two MIDI inputs play parts A and B, and
+    SYSTEM saves to the flash as the hardware does.
 
 ****************************************************************************/
 
@@ -75,6 +79,7 @@
 #include "cpu/sh/sh3_scif.h"
 #include "cpu/sh/sh3comn.h"
 #include "cpu/sh/sh4.h"
+#include "machine/intelfsh.h"
 #include "sound/roland_mr3.h"
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
@@ -83,6 +88,9 @@
 #include "emupal.h"
 #include "screen.h"
 #include "speaker.h"
+
+#include <algorithm>
+#include <iterator>
 
 #define LOG_UIPC    (1U << 1)
 
@@ -100,9 +108,11 @@ public:
 		, m_maincpu(*this, "maincpu")
 		, m_xv(*this, "xv%u", 0U)
 		, m_mr3(*this, "mr3")
+		, m_flash(*this, "flash")
 		, m_lcd(*this, "lcd")
 		, m_glcd(*this, "glcd")
 		, m_dial(*this, "DIAL")
+		, m_knob(*this, "V%u", 1U)
 		, m_midi_sw(*this, "MIDI_SW")
 		, m_mdout2(*this, "mdout2")
 		, m_leds(*this, "led_%u", 0U)
@@ -114,13 +124,14 @@ public:
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
-	virtual void machine_reset() override ATTR_COLD { m_uipc_step = 0; m_usb_state = 0; }
+	virtual void machine_reset() override ATTR_COLD;
 
 	void common(machine_config &config) ATTR_COLD;
 
 	void sd80_map(address_map &map) ATTR_COLD;
 	void sd90_map(address_map &map) ATTR_COLD;
 	void sd80_io_map(address_map &map) ATTR_COLD;
+	void sd90_io_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
 
 	template <int Channel> u8 uipc_r(offs_t offset);
@@ -133,6 +144,9 @@ protected:
 	u64 scp_r();
 	bool enca() const { return m_encoder_phase != 1 && m_encoder_phase != 2; }
 	TIMER_CALLBACK_MEMBER(step_encoder);
+	u64 knob_a_r();
+	u64 knob_b_r();
+	TIMER_CALLBACK_MEMBER(step_knobs);
 
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
@@ -146,15 +160,21 @@ protected:
 	u8 m_scif_txd = 1;
 	u8 m_usb_state = 0;
 	u8 m_usb_reg[0x10]{};
+	u8 m_knob_last[3]{};
+	s8 m_knob_pending[3]{};
+	u8 m_knob_phase[3]{};
 
 	emu_timer *m_encoder_timer = nullptr;
+	emu_timer *m_knob_timer = nullptr;
 
 	required_device<sh7709_device> m_maincpu;
 	required_device_array<roland_xv_device, 2> m_xv;
 	optional_device<roland_mr3_device> m_mr3;
+	optional_device<intelfsh16_device> m_flash;
 	optional_device<hd44780_device> m_lcd;
 	optional_device<st7565_device> m_glcd;
 	optional_ioport m_dial;
+	optional_ioport_array<3> m_knob;
 	optional_ioport m_midi_sw;
 	optional_device<midi_port_device> m_mdout2;
 	output_finder<LEDS> m_leds;
@@ -165,6 +185,9 @@ void sd90_state::machine_start()
 {
 	m_encoder_timer = timer_alloc(FUNC(sd90_state::step_encoder), this);
 	m_encoder_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
+	m_knob_timer = timer_alloc(FUNC(sd90_state::step_knobs), this);
+	if (m_knob[0])
+		m_knob_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
 
 	save_item(NAME(m_uipc_step));
 	save_item(NAME(m_dial_last));
@@ -174,6 +197,30 @@ void sd90_state::machine_start()
 	save_item(NAME(m_scif_txd));
 	save_item(NAME(m_usb_state));
 	save_item(NAME(m_usb_reg));
+	save_item(NAME(m_knob_last));
+	save_item(NAME(m_knob_pending));
+	save_item(NAME(m_knob_phase));
+}
+
+void sd90_state::machine_reset()
+{
+	m_uipc_step = 0;
+	m_usb_state = 0;
+
+	// with no settings record in the parameter blocks the SD-90 starts in
+	// USB mode, where MIDI IN goes to the computer; a fresh flash is given
+	// the record SYSTEM writes when MIDI Start Up is saved as MIDI, so the
+	// MIDI inputs play parts A and B
+	if (m_flash)
+	{
+		static const u8 midi_startup[0x28] = {
+				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf,
+				0x42, 0x04, 0x28, 0x5e, 0x7f, 0x3c, 0x00, 0x00,
+				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf };
+		u8 *const params = m_flash->base() + 0x8000;
+		if (std::all_of(params, params + 0x8000, [] (u8 b) { return b == 0xff; }))
+			std::copy(std::begin(midi_startup), std::end(midi_startup), params + 0x2000);
+	}
 }
 
 
@@ -240,6 +287,53 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_encoder)
 	// and clears its own bit in IRR0
 	if (was != enca())
 		m_maincpu->set_input_line(5, enca() ? CLEAR_LINE : ASSERT_LINE);
+}
+
+
+//-------------------------------------------------
+//  the SD-90's V1-V3 encoders: phase A of each on PTC1-PTC3, which are
+//  PINT1-PINT3, and phase B on PTL1-PTL3; a detent is a quadrature cycle
+//  and both phases rest high
+//-------------------------------------------------
+
+u64 sd90_state::knob_a_r()
+{
+	u8 data = 0xff;
+	for (int i = 0; i < 3; i++)
+		if (m_knob_phase[i] == 1 || m_knob_phase[i] == 2)
+			data &= ~(2 << i);
+	return data;
+}
+
+u64 sd90_state::knob_b_r()
+{
+	u8 data = 0xff;
+	for (int i = 0; i < 3; i++)
+		if (m_knob_phase[i] >= 2)
+			data &= ~(2 << i);
+	return data;
+}
+
+TIMER_CALLBACK_MEMBER(sd90_state::step_knobs)
+{
+	for (int i = 0; i < 3; i++)
+	{
+		const u8 now = m_knob[i]->read();
+		m_knob_pending[i] += s8(now - m_knob_last[i]);
+		m_knob_last[i] = now;
+		if (!m_knob_pending[i])
+			continue;
+
+		const int step = m_knob_pending[i] > 0 ? 1 : -1;
+		m_knob_phase[i] = (m_knob_phase[i] + step) & 3;
+		if (!m_knob_phase[i])
+			m_knob_pending[i] -= step;
+	}
+
+	const u8 a = knob_a_r();
+	m_maincpu->pint_w<1>(BIT(a, 1));
+	m_maincpu->pint_w<2>(BIT(a, 2));
+	m_maincpu->pint_w<3>(BIT(a, 3));
 }
 
 
@@ -355,7 +449,7 @@ void sd90_state::sd80_map(address_map &map)
 
 void sd90_state::sd90_map(address_map &map)
 {
-	map(0x00000000, 0x002fffff).rom().region("progrom", 0);
+	map(0x00000000, 0x003fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));
 	map(0x08000000, 0x083fffff).ram();
 	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
 	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
@@ -367,6 +461,12 @@ void sd90_state::sd90_map(address_map &map)
 void sd90_state::sd80_io_map(address_map &map)
 {
 	map(SH3_PORT_SC, SH3_PORT_SC + 7).r(FUNC(sd90_state::scp_r));
+}
+
+void sd90_state::sd90_io_map(address_map &map)
+{
+	map(SH3_PORT_C, SH3_PORT_C + 7).r(FUNC(sd90_state::knob_a_r));
+	map(SH3_PORT_L, SH3_PORT_L + 7).r(FUNC(sd90_state::knob_b_r));
 }
 
 
@@ -454,7 +554,17 @@ void sd90_state::out2_update()
 void sd90_state::sd90(machine_config &config)
 {
 	common(config);
+
+	// the firmware sets its MIDI channels' bit rate for a 25 MHz peripheral
+	// clock where the SD-80's asks for 24 MHz, so EXTAL is taken as 12.5 MHz;
+	// the SD-90's board is unread
+	m_maincpu->set_clock(25_MHz_XTAL / 2 * 8);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd90_map);
+	m_maincpu->set_addrmap(AS_IO, &sd90_state::sd90_io_map);
+
+	// the firmware takes Sharp's maker and device codes B0 and B5, and saves
+	// its settings into the flash's parameter blocks
+	SHARP_LH28F320BF(config, m_flash);
 
 	// a graphic panel on the same LCD pins the SD-80 drives its character
 	// module from; its columns run from SEG131 down, which is what the boot
@@ -547,6 +657,15 @@ static INPUT_PORTS_START(sd90)
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Digital In") PORT_CODE(KEYCODE_3)
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Line In") PORT_CODE(KEYCODE_2)
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Mic/Guitar") PORT_CODE(KEYCODE_1)
+
+	PORT_START("V1")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("V1") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_Z) PORT_CODE_INC(KEYCODE_X)
+
+	PORT_START("V2")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_PLAYER(2) PORT_NAME("V2") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_C) PORT_CODE_INC(KEYCODE_V)
+
+	PORT_START("V3")
+	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_PLAYER(3) PORT_NAME("V3") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_N) PORT_CODE_INC(KEYCODE_M)
 INPUT_PORTS_END
 
 
@@ -572,7 +691,7 @@ ROM_START(sd90)
 	// Updating Disk, which carries the flash as Roland exclusive: a boot
 	// block, the program in two zlib containers, the effect data and the
 	// rest left erased
-	ROM_REGION64_BE(0x300000, "progrom", 0)
+	ROM_REGION16_BE(0x400000, "flash", ROMREGION_ERASEFF)
 	ROM_LOAD("sd90_v1.03.bin", 0x000000, 0x300000, CRC(e44fb343) SHA1(447cc7edabedfe3fb4cb7c280f44eb6eca50d7fe))
 
 	ROM_WAVEROM
