@@ -326,7 +326,7 @@ intel_e28f400b_device::intel_e28f400b_device(const machine_config &mconfig, cons
 	: intelfsh16_device(mconfig, INTEL_E28F400B, tag, owner, clock, 0x80000, MFG_INTEL, 0x4471) { }
 
 sharp_lh28f320bf_device::sharp_lh28f320bf_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: intelfsh16_device(mconfig, SHARP_LH28F320BF, tag, owner, clock, 0x400000, MFG_SHARP, 0xb5) { }
+	: intelfsh16_device(mconfig, SHARP_LH28F320BF, tag, owner, clock, 0x400000, MFG_SHARP, 0xb5) { m_bot_boot_sector = true; }
 
 intel_28f320j3d_device::intel_28f320j3d_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, INTEL_28F320J3D, tag, owner, clock, 0x400000, MFG_INTEL, 0x16) { m_sector_is_4k = true; }
@@ -1197,6 +1197,14 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 				memset(&m_data[base], 0xff, size);
 
 				m_timer->adjust( attotime::from_msec( duration ) );
+			}
+			else if (m_bot_boot_sector && (address * ((m_bits == 16) ? 2 : 1)) < 64 * 1024)
+			{
+				// clear the 8k parameter block containing the current address to all 0xffs
+				uint32_t base = address * ((m_bits == 16) ? 2 : 1);
+				memset(&m_data[base & ~0x1fff], 0xff, 8 * 1024);
+
+				m_timer->adjust( attotime::from_msec( 300 ) );
 			}
 			else
 			{
