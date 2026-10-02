@@ -513,8 +513,8 @@ void roland_xv_device::word_w(int word, u16 data)
 		m_led_select = -1;
 		m_scan_read = 0;
 		m_scan_write = 0;
-		if ((data & 0xfff8) == 0x0240)
-			m_scan_select = data & 7;
+		if ((data & 0xfff0) == 0x0240)
+			m_scan_select = data & 15;
 		else if ((data & 0xfff0) == 0x0260)
 			m_led_select = data & 15;
 		else if ((data & 0xffc0) == 0x0200)
@@ -835,8 +835,9 @@ void roland_xv_device::raise_irq(int reason, int voice)
 //  through the FIFO after selecting 0x240+n in word 0x09, two words a
 //  strobe: bit 0 is the level, high while the switch is open, bits 1 and
 //  2 are set by a press and a release and cleared by the host writing the
-//  word back.  A change raises reason 14 with the switch's number, strobe
-//  times eight plus line, in word 0x1c, one switch per interrupt.  The
+//  word back.  A press raises reason 14 with the switch's number, strobe
+//  times eight plus line, in word 0x1c, one switch per interrupt; a
+//  release raises nothing.  The
 //  LEDs are the words behind 0x260+n, again two a strobe, a brightness
 //  nibble per line.
 //-------------------------------------------------
@@ -853,7 +854,8 @@ TIMER_CALLBACK_MEMBER(roland_xv_device::scan_switches)
 			const int shift = (n & 3) * 4;
 			u16 &w = m_scan[n >> 2];
 			w = (w & ~(1 << shift)) | ((BIT(now, n) ^ 1) << shift) | ((BIT(now, n) ? 2 : 4) << shift);
-			m_switch_changed |= u64(1) << n;
+			if (BIT(now, n))
+				m_switch_changed |= u64(1) << n;
 		}
 	m_switch_state = now;
 	present_switch();

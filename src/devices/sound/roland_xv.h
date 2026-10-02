@@ -287,6 +287,7 @@ protected:
 	void exchange();
 	s32 cell_r(u16 address) const;
 	void cell_w(u16 address, s32 value);
+	TIMER_CALLBACK_MEMBER(scan_switches);
 
 	optional_device<roland_xv_device> m_link;
 	std::unique_ptr<u32[]> m_space;
@@ -308,7 +309,6 @@ private:
 	void transfer_write();
 	void update_irq();
 	void raise_irq(int reason, int voice);
-	TIMER_CALLBACK_MEMBER(scan_switches);
 	TIMER_CALLBACK_MEMBER(stream_tick);
 	void present_switch();
 	void run_mask_w(int word, u16 data);
