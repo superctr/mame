@@ -144,7 +144,9 @@ static const int exception_codes[] =
 	0x560, /* SH4_INTC_ITI */
 	0x580, /* SH4_INTC_RCMI */
 	0x5A0, /* SH4_INTC_ROVI */
-	-1 /* SH4_INTC_ADI */
+	-1, /* SH4_INTC_ADI */
+	-1, /* SH4_INTC_PINT0_7 */
+	-1 /* SH4_INTC_PINT8_15 */
 };
 
 /* SH3 INTEVT2 uses a different table - values of -1 aren't filled in yet, some may not exist on the sh3. */
@@ -242,7 +244,9 @@ static const int sh3_intevt2_exception_codes[] =
 	0x560, /* SH4_INTC_ITI */
 	0x580, /* SH4_INTC_RCMI */
 	0x5A0, /* SH4_INTC_ROVI */
-	0x980 /* SH4_INTC_ADI */
+	0x980, /* SH4_INTC_ADI */
+	0x700, /* SH4_INTC_PINT0_7 */
+	0x720 /* SH4_INTC_PINT8_15 */
 };
 
 void sh34_base_device::sh4_swap_fp_registers()
@@ -310,7 +314,7 @@ void sh34_base_device::sh4_default_exception_priorities() // setup default prior
 	m_exception_priority[SH4_INTC_IRL3] = INTPRI(4, SH4_INTC_IRL3);
 	m_exception_priority[SH4_INTC_IRL4] = INTPRI(0, SH4_INTC_IRL4);
 	m_exception_priority[SH4_INTC_IRL5] = INTPRI(0, SH4_INTC_IRL5);
-	for (int a = SH4_INTC_HUDI; a <= SH4_INTC_ADI; a++)
+	for (int a = SH4_INTC_HUDI; a <= SH4_INTC_PINT8_15; a++)
 		m_exception_priority[a] = INTPRI(0, a);
 }
 
@@ -320,7 +324,7 @@ void sh34_base_device::sh4_exception_recompute() // checks if there is any inter
 	if (!m_sh2_state->m_pending_irq || ((m_sh2_state->sr & BL) && m_exception_requesting[SH4_INTC_NMI] == 0))
 		return;
 	int z = (m_sh2_state->sr >> 4) & 15;
-	for (int a = 0; a <= SH4_INTC_ADI; a++)
+	for (int a = 0; a <= SH4_INTC_PINT8_15; a++)
 	{
 		if (m_exception_requesting[a])
 		{
