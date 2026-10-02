@@ -600,17 +600,19 @@ void sd90_state::sd90(machine_config &config)
 	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
 
 	// the AFX processor stands between the tone generator and the DACs,
-	// INST on its input lanes 0/1 and the mix on its output lanes 0/1 and
-	// 4/5; which XV pair is INST and which mix pairs the DACs take is
-	// unread, so these stand in.  The audio inputs and the computer's WAVE
-	// lanes have nothing behind them.
+	// INST on its input lanes 0/1.  Its output lanes 0/1 are OUTPUT 1, under
+	// MASTER; 2/3 are OUTPUT 2, INST alone or the Surround RV's rear as the
+	// SYSTEM setting picks; 4/5, also under MASTER, the digital output; 6/7,
+	// under REC, the computer's recording.  Which XV pair is INST is unread.
+	// The audio inputs, the digital output and USB audio have nothing behind
+	// them.
 	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
 	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
 	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
 	m_mr3->add_route(0, "out1", 1.0, 0);
 	m_mr3->add_route(1, "out1", 1.0, 1);
-	m_mr3->add_route(4, "out2", 1.0, 0);
-	m_mr3->add_route(5, "out2", 1.0, 1);
+	m_mr3->add_route(2, "out2", 1.0, 0);
+	m_mr3->add_route(3, "out2", 1.0, 1);
 
 	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
