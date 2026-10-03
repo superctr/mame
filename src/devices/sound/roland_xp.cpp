@@ -42,9 +42,9 @@
  *  the first send to name a word clearing it - for every voice up to the highest, a parked
  *  voice depositing zero. An even voice with FILTER bit 4 and a structure of 1 to 9 pairs
  *  with the next one: the two samples go through one of nine arrangements of the two
- *  filters, a booster shift and a ring modulator, with 16-bit saturation between the stages,
- *  and the pair's output lands in the owner's page 2A and zero in the partner's. Every
- *  product in the voice path divides towards zero.
+ *  filters, a booster shift and a ring modulator, the booster and the ring's modulator
+ *  saturating at 16 bits and the sums at 24, and the pair's output lands in the owner's
+ *  page 2A and zero in the partner's. Every product in the voice path divides towards zero.
  *
  *  DSP: 288 instruction slots, of which (highest voice + 1) x 4 run a frame, over three RAMs -
  *  IRAM1 and IRAM2, 64 x 24 bits, which words 00-7f address with bit 6 XOR the frame parity,
@@ -1097,18 +1097,20 @@ bool roland_xp_device::pairs(int n) const
 void roland_xp_device::run_pair(int n)
 {
 	const int m = n + 1;
-	set_page(m, OUTPUT, 0);
-
-	const auto sounding = [this] (int k) { return m_voices[k].phase == RUNNING && !BIT(page(k, CONTROL), 10); };
-	if (!running(n) || !sounding(n) || (running(m) && !sounding(m)))
+	const auto sounding = [this] (int k) { return running(k) && m_voices[k].phase == RUNNING && !BIT(page(k, CONTROL), 10); };
+	const bool sounding1 = sounding(n);
+	const bool sounding2 = sounding(m);
+	if (!sounding1 && !sounding2)
 		return;
+
+	set_page(m, OUTPUT, 0);
 
 	const u32 control = page(n, FILTER);
 	const int booster = (control >> 6) & 3;
 	const int mode1 = (control >> 10) & 3;
 	const int mode2 = (control >> 8) & 3;
-	const s32 w1 = m_voices[n].sample;
-	const s32 w2 = running(m) ? m_voices[m].sample : 0;
+	const s32 w1 = sounding1 ? m_voices[n].sample : 0;
+	const s32 w2 = sounding2 ? m_voices[m].sample : 0;
 
 	const auto boost = [booster] (s32 x) { return clamp16(s64(x) << booster); };
 	const auto ring = [] (s32 modulator, s32 carrier) { return clamp24((s64(clamp16(modulator)) * carrier) / 32768); };
@@ -1118,13 +1120,13 @@ void roland_xp_device::run_pair(int n)
 	s32 out;
 	switch ((control >> 12) & 15)
 	{
-	case 1: out = f2(f1(clamp16(s64(amplify(n, w1)) + w2))); break;
-	case 2: out = f2(boost(f1(clamp16(s64(amplify(n, w1)) + w2)))); break;
-	case 3: out = f2(f1(boost(clamp16(s64(amplify(n, w1)) + w2)))); break;
+	case 1: out = f2(f1(clamp24(s64(amplify(n, w1)) + w2))); break;
+	case 2: out = f2(boost(f1(clamp24(s64(amplify(n, w1)) + w2)))); break;
+	case 3: out = f2(f1(boost(clamp24(s64(amplify(n, w1)) + w2)))); break;
 	case 4: out = f2(f1(ring(amplify(n, w1), w2))); break;
-	case 5: out = f2(f1(clamp16(s64(ring(amplify(n, w1), w2)) + w2))); break;
+	case 5: out = f2(f1(clamp24(s64(ring(amplify(n, w1), w2)) + w2))); break;
 	case 6: out = f2(ring(amplify(n, f1(w1)), w2)); break;
-	case 7: out = f2(clamp16(s64(ring(amplify(n, f1(w1)), w2)) + w2)); break;
+	case 7: out = f2(clamp24(s64(ring(amplify(n, f1(w1)), w2)) + w2)); break;
 	case 8:
 	{
 		const s32 modulator = amplify(n, f1(w1));
@@ -1135,7 +1137,7 @@ void roland_xp_device::run_pair(int n)
 	{
 		const s32 modulator = amplify(n, f1(w1));
 		const s32 carrier = f2(w2);
-		out = clamp16(s64(ring(modulator, carrier)) + carrier);
+		out = clamp24(s64(ring(modulator, carrier)) + carrier);
 		break;
 	}
 	}
