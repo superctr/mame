@@ -495,7 +495,7 @@ void drcbe_c::generate(drcuml_block &block, const instruction *instlist, uint32_
 	}
 
 	// tell all of our utility objects that a block is beginning
-	m_hash.block_begin(block, instlist, numinst + regclears);
+	m_hash.block_begin(block, instlist, numinst);
 	m_labels.block_begin(block);
 	m_map.block_begin(block);
 
