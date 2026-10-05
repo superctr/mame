@@ -81,6 +81,7 @@
 #include <iterator>
 
 #define LOG_UIPC    (1U << 1)
+#define LOG_RESET   (1U << 2)
 
 #define VERBOSE (LOG_GENERAL)
 #include "logmacro.h"
@@ -103,12 +104,16 @@ public:
 		, m_knob(*this, "V%u", 1U)
 		, m_midi_sw(*this, "MIDI_SW")
 		, m_mdout2(*this, "mdout2")
+		, m_out(*this, "out%u", 1U)
+		, m_tg_view(*this, "tg_view")
 		, m_leds(*this, "led_%u", 0U)
 	{
 	}
 
 	void sd80(machine_config &config) ATTR_COLD;
 	void sd90(machine_config &config) ATTR_COLD;
+
+	void init_sd80() ATTR_COLD { m_analog_gpio = true; }
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -121,6 +126,13 @@ protected:
 	void sd80_io_map(address_map &map) ATTR_COLD;
 	void sd90_io_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
+
+	static bool port_pin(u64 data, int bit) { return ((data >> (16 + 2 * bit)) & 3) != 1 || BIT(data, bit); }
+	void tg_reset_w(int state);
+	void sd80_port_c_w(u64 data);
+	void sd80_port_d_w(u64 data);
+	void sd90_port_e_w(u64 data);
+	void update_dac();
 
 	template <int Channel> u8 uipc_r(offs_t offset);
 	template <int Channel> void uipc_w(offs_t offset, u8 data);
@@ -149,6 +161,10 @@ protected:
 	u8 m_in1_rxd = 1;
 	u8 m_scif_txd = 1;
 	u8 m_usb_state = 0;
+	bool m_analog_gpio = false;
+	bool m_tg_reset = true;
+	bool m_dac_reset = true;
+	bool m_amute = true;
 	u8 m_usb_reg[0x10]{};
 	u8 m_knob_last[3]{};
 	s8 m_knob_pending[3]{};
@@ -168,6 +184,8 @@ protected:
 	optional_ioport_array<3> m_knob;
 	optional_ioport m_midi_sw;
 	optional_device<midi_port_device> m_mdout2;
+	required_device_array<speaker_device, 2> m_out;
+	memory_view m_tg_view;
 	output_finder<LEDS> m_leds;
 };
 
@@ -188,6 +206,9 @@ void sd90_state::machine_start()
 	save_item(NAME(m_scif_txd));
 	save_item(NAME(m_usb_state));
 	save_item(NAME(m_usb_reg));
+	save_item(NAME(m_tg_reset));
+	save_item(NAME(m_dac_reset));
+	save_item(NAME(m_amute));
 	save_item(NAME(m_knob_last));
 	save_item(NAME(m_knob_pending));
 	save_item(NAME(m_knob_latched));
@@ -198,6 +219,12 @@ void sd90_state::machine_reset()
 {
 	m_uipc_step = 0;
 	m_usb_state = 0;
+
+	m_tg_reset = true;
+	m_tg_view.select(1);
+	m_dac_reset = m_analog_gpio;
+	m_amute = m_analog_gpio;
+	update_dac();
 
 	// with no settings record in the parameter blocks the SD-90 starts in
 	// USB mode, where MIDI IN goes to the computer; a fresh flash is given
@@ -213,6 +240,65 @@ void sd90_state::machine_reset()
 		if (std::all_of(params, params + 0x8000, [] (u8 b) { return b == 0xff; }))
 			std::copy(std::begin(midi_startup), std::end(midi_startup), params + 0x2000);
 	}
+}
+
+
+//-------------------------------------------------
+//  the reset and audio controls on the CPU's ports, each asserted while
+//  its pin is high and so from power-on, when the pins are pulled-up
+//  inputs: the tone generators' reset, PTC4 on the SD-80 and PTE2 on the
+//  SD-90, which also resets the MR3; and on the SD-80 PTC5, the DACs'
+//  reset, and PTD6, the analog outputs' mute
+//-------------------------------------------------
+
+void sd90_state::tg_reset_w(int state)
+{
+	if (state == m_tg_reset)
+		return;
+
+	LOGMASKED(LOG_RESET, "%s: tone generator reset %s\n", machine().describe_context(), state ? "asserted" : "released");
+	m_tg_reset = state;
+	m_tg_view.select(state ? 1 : 0);
+	for (auto &xv : m_xv)
+		xv->reset();
+	if (m_mr3)
+		m_mr3->reset();
+}
+
+void sd90_state::sd80_port_c_w(u64 data)
+{
+	tg_reset_w(port_pin(data, 4));
+	const bool dac_reset = port_pin(data, 5);
+	if (dac_reset != m_dac_reset)
+	{
+		LOGMASKED(LOG_RESET, "%s: DAC reset %s\n", machine().describe_context(), dac_reset ? "asserted" : "released");
+		m_dac_reset = dac_reset;
+		update_dac();
+	}
+}
+
+void sd90_state::sd80_port_d_w(u64 data)
+{
+	const bool amute = port_pin(data, 6);
+	if (amute != m_amute)
+	{
+		LOGMASKED(LOG_RESET, "%s: analog mute %s\n", machine().describe_context(), amute ? "on" : "off");
+		m_amute = amute;
+		update_dac();
+	}
+}
+
+void sd90_state::sd90_port_e_w(u64 data)
+{
+	tg_reset_w(port_pin(data, 2));
+}
+
+void sd90_state::update_dac()
+{
+	const float gain = (m_dac_reset || m_amute) ? 0.0f : 1.0f;
+	for (auto &out : m_out)
+		for (int ch = 0; ch < 2; ch++)
+			out->set_input_gain(ch, gain);
 }
 
 
@@ -445,8 +531,10 @@ void sd90_state::sd80_map(address_map &map)
 	map(0x08000000, 0x083fffff).ram();                              // area 2, IC4 and IC6
 //  map(0x0c000000, 0x0fffffff)                                     // area 3, declared SDRAM and unpopulated
 //  map(0x10000000, 0x13ffffff)                                     // area 4, which nothing reaches
-	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // area 5, IC19
-	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC27
+	map(0x14000000, 0x17ffffff).view(m_tg_view);                   // area 5
+	m_tg_view[0](0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC19
+	m_tg_view[0](0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC27
+	m_tg_view[1](0x14000000, 0x17ffffff).noprw();
 	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::uipc_r<0>), FUNC(sd90_state::uipc_w<0>));   // area 6, XS0
 	map(0x19000000, 0x19000003).rw(FUNC(sd90_state::uipc_r<1>), FUNC(sd90_state::uipc_w<1>));   // XS1
 }
@@ -455,21 +543,26 @@ void sd90_state::sd90_map(address_map &map)
 {
 	map(0x00000000, 0x003fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));
 	map(0x08000000, 0x083fffff).ram();
-	map(0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
-	map(0x18000000, 0x1800003f).m(m_mr3, FUNC(roland_mr_device::map));
+	map(0x14000000, 0x1800003f).view(m_tg_view);
+	m_tg_view[0](0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	m_tg_view[0](0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	m_tg_view[0](0x18000000, 0x1800003f).m(m_mr3, FUNC(roland_mr_device::map));
+	m_tg_view[1](0x14000000, 0x1800003f).noprw();
 	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::usb_r), FUNC(sd90_state::usb_w));
 }
 
 
 void sd90_state::sd80_io_map(address_map &map)
 {
+	map(SH3_PORT_C, SH3_PORT_C + 7).w(FUNC(sd90_state::sd80_port_c_w));
+	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(sd90_state::sd80_port_d_w));
 	map(SH3_PORT_SC, SH3_PORT_SC + 7).r(FUNC(sd90_state::scp_r));
 }
 
 void sd90_state::sd90_io_map(address_map &map)
 {
 	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(sd90_state::knob_a_r), FUNC(sd90_state::knob_clear_w));
+	map(SH3_PORT_E, SH3_PORT_E + 7).w(FUNC(sd90_state::sd90_port_e_w));
 	map(SH3_PORT_L, SH3_PORT_L + 7).r(FUNC(sd90_state::knob_b_r));
 }
 
@@ -511,8 +604,8 @@ void sd90_state::sd80(machine_config &config)
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
 
-	// which of IC19's DAC pairs each PCM1716E takes, and which way the
-	// transport link runs, is unread, so the XV-5080's arrangement stands in
+	// IC19's SDO4 carries OUTPUT 1 and its SDO5 OUTPUT 2, the stream's first
+	// two pairs; its SDO3 goes to the digital transmitter, which is not here
 	m_xv[0]->add_route(0, "out1", 1.0, 0);
 	m_xv[0]->add_route(1, "out1", 1.0, 1);
 	m_xv[0]->add_route(2, "out2", 1.0, 0);
@@ -716,4 +809,4 @@ ROM_END
 
 //    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY   FULLNAME  FLAGS
 SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, empty_init, "Roland", "Studio Canvas SD-90", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, empty_init, "Roland", "Studio Canvas SD-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, init_sd80,  "Roland", "Studio Canvas SD-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
