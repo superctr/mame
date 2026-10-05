@@ -22,23 +22,25 @@ public:
 	static constexpr int OBJECTS = 64;
 	static constexpr int FIFO_DEPTH = 512;
 	static constexpr int IRQ_REASONS = 16;
-	static constexpr int BUSES = 16;
-	static constexpr int BUS_CHORUS = 6;
-	static constexpr int BUS_REVERB = 7;
+	static constexpr int BUSES = 64;
 	static constexpr int SENDS = 6;
+	static constexpr int CACHE_CELLS = 16;
+	static constexpr int CACHE_AHEAD = 12;
+	static constexpr u32 PHASE_MASK = 0x1fffff;
 	static constexpr u32 CLOCKS_PER_SAMPLE = 768;
 	static constexpr int RATE_CODES = 16;
-	static constexpr int RAMP_FRACTION_BITS = 12;
-	static constexpr int OUTPUT_BITS = 18;
-	static constexpr int DSP_FRACTION_BITS = 23;
+	static constexpr int CELL_BITS = 24;
 	static constexpr int DSP_ROWS = 0x400;
-	static constexpr int DSP_ROW_BUDGET = 0x400;
-	static constexpr int RING_CELLS = 0x400;
+	static constexpr int DSP_ROWS_MAPPED = 0x380;
+	static constexpr int DSP_ROW_BUDGET = 768;
+	static constexpr int RING_CELLS = 0x200;
+	static constexpr int WORK_CELLS = 0x100;
 	static constexpr int RECORDS = 192;
 	static constexpr int ERAM_CELLS = 1 << 19;
 	static constexpr int TAPS = 64;
-	static constexpr int DAC_PAIRS = 4;
-	static constexpr int OUTPUTS = 2 * DAC_PAIRS;
+	static constexpr int IORAM_WORDS = 0x100;
+	static constexpr int SERIAL_OUTS = 5;
+	static constexpr int OUTPUTS = 2 * SERIAL_OUTS;
 	static constexpr u32 ADDRESS_MASK = 0x0fffffff;
 	static constexpr u32 PAGE_MASK = 0x000fffff;
 	static constexpr int BANK_BYTE_WIDE = 1;
@@ -56,14 +58,16 @@ public:
 	// the per-voice register file behind word 0x02, by word number
 	enum voice_word
 	{
-		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
-		PITCH_INCREMENT = 0x7c, START = 0x80, LOOP_START = 0x82, END = 0x84,
-		FILTER_BAND = 0xb0, FILTER_LOW = 0xb2, PAIR_SMOOTH = 0xb4,
+		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, ACCUMULATOR = 0x62, EXPONENTS = 0x63,
+		PHASE = 0x70, PITCH_STEP = 0x72, LOOP_FRACTION = 0x74, WAVE_SCALE = 0x76,
+		PITCH_SLOPE = 0x7c, START = 0x80, LOOP_START = 0x82, END = 0x84,
+		FILTER_BAND = 0xb0, FILTER_LOW = 0xb2, PAIR_SMOOTH = 0xb4, FILTER_OUTPUT = 0xb4,
 		CUTOFF_RAMP = 0x90, RESONANCE_RAMP = 0x92, AMPLITUDE_RAMP = 0x94, BLOCK_CONTROL = 0x96,
 		SEND_PORT_A = 0x98, SEND_PORT_B = 0x9a, PITCH_RAMP = 0x9c,
-		CUTOFF_INCREMENT = 0xa0, RESONANCE_INCREMENT = 0xa2, AMPLITUDE_INCREMENT = 0xa4,
+		CUTOFF_SLOPE = 0xa0, RESONANCE_SLOPE = 0xa2, AMPLITUDE_SLOPE = 0xa4, PARAMETER_SLOPE = 0xa6,
+		SEND_SLOPE_A = 0xa8, SEND_SLOPE_B = 0xaa,
 		CUTOFF = 0xc0, RESONANCE = 0xc1, AMPLITUDE = 0xc2, PAIR_BOOST = 0xc3, FILTER_TYPE = 0xc4,
-		SEND_BASE = 0xf0
+		VOICE_OUTPUT = 0xe4, SEND_BASE = 0xf0
 	};
 
 	// the interrupt reasons a voice raises, each with its own voice-number word at IRQ_VOICE + reason
@@ -73,7 +77,13 @@ public:
 		IRQ_AMPLITUDE_LANDED = 4, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8, IRQ_SWITCH = 14
 	};
 
-	enum ramp_kind { RAMP_CUTOFF, RAMP_RESONANCE, RAMP_AMPLITUDE, RAMP_PITCH, RAMP_SEND_A, RAMP_SEND_B, RAMPS };
+	enum ramp_control : u16
+	{
+		RAMP_CURVE = 0x10, RAMP_EVENT = 0x20, RAMP_REUSE = 0x40, RAMP_HOLD = 0x380,
+		PITCH_EVENT = 0x80, PITCH_REUSE = 0x100, PITCH_HOLD = 0x200
+	};
+
+	enum ramp_use { USE_PARAMETER, USE_COEFFICIENT, USE_SEND };
 
 	// word 0xc4 bits 3:0; a type at or above FILTER_TYPES passes the input through
 	enum filter_type
@@ -104,16 +114,28 @@ public:
 	enum region { REGION_END = 1, REGION_LOOP = 0, REGION_BEFORE = 2 };
 
 	// the spaces behind word 0x06, by their top nibble
-	enum host_space { SPACE_IRAM = 0x0000, SPACE_PRAM = 0x1000, SPACE_IORAM = 0x2000, SPACE_RECORDS = 0x3000 };
+	enum host_space { SPACE_IRAM = 0x0000, SPACE_PRAM = 0x1000, SPACE_IORAM = 0x2000, SPACE_RECORDS = 0x3000, SPACE_CACHE = 0x3400, SPACE_CACHE_END = 0x3800 };
 
-	// the DSP's ten-bit data addresses: IRAM slides under the cursor; the mix cells, the
-	// transport slots and the ERAM staging cells stay put; the parameter bank is read-only
+	// the stream's channels, a left and a right word each: the four data lines of
+	// the DAC group, SDO4-SDO7, then SDO3
+	enum serial_out { OUT_SDO4 = 0, OUT_SDO5 = 1, OUT_SDO6 = 2, OUT_SDO7 = 3, OUT_SDO3 = 4 };
+
+	// the DSP's ten-bit data addresses: a ring that slides under the cursor, static cells,
+	// then the mix cells, the transport slots and the staging cells in two work banks
+	// the samples take in turn; the parameter bank is read-only
 	enum ibus
 	{
-		IBUS_IRAM_END = 0x280, IBUS_MIX = 0x280, IBUS_TRANSPORT = 0x2c0, IBUS_STAGING = 0x300,
-		IBUS_BANK = 0x380, IBUS_BANK_END = 0x3c0,
-		LINK_OUT_L = 0x2c0, LINK_OUT_R = 0x2d0, LINK_IN_L = 0x2e0, LINK_IN_R = 0x2f0, LINK_WORDS_L = 9, LINK_WORDS_R = 8,
-		DAC_L = 0x2cc, DAC_R = 0x2dc
+		IBUS_STATIC = 0x200, IBUS_IRAM_END = 0x280, IBUS_MIX = 0x280, IBUS_TRANSPORT = 0x2c0, IBUS_STAGING = 0x300,
+		IBUS_BANK = 0x380, IBUS_BANK_END = 0x3c0, IBUS_SERIAL_CELLS = 0x40
+	};
+
+	// the I/O sequencer's words: a transmit or a receive pointer into the 64
+	// cells from 0x2c0, a word sent or taken at the pointer, the end of the table
+	enum io_word
+	{
+		IO_FAMILY = 0x300, IO_SET_TRANSMIT = 0x100, IO_SET_RECEIVE = 0x200,
+		IO_TRANSMIT = 0x080, IO_RECEIVE = 0x090, IO_RECEIVE_AUX = 0x0a0, IO_SDO3 = 0x0b0,
+		IO_SDO4 = 0x0c0, IO_SDO7 = 0x0f0, IO_END = 0x3ff
 	};
 
 	// the memory operation a row's W1 (or a second one in its W2) carries
@@ -124,31 +146,39 @@ public:
 	enum alu_right { RIGHT_ZERO = 0, RIGHT_A = 1, RIGHT_B = 2, RIGHT_R = 3, RIGHT_K23 = 4, RIGHT_K19 = 5, RIGHT_K15 = 6, RIGHT_P = 7 };
 
 	// the multiplier's operand, W0 bits 3:1
-	enum multiplier_source { SOURCE_R = 0, SOURCE_S = 1, SOURCE_M = 2, SOURCE_C = 3, SOURCE_A = 4, SOURCE_B = 5, SOURCE_P = 6, SOURCE_UNKNOWN = 7 };
+	enum multiplier_source { SOURCE_R = 0, SOURCE_S = 1, SOURCE_M = 2, SOURCE_C = 3, SOURCE_A = 4, SOURCE_B = 5, SOURCE_P = 6, SOURCE_ZERO = 7 };
 
-	// what the rows read and write, in one block near the code when there is a recompiler
+	// what W0 bits 15:14 and W1 bits 11:10 make of a row
+	enum row_kind { ROW_PLAIN = 0, ROW_PREDICATED = 1, ROW_BRANCH = 2, ROW_JUMP = 3 };
+
+	// a predicated row's W1 bits 11:8
+	enum predicate_mode
+	{
+		PREDICATE_WRITE = 0, PREDICATE_LEFT = 1, PREDICATE_RIGHT = 2, PREDICATE_SHIFT = 3, PREDICATE_SPECIAL = 4,
+		PREDICATE_SOURCE = 6, PREDICATE_COEFFICIENT = 7, PREDICATE_PARAMETER = 8, PREDICATE_PARAMETER_STORE = 11
+	};
+
+	// the special ALU's operation, W1 bits 6:4 under PREDICATE_SPECIAL
+	enum special_op { SPECIAL_MAX = 0, SPECIAL_MIN = 1, SPECIAL_FEEDBACK = 2, SPECIAL_NORMALIZE = 3, SPECIAL_AND = 4, SPECIAL_OR = 5, SPECIAL_XOR = 6, SPECIAL_COPY = 7 };
+
+	// what the rows read and write, in one block near the code when there is a recompiler;
+	// the accumulators, the product and the flag results count sixteenths of a cell's step
 	struct dsp_state
 	{
 		s32 acc[2];
-		s32 product;
+		s64 product;
 		s32 latch[4];
-		s32 flag_value;
-		s64 flag_raw;
-		s32 last_value;
-		s64 last_raw;
-		u32 last_hold;
-		u32 tap_count;
-		u32 pc;
+		s32 flag;
+		s32 last;
+		u8 flag_carry;
+		u8 last_carry;
+		u8 last_hold;
+		u8 product_shift;
 		u32 steps;
-		u64 cursor;
-		s64 scratch[4];
-	};
-
-	// a row's operand as the code reads it: the immediate the ALU adds and the coefficient the multiplier takes
-	struct dsp_operand
-	{
-		s32 immediate;
-		s32 coefficient;
+		u32 tap_count;
+		u32 late_count;
+		u32 cursor;
+		u32 work_phase;
 	};
 
 	// the rows compiled to native code, when the machine runs with the recompiler (roland_xv_drc.cpp)
@@ -160,8 +190,23 @@ public:
 
 		virtual void *alloc_near(size_t bytes, size_t align) = 0;
 		virtual void reset() = 0;
-		virtual void touched() = 0;
+		virtual void touched(int row) = 0;
 		virtual void run() = 0;
+	};
+
+	// the fields a false predicate can replace: a row has them as written and as substituted
+	struct dsp_fields
+	{
+		u8 left = 0;
+		u8 right = 0;
+		u8 source = 0;
+		u8 shift = 0;
+		bool negate_left = false;
+		bool negate_right = false;
+		bool clamp = false;
+		bool multiply = false;
+		bool cell_coefficient = false;
+		s32 immediate = 0;
 	};
 
 	// a program row, its three words and their fields decoded
@@ -170,27 +215,25 @@ public:
 		u16 w0 = 0;
 		u16 w1 = 0;
 		u16 operand = 0;
-		bool conditional = false;
-		bool branch = false;
+		u8 kind = ROW_PLAIN;
 		u8 condition = 0;
-		s8 displacement = 0;
-		bool multiply = false;
-		u8 shift = 0;
+		u8 predicate = 0;
+		u8 argument = 0;
+		u16 target = 0;
+		s16 displacement = 0;
+		bool gated = false;
+		bool special = false;
+		bool hold = true;
+		bool wrap = false;
+		bool to_b = false;
+		bool inert = true;
 		u8 mode = 0;
 		u16 address = 0;
 		bool second = false;
 		u8 mode2 = 0;
 		u16 address2 = 0;
-		bool cell_coefficient = false;
-		u8 source = 0;
-		u8 left = 0;
-		u8 right = 0;
-		bool negate_left = false;
-		bool negate_right = false;
-		bool to_b = false;
-		bool wrap = false;
-		bool hold = true;
-		bool clamp = false;
+		s32 coefficient = 0;
+		dsp_fields fields[2];
 	};
 
 	roland_xv_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
@@ -208,7 +251,7 @@ public:
 	// so the offset is RS and hd44780_device::write takes it as it stands
 	auto lcd_callback() { return m_lcd_callback.bind(); }
 
-	// the chip whose transport block this one's is linked to; the linked chip is run from this one's stream
+	// the chip whose transport slots this one's are linked to; the linked chip is run from this one's stream
 	template <typename T> void set_link(T &&tag) { m_link.set_tag(std::forward<T>(tag)); }
 
 	// the clock on the CKI pin is doubled inside the chip, and a sample takes 768 of those
@@ -236,27 +279,15 @@ protected:
 	// what a voice keeps beside its register file
 	struct voice
 	{
-		u32 address = 0;
-		u16 phase = 0;
-		s32 predictor = 0;
 		bool backward = false;
-		bool launch = false;
-		bool fetching = false;
-		bool was_running = false;
+		bool fetching = true;
+		u16 wrap_cells = 0;
 		u8 region = REGION_BEFORE;
 		bool scaled = false;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
 		s32 pair_smooth = 0;
 		s32 pair_ceiling = 1 << 19;
-		s32 ramp_current[RAMPS] = { 0 };
-		s32 ramp_target[RAMPS] = { 0 };
-		s32 ramp_position[RAMPS] = { 0 };
-		s32 ramp_step[RAMPS] = { 0 };
-		u16 ramp_remaining[RAMPS] = { 0 };
-		s32 ramp_fade[RAMPS] = { 0 };
-		bool ramp_armed[RAMPS] = { false };
-		u8 send_slot[2] = { 0, 0 };
 	};
 
 	struct wave_cell
@@ -272,18 +303,33 @@ protected:
 		bool wrapped;
 	};
 
+	// what the ERAM port does at a service slot, the records' events and the taps'
+	enum transfer_kind : u8 { XFER_WRITE, XFER_READ, XFER_RETURN, XFER_TAP_FIRST, XFER_TAP_SECOND, XFER_TAP_FRACTION, XFER_TAP_FIRST_RETURN, XFER_TAP_SECOND_RETURN };
+
 	struct transfer
 	{
-		bool write;
+		u16 slot;
+		u8 kind;
 		u16 cell;
 		u32 offset;
 	};
 
+	// a receive in table order: the cell, and the word of the link it takes or the auxiliary input
+	struct io_receive
+	{
+		u16 cell;
+		s16 index;
+	};
+
 	u16 object_word(int voice, int word) const { return m_object_regs[voice][word - OBJECT_BASE]; }
+	u16 &object_ref(int voice, int word) { return m_object_regs[voice][word - OBJECT_BASE]; }
 	u32 object_long(int voice, int word) const { return (u32(object_word(voice, word)) << 16) | object_word(voice, word + 1); }
 	bool running(int voice) const { return BIT(m_run_mask, voice); }
 
-	void run_dsp();
+	void run_dsp(const s64 *mix, u64 claimed);
+	void decode_io();
+	void serial_out();
+	void serial_in(const s32 *words, int count);
 	void exchange();
 	s32 cell_r(u16 address) const;
 	void cell_w(u16 address, s32 value);
@@ -291,9 +337,15 @@ protected:
 
 	optional_device<roland_xv_device> m_link;
 	std::unique_ptr<u32[]> m_space;
-	u32 *m_ring;
+	u32 *m_iram;
+	s32 *m_work;
 	s32 *m_bus;
+	s32 *m_bus_other;
 	dsp_state *m_dsp;
+	u8 m_ramp_phase;
+
+	u16 ramp(u16 current, u16 target, u16 &control, s32 &slope, int use, bool event_free, u8 threshold) const;
+	static u8 ramp_threshold(u8 phase) { return bitswap<8>(phase, 0, 1, 2, 3, 4, 5, 6, 7); }
 
 private:
 	friend class roland_xv_dsp_recompiler;
@@ -313,31 +365,34 @@ private:
 	void present_switch();
 	void run_mask_w(int word, u16 data);
 
-	void start_ramp(int voice, int kind, u32 value);
-	void seed_ramp(int voice, int kind, s32 value);
-	void set_current(int voice, int kind, s32 value);
-	void send_port_w(int voice, int kind, u32 value);
-	void increment_ramp(int voice, int kind, u32 value);
-	u16 steps_to_target(int voice, int kind) const;
-	void service_ramp(int n, int kind);
+	void service_coefficient(int n, int i);
+	void service_send(int n, int i);
+	void service_pitch(int n);
+	void service_parameters();
+	void hold_parameters();
+	static u32 bank_slot(int index) { return (12 * index + DSP_ROW_BUDGET - 42) % DSP_ROW_BUDGET; }
+	s32 bank_r(int index) const { return m_dsp->steps >= bank_slot(index) ? m_bank_next[index] : m_bank[index]; }
 
 	static u32 cell_of(u32 sample, bool wide);
 	static u32 in_page(u32 address, u32 index) { return (address & ~PAGE_MASK) | (index & PAGE_MASK); }
 	u8 sample_byte(u32 sample);
 	wave_cell cell_at(u32 address, bool wide);
 	static s32 delta_of(wave_cell c);
-	static s32 tap(s32 weight, wave_cell c);
+	u16 exponent_word(u32 address);
 	void launch(int n);
 	u32 loop_fraction(int n, bool at_loop) const;
 	address_step advance(int n, address_step s, u32 phase) const;
 	void cross(int n, u32 address);
+	void fill(int n, int consumer);
+	s32 source(int n, int gain);
 	s32 filter(int n, int type, s32 sample);
-	bool advance(int n, s32 &sample);
-	s32 amplitude(int n, s32 sample) const;
-	void emit(int n, s32 output, s32 *buses);
+	void service_ramps(int n);
+	s32 amplitude(int n, s32 sample);
+	void emit(int n, s32 output, s64 *mix, u64 &claimed) const;
 	int structure(int n) const;
-	void run_voice(int n, s32 *buses);
-	void run_pair(int n, int kind, s32 *buses);
+	void run_voice(int n, s64 *mix, u64 &claimed);
+	void run_pair(int n, int kind, s64 *mix, u64 &claimed);
+	void set_long(int n, int word, u32 value);
 
 	int object() const { return m_regs[MODE] & (OBJECTS - 1); }
 
@@ -345,20 +400,25 @@ private:
 	void frame();
 	static u16 next_address(u16 address);
 	void space_w(u16 address, u32 data);
-	u32 space_r(u16 address) const { return address < RING_CELLS ? m_ring[address] : m_space[address]; }
+	u32 space_r(u16 address) const;
 	void row_changed(int n);
 	void decode_row(int n);
 	void decode_transfers();
 	u32 ring_index(u16 address) const { return (m_dsp->cursor + address) & (RING_CELLS - 1); }
 	u32 eram_index(s32 offset) const { return (m_dsp->cursor + offset) & (ERAM_CELLS - 1); }
+	void swap_work();
+	void run_transfers();
+	void return_w(u16 cell, s32 value, int order, bool later);
 	void interpret();
-	void execute(const dsp_row &row, const dsp_operand &k, bool commit);
-	bool condition(int code);
-	void log_once(int what, const char *text);
+	void interpret(int pc, int pending);
+	void execute(const dsp_row &row, bool commit, bool predicate);
+	bool condition(int code) const;
 
 	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x800000, 0x7fffff)); }
-	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
-	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
+	static s64 clamp28(s64 value) { return std::clamp<s64>(value, -0x8000000, 0x7ffffff); }
+	static s64 wrap28(s64 value) { return s64(u64(value) << 36) >> 36; }
+	static s64 wrap29(s64 value) { return s64(u64(value) << 35) >> 35; }
+	static s32 wrap19(s32 value) { return s32(u32(value) << 13) >> 13; }
 	static s32 wrap24(s32 value) { return s32(u32(value) << 8) >> 8; }
 
 	address_space_config m_wave_config;
@@ -370,12 +430,12 @@ private:
 	sound_stream *m_stream;
 	emu_timer *m_scan_timer;
 	emu_timer *m_stream_timer;
-	u16 m_ramp_samples[RATE_CODES];
 
 	u16 m_regs[0x100];
 	u16 m_object_regs[OBJECTS][OBJECT_END - OBJECT_BASE];
+	u32 m_cache[OBJECTS][CACHE_CELLS];
 	u16 m_address;
-	u16 m_data_high;
+	u16 m_high_latch;
 	u16 m_fifo[FIFO_DEPTH];
 	int m_fifo_write;
 	int m_fifo_read;
@@ -401,13 +461,27 @@ private:
 	int m_rows_end;
 	std::unique_ptr<s32[]> m_eram;
 	s32 *m_bank;
-	dsp_operand *m_operands;
+	s32 *m_bank_next;
+	u64 m_bank_live;
+	u8 m_threshold;
 	u16 *m_tap_cell;
 	s32 *m_tap_delay;
-	transfer m_transfers[RECORDS];
+	u16 *m_tap_slot;
+	u16 *m_late_cell;
+	transfer m_transfers[2 * RECORDS];
 	int m_transfer_count;
 	bool m_transfers_stale;
-	u32 m_logged;
+	transfer m_tap_events[5 * TAPS];
+	s32 m_fetched[RECORDS];
+	s32 m_tap_fetched[TAPS][2];
+	s16 m_return_order[2][WORK_CELLS];
+	u16 m_io_transmit[IORAM_WORDS];
+	int m_io_transmit_count;
+	io_receive m_io_receive[IORAM_WORDS];
+	int m_io_receive_count;
+	s16 m_io_out[OUTPUTS];
+	bool m_io_stale;
+	s32 m_out[OUTPUTS];
 	std::unique_ptr<dsp_recompiler> m_recompiler;
 	std::vector<std::unique_ptr<u8[]>> m_heap;
 };
