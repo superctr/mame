@@ -1318,18 +1318,12 @@ void roland_xv_device::fill(int n, int consumer)
 	v.backward = s.backward;
 }
 
-// the sample at the phase: the cache cell at the consumer and the three after
-// it under the XP's interpolation weights, then the gain word 0x60 bits 3:0
-// give, 6 dB an even step from a half at code 0; a forward loop's fractions
-// move the phase as it reaches the loop's last sample
-s32 roland_xv_device::source(int n, int gain)
+// the cache cell at the consumer and the three after it under the XP's
+// interpolation weights, then the gain word 0x60 bits 3:0 give, 6 dB an even
+// step from a half at code 0
+s32 roland_xv_device::interpolate(int n, u32 phase, int gain) const
 {
-	voice &v = m_voices[n];
-	u32 phase = object_long(n, PHASE) & PHASE_MASK;
 	const int consumer = phase >> 16;
-	if (!BIT(object_word(n, VOICE_CONTROL), 13))
-		fill(n, consumer);
-
 	const int fraction = (phase >> 9) & 0x7f;
 	s32 previous = wrap19(m_cache[n][consumer & (CACHE_CELLS - 1)]);
 	s64 sum = s64(previous) * 4096;
@@ -1341,7 +1335,23 @@ s32 roland_xv_device::source(int n, int gain)
 	}
 	if (BIT(gain, 0))
 		sum = sum * 181 / 128;
-	const s32 sample = clamp24(sum >> (13 - (gain >> 1)));
+	return clamp24(sum >> (13 - (gain >> 1)));
+}
+
+// the sample at the phase; a voice of format 2 or 3 fetches nothing and
+// sources nothing, whatever its cache holds.  A forward loop's fractions move
+// the phase as it reaches the loop's last sample
+s32 roland_xv_device::source(int n, int gain)
+{
+	voice &v = m_voices[n];
+	u32 phase = object_long(n, PHASE) & PHASE_MASK;
+	const int consumer = phase >> 16;
+	s32 sample = 0;
+	if (!BIT(object_word(n, VOICE_CONTROL), 13))
+	{
+		fill(n, consumer);
+		sample = interpolate(n, phase, gain);
+	}
 
 	u32 step = object_long(n, PITCH_STEP) & 0x3fffff;
 	if (v.scaled)

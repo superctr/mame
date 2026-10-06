@@ -384,6 +384,7 @@ private:
 	address_step advance(int n, address_step s, u32 phase) const;
 	void cross(int n, u32 address);
 	void fill(int n, int consumer);
+	s32 interpolate(int n, u32 phase, int gain) const;
 	s32 source(int n, int gain);
 	s32 filter(int n, int type, s32 sample);
 	void service_ramps(int n);
