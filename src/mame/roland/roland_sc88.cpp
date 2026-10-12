@@ -1021,8 +1021,9 @@ ROM_END
 
 ROM_START(vegspro)
 	ROM_REGION16_BE(0x100000, "progrom", 0)
-	// "SC88PRO (MK03B)" v1.02, 1997-05-19
-	ROM_LOAD16_WORD_SWAP("roland-r01780078.bin", 0x00000, 0x100000, CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
+	// program "1.00 / 0.01", 1998-08-03; tone data "SC88PRO (MK03B)" v1.02, 1997-05-19
+	// 0x0014de reads 0x05 where its copy at 0x01e1de and the SC-88Pro have 0x8d, so the bulk dumps never answer
+	ROM_LOAD16_WORD_SWAP("roland-r01780078.bin", 0x00000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
 
 	ROM_REGION(0x1400000, "waverom", 0)
 	// dumped as "R01567167 301 (Samples A).bin", "R01567178 302 (Samples B).BIN", "R01233667 314 (Samples C).BIN"
