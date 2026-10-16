@@ -302,6 +302,12 @@ void sh2_device::execute_run()
 		return;
 	}
 
+	if (m_test_irq && !m_sh2_state->m_delay)
+	{
+		check_pending_irq("mame_sh2_execute");
+		m_test_irq = 0;
+	}
+
 	do
 	{
 		debugger_instruction_hook(m_sh2_state->pc);
