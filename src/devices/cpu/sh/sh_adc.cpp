@@ -80,6 +80,11 @@ void sh_adc_device::adcsr_w(u8 data)
 
 	if(!(prev & F_ADST) && (m_adcsr & F_ADST))
 		start_conversion();
+	else if((prev & F_ADST) && !(m_adcsr & F_ADST) && m_mode != IDLE) {
+		m_mode = IDLE;
+		m_next_event = 0;
+		m_cpu->internal_update();
+	}
 }
 
 void sh_adc_device::adcr_w(u8 data)
@@ -280,18 +285,18 @@ void sh_adc_device::mode_update()
 		m_trigger = 1 << ((m_adcr >> 4) & 3);
 		m_analog_power_control = !(m_adcr & 0x40);
 
-		m_mode = ACTIVE | (m_adcr & 0x08 ? REPEAT : 0);
+		m_start_mode = ACTIVE | (m_adcr & 0x08 ? REPEAT : 0);
 
 		if(m_adcr & 0x03) {
-			m_mode |= BUFFER;
+			m_start_mode |= BUFFER;
 
 		}
 
 		if(m_adcsr & 0x08) {
-			m_mode |= ROTATE;
+			m_start_mode |= ROTATE;
 			m_start_channel = 0;
 			if(m_adcr & 0x04) {
-				m_mode |= DUAL;
+				m_start_mode |= DUAL;
 				m_end_channel = (m_adcsr & 6)+1;
 			} else
 				m_end_channel = m_adcsr & 7;
@@ -301,10 +306,10 @@ void sh_adc_device::mode_update()
 	} else {
 		m_trigger = T_SOFT;
 
-		m_mode = ACTIVE;
+		m_start_mode = ACTIVE;
 
 		if(m_adcsr & 0x10) {
-			m_mode |= ROTATE | REPEAT;
+			m_start_mode |= ROTATE | REPEAT;
 			m_start_channel = 0;
 			m_end_channel = m_adcsr & 3;
 		} else
