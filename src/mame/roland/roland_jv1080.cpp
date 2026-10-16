@@ -8,13 +8,16 @@
     work DRAM and 64 KB of battery-backed SRAM.  An XP (IC22) with two DRAMs
     and four 2 MB wave ROMs drives three stereo DACs: MIX, OUTPUT1, OUTPUT2.
     The M60205 gate array (IC1) carries the panel and a 40x2 character LCD,
-    which the CPU fills by DMA.
+    which the CPU fills by DMA.  A second gate array (IC25) puts the DATA
+    card on the CPU bus; the PCM card and the four expansion boards are on
+    the XP's wave bus.
 
 ****************************************************************************/
 
 #include "emu.h"
 
 #include "cpu/sh/sh7034.h"
+#include "datacard.h"
 #include "m60205.h"
 #include "machine/nvram.h"
 #include "sound/roland_xp.h"
@@ -42,6 +45,8 @@ public:
 		, m_xp(*this, "xp")
 		, m_ga(*this, "ga")
 		, m_lcd(*this, "lcd")
+		, m_datacard(*this, "datacard")
+		, m_pcmcard(*this, "pcmcard")
 		, m_exp(*this, "exp%u", 1U)
 		, m_leds(*this, "led%u", 0U)
 	{
@@ -56,6 +61,7 @@ private:
 
 	void led_w(offs_t offset, u8 data);
 	u16 sense_r();
+	u8 card_status_r();
 
 	void jv_palette(palette_device &palette) const ATTR_COLD;
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
@@ -64,21 +70,33 @@ private:
 	required_device<roland_xp_device> m_xp;
 	required_device<m60205_device> m_ga;
 	required_device<hd44780_device> m_lcd;
+	required_device<roland_datacard_device> m_datacard;
+	required_device<roland_sopcm1_slot_device> m_pcmcard;
 	required_device_array<roland_srjv80_slot_device, 4> m_exp;
 	output_finder<24> m_leds;
 };
 
 
-// SENS0-SENS4 on PB1-PB5, high while a board is fitted; 0a01a99e polls them
-// as one five-bit field thirty times a second.  SENS0 is the PCM card's, and
-// no card slot is emulated, so it reads empty
+// SENS0-SENS4 on PB1-PB5, high while a card or a board is fitted; 0a01a99e
+// polls them as one five-bit field thirty times a second.  SENS0 is the PCM
+// card's, SENS1-SENS4 are EXP-A to EXP-D
 u16 roland_jv1080_state::sense_r()
 {
-	u16 data = 0xffff & ~(1 << 1);
+	u16 data = 0xffff;
+	if (!m_pcmcard->sense_r())
+		data &= ~(1 << 1);
 	for (int slot = 0; slot < 4; slot++)
 		if (!m_exp[slot]->sense_r())
 			data &= ~(1 << (2 + slot));
 	return data;
+}
+
+
+// IC25 with A16 high: the DATA card's sense line in bit 1 and its protect
+// switch's MRO in bit 0, high while the card can be written
+u8 roland_jv1080_state::card_status_r()
+{
+	return (m_datacard->sense_r() ? 0x02 : 0x00) | ((m_datacard->sense_r() && !m_datacard->protect_r()) ? 0x01 : 0x00);
 }
 
 
@@ -94,6 +112,8 @@ void roland_jv1080_state::jv1080_map(address_map &map)
 {
 	map(0x01000000, 0x0101ffff).ram();
 	map(0x02000000, 0x020fffff).rom().region("progrom", 0);
+	map(0x02280000, 0x0228ffff).mirror(0x60000).rw(m_datacard, FUNC(roland_datacard_device::read), FUNC(roland_datacard_device::write));
+	map(0x02290000, 0x0229ffff).mirror(0x60000).r(FUNC(roland_jv1080_state::card_status_r)).nopw();
 	map(0x02380000, 0x0238ffff).ram().share("nvram");
 	map(0x04000000, 0x04003fff).rw(m_xp, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
 	map(0x04380000, 0x0438003f).rw(m_ga, FUNC(m60205_device::read), FUNC(m60205_device::write));
@@ -102,6 +122,7 @@ void roland_jv1080_state::jv1080_map(address_map &map)
 void roland_jv1080_state::xp_rom_map(address_map &map)
 {
 	map(0x0000000, 0x07fffff).rom().region("waverom", 0);
+	map(0x1000000, 0x17fffff).r(m_pcmcard, FUNC(roland_sopcm1_slot_device::read));
 	for (int slot = 0; slot < 4; slot++)
 		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
 }
@@ -208,7 +229,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
 	// AN2-AN7 are grounded.  AN0 and AN1 are the data card's cell and the
 	// internal one, each through a buffer; 0x1ff-0x2cc of full scale is healthy
-	m_maincpu->read_adc<0>().set_constant(0);
+	m_maincpu->read_adc<0>().set([this] () -> u16 { return m_datacard->sense_r() ? 620 : 0; });
 	m_maincpu->read_adc<1>().set_constant(620);
 	m_maincpu->read_adc<2>().set_constant(0);
 	m_maincpu->read_adc<3>().set_constant(0);
@@ -234,8 +255,13 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_ga->read_port().set_ioport("PORT");
 	m_ga->read_encoder().set_ioport("DIAL");
 
-	// EXP-A to EXP-D, CN501-CN504, one 8 MB board at the foot of each of the
-	// XP's chip selects 2 to 5; select 1 is the PCM card's
+	ROLAND_DATACARD(config, m_datacard);
+
+	// the PCM card on the XP's chip select 1, and EXP-A to EXP-D, CN501-CN504,
+	// one 8 MB board at the foot of each of its chip selects 2 to 5
+	ROLAND_SOPCM1_SLOT(config, m_pcmcard, 0);
+	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
+
 	for (int slot = 0; slot < 4; slot++)
 		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot));
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
@@ -294,4 +320,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", MACHINE_NOT_WORKING) // no expansion board or card slots
+SYST(1994, jv1080, 0, 0, jv1080, jv1080, roland_jv1080_state, init_jv1080, "Roland", "JV-1080", 0)
