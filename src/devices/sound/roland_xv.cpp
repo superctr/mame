@@ -44,18 +44,17 @@
 
     TODO:
     - the filter's update order and precision with moving integrators
-    - the source gain's odd codes; loop points, reverse play and the
-      DPCM history at a loop or a relaunch; the cache's twentieth bit
+    - formats 0 and 2, loop mode 3, word 0x60 bits 9:6, words 0x72-0x7f
+      beside the phase and pitch, reverse play and the DPCM history at a
+      loop or a relaunch; the cache's twentieth bit
     - the mix's clip point, at each deposit or at the sum
-    - the multiplier's guard width beyond the clipped ports, predicate mode
-      5's other role, ERAM arbitration when a tap, a fixed read and a fixed
-      write share a cell, and the last records of the table
-    - which work bank the host reaches; when the parameter
-      ramps' event bit raises reason 0 and is taken back
-    - the I/O sequencer's control words, its waits and the pins' timing
+    - predicate mode 5's other role, ERAM arbitration when a tap, a fixed
+      read and a fixed write share a cell, and taps near the end of a sample
+    - which work bank the host reaches
+    - the I/O sequencer's other control words and the pins' timing
     - the bank widths the configuration words 0x12-0x19 presumably carry
     - paired structures 4-6, which the firmware never writes
-    - reason 8
+    - whether a one-shot's end raises reason 0; reason 8
 
 ***************************************************************************/
 
@@ -113,6 +112,8 @@ const s32 ramp_rate[roland_xv_device::RATE_CODES] = {
 
 const s32 ramp_acceleration[roland_xv_device::RATE_CODES] = {
 	896, 768, 640, 512, 448, 384, 320, 256, 224, 192, 160, 128, 112, 96, 80, 64 };
+
+const s32 odd_gain[8] = { 0x5a40, 0x5a60, 0x5a60, 0x5a60, 0x5a64, 0x5a66, 0x5a67, 0x5a67 };
 
 s32 sext(u32 value, int bits) { return s32(value << (32 - bits)) >> (32 - bits); }
 
@@ -177,6 +178,10 @@ void roland_xv_device::device_start()
 	save_item(NAME(m_object_regs));
 	save_item(NAME(m_cache));
 	save_item(NAME(m_high_latch));
+	save_item(NAME(m_bus_latch));
+	save_item(NAME(m_read_latch));
+	save_item(NAME(m_read_word));
+	save_item(NAME(m_row_stage));
 	save_pointer(NAME(m_space), 0x10000);
 	save_pointer(NAME(m_iram), IBUS_IRAM_END);
 	save_item(NAME(m_address));
@@ -205,6 +210,7 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, wrap_cells));
 	save_item(STRUCT_MEMBER(m_voices, region));
 	save_item(STRUCT_MEMBER(m_voices, scaled));
+	save_item(STRUCT_MEMBER(m_voices, end_cell));
 	save_item(STRUCT_MEMBER(m_voices, filter_low));
 	save_item(STRUCT_MEMBER(m_voices, filter_band));
 	save_item(STRUCT_MEMBER(m_voices, pair_smooth));
@@ -236,6 +242,10 @@ void roland_xv_device::device_start()
 	save_pointer(NAME(m_late_cell), 2);
 	save_item(NAME(m_dsp->late_count));
 	save_item(NAME(m_out));
+
+	m_rows_end = -1;
+	std::fill_n(m_eram.get(), ERAM_CELLS, 0);
+	clear_memories();
 }
 
 void roland_xv_device::device_post_load()
@@ -251,14 +261,18 @@ void roland_xv_device::device_post_load()
 		m_recompiler->reset();
 }
 
+// the memories keep their contents through a reset; word 0x02 bit 6 clears them
 void roland_xv_device::device_reset()
 {
 	std::fill(std::begin(m_regs), std::end(m_regs), 0);
-	std::fill(&m_object_regs[0][0], &m_object_regs[0][0] + OBJECTS * (OBJECT_END - OBJECT_BASE), 0);
-	std::fill(&m_cache[0][0], &m_cache[0][0] + OBJECTS * CACHE_CELLS, 0);
-	std::fill_n(m_space.get(), 0x10000, 0);
+	m_regs[RUN_COMMIT] = 0x0080;
+	m_regs[0x5b] = 0x000f;
+	std::fill_n(&m_regs[0x5c], 4, 0x8000);
 	m_address = 0;
 	m_high_latch = 0;
+	m_bus_latch = 0;
+	m_read_latch = 0;
+	m_read_word = -1;
 	std::fill(std::begin(m_fifo), std::end(m_fifo), 0);
 	fifo_rewind();
 	m_irq_enable = 0;
@@ -280,20 +294,6 @@ void roland_xv_device::device_reset()
 	const attotime sample = attotime::from_hz(sample_rate());
 	m_stream_timer->adjust(m_master ? attotime::never : sample, 0, sample);
 	m_run_mask = 0;
-	for (int n = 0; n < OBJECTS; n++)
-	{
-		m_voices[n] = voice();
-		for (int word : { CUTOFF_RAMP, RESONANCE_RAMP, AMPLITUDE_RAMP, SEND_PORT_A, SEND_PORT_B })
-			object_ref(n, word) = RAMP_HOLD | RAMP_REUSE;
-		object_ref(n, PITCH_RAMP) = PITCH_HOLD | PITCH_REUSE;
-	}
-	for (auto &r : m_rows)
-		r = dsp_row();
-	m_rows_end = -1;
-	std::fill_n(m_eram.get(), ERAM_CELLS, 0);
-	std::fill_n(m_iram, IBUS_IRAM_END, 0);
-	std::fill_n(m_work, 2 * WORK_CELLS, 0);
-	hold_parameters();
 	m_ramp_phase = 0;
 	m_threshold = 0;
 	std::fill_n(m_tap_cell, TAPS, 0);
@@ -311,6 +311,36 @@ void roland_xv_device::device_reset()
 	std::fill(std::begin(m_io_out), std::end(m_io_out), -1);
 	m_io_stale = true;
 	std::fill(std::begin(m_out), std::end(m_out), 0);
+	if (m_recompiler)
+		m_recompiler->reset();
+}
+
+// word 0x02 bit 6: the program, the records, the I/O table, the internal RAM, the work banks,
+// the parameters, the caches and the voice registers; the external RAM keeps its contents
+void roland_xv_device::clear_memories()
+{
+	std::fill(&m_object_regs[0][0], &m_object_regs[0][0] + OBJECTS * (OBJECT_END - OBJECT_BASE), 0);
+	std::fill(&m_cache[0][0], &m_cache[0][0] + OBJECTS * CACHE_CELLS, 0);
+	for (int n = 0; n < OBJECTS; n++)
+	{
+		m_voices[n] = voice();
+		for (int word : { CUTOFF_RAMP, RESONANCE_RAMP, AMPLITUDE_RAMP, SEND_PORT_A, SEND_PORT_B })
+			object_ref(n, word) = RAMP_HOLD | RAMP_REUSE;
+		object_ref(n, PITCH_RAMP) = PITCH_HOLD | PITCH_REUSE;
+	}
+	std::fill_n(m_space.get(), 0x10000, 0);
+	for (int n = 0; n < DSP_ROWS; n++)
+	{
+		m_rows[n] = dsp_row();
+		decode_row(n);
+	}
+	m_rows_end = -1;
+	std::fill(std::begin(m_row_stage), std::end(m_row_stage), 0);
+	std::fill_n(m_iram, IBUS_IRAM_END, 0);
+	std::fill_n(m_work, 2 * WORK_CELLS, 0);
+	hold_parameters();
+	m_transfers_stale = true;
+	m_io_stale = true;
 	if (m_recompiler)
 		m_recompiler->reset();
 }
@@ -478,26 +508,50 @@ void roland_xv_device::exchange()
 
 //-------------------------------------------------
 //  the window: a word is its high byte then its low byte, and the low byte
-//  is where a write commits and a read takes its side effects
+//  is where a write commits and a read takes its side effects.  A word the
+//  host cannot read answers the last word written, and so does word 0x05
+//  when it is not read straight after word 0x04, which takes the whole cell
 //-------------------------------------------------
 
 u8 roland_xv_device::read(offs_t offset)
 {
 	const int word = (offset >> 1) & 0xff;
-	if (word == DATA_HIGH || word == DATA_LOW)
+	const bool data_port = word == DATA_HIGH || word == DATA_LOW;
+	if (data_port)
 		sync();
-	const u16 data = word_peek(word);
+	if (machine().side_effects_disabled())
+	{
+		const u16 data = data_port ? u16(space_r(m_address) >> (word == DATA_HIGH ? 16 : 0)) : word_peek(word);
+		return BIT(offset, 0) ? data & 0xff : data >> 8;
+	}
+	u16 data;
+	if (data_port && (m_address & 0xf000) == SPACE_PRAM)
+		data = pram_r();
+	else if (data_port && sixteen_bit(m_address))
+		data = space_r(m_address) & 0xffff;
+	else if (word == DATA_HIGH)
+	{
+		if (!BIT(offset, 0))
+			m_read_latch = space_r(m_address);
+		data = m_read_latch >> 16;
+	}
+	else if (word == DATA_LOW)
+		data = m_read_word == DATA_HIGH ? m_read_latch & 0xffff : m_bus_latch;
+	else if (write_only(word))
+		data = m_bus_latch;
+	else
+		data = word_peek(word);
+
 	if (!BIT(offset, 0))
 		return data >> 8;
-	if (!machine().side_effects_disabled())
-		word_taken(word);
+	word_taken(word);
 	return data & 0xff;
 }
 
 void roland_xv_device::write(offs_t offset, u8 data)
 {
 	const int word = (offset >> 1) & 0xff;
-	if (word >= OBJECT_BASE || (word >= RUN_MASK && word <= RUN_COMMIT) || word == DATA_LOW)
+	if (word >= OBJECT_BASE || (word >= RUN_MASK && word <= RUN_COMMIT) || word == DATA_HIGH || word == DATA_LOW || (word == MODE && BIT(data, 6)))
 		sync();
 	if (!BIT(offset, 0))
 		m_regs[word] = (m_regs[word] & 0x00ff) | (data << 8);
@@ -506,19 +560,22 @@ void roland_xv_device::write(offs_t offset, u8 data)
 		const u16 value = (m_regs[word] & 0xff00) | data;
 		if (!BIT(word, 0))
 			m_high_latch = value;
+		m_bus_latch = value;
 		word_w(word, value);
 	}
+}
+
+bool roland_xv_device::write_only(int word) const
+{
+	return word == 0x01 || word == 0x03 || word == 0x07 || (word >= 0x26 && word <= 0x5a);
 }
 
 u16 roland_xv_device::word_peek(int word)
 {
 	switch (word)
 	{
-	case DATA_HIGH:
-		return space_r(m_address) >> 16;
-
-	case DATA_LOW:
-		return space_r(m_address) & 0xffff;
+	case IDENTITY:
+		return 0x0022;
 
 	case FIFO:
 		if (m_scan_select >= 0)
@@ -552,11 +609,16 @@ u16 roland_xv_device::word_peek(int word)
 
 void roland_xv_device::word_taken(int word)
 {
+	m_read_word = word;
 	switch (word)
 	{
+	case DATA_HIGH:
 	case DATA_LOW:
 		LOGMASKED(LOG_SPACE, "%s: read %04x = %08x\n", machine().describe_context(), m_address, space_r(m_address));
-		m_address = next_address(m_address);
+		if ((m_address & 0xf000) == SPACE_PRAM)
+			pram_step(false);
+		else if (word == DATA_LOW || sixteen_bit(m_address))
+			m_address++;
 		break;
 
 	case FIFO:
@@ -575,14 +637,20 @@ void roland_xv_device::word_w(int word, u16 data)
 	{
 	case MODE:
 		LOGMASKED(LOG_REGS, "%s: mode %04x\n", machine().describe_context(), data);
-		if (BIT(data, 6))
-			hold_parameters();
+		if (data & MODE_CLEAR)
+			clear_memories();
 		break;
 
+	case DATA_HIGH:
 	case DATA_LOW:
-		space_w(m_address, (u32(m_high_latch) << 16) | data);
-		LOGMASKED(LOG_SPACE, "%s: write %04x = %08x\n", machine().describe_context(), m_address, space_r(m_address));
-		m_address = next_address(m_address);
+		if ((m_address & 0xf000) == SPACE_PRAM)
+			pram_w(data);
+		else if (word == DATA_LOW || sixteen_bit(m_address))
+		{
+			space_w(m_address, word == DATA_LOW ? (u32(m_high_latch) << 16) | data : data);
+			LOGMASKED(LOG_SPACE, "%s: write %04x = %08x\n", machine().describe_context(), m_address, space_r(m_address));
+			m_address++;
+		}
 		break;
 
 	case ADDRESS:
@@ -755,8 +823,8 @@ void roland_xv_device::object_w(int voice, int word, u16 data)
 //-------------------------------------------------
 //  the run mask: word 0x0d bit 0 is voice 0, word 0x0a bit 15 voice 63.
 //  A cleared bit stops its voice as it is written; a set bit waits for a
-//  write of zero to word 0x0e, which takes all four words, and which reads
-//  back with its busy bit clear.
+//  write of zero to word 0x0e, which takes all four words.  Word 0x0e reads
+//  0x0080 from reset and back what was written below bit 7 after a write
 //-------------------------------------------------
 
 void roland_xv_device::run_mask_w(int word, u16 data)
@@ -782,20 +850,69 @@ void roland_xv_device::run_mask_w(int word, u16 data)
 //  the spaces behind word 0x06.  The DSP's cells are 24 bits: the ring
 //  and the static cells by their own address, the mix cells, transport
 //  slots and staging cells in the work bank the last sample ran, and the parameter bank
-//  with its word in both halves.  The counter steps a program row's three
-//  words and then the next row's first: the fourth slot, the runtime
-//  operand, is reached only by its own address, and whichever of the
-//  third and fourth was written last is the operand the row runs with and
-//  both read back.  Rows past the mapped ones take nothing and read the
-//  last mapped row's operand.  Every write lands at once; the wide records
-//  and the I/O table are decoded again at the next sample.
+//  with its word in both halves.  A wide cell takes its high half from
+//  word 0x04 and commits at word 0x05, where the counter steps; the
+//  parameter bank and the I/O table take a word at either.  Every write
+//  lands at once; the wide records and the I/O table are decoded again
+//  at the next sample.
+//
+//  A program row is three words, each access to word 0x04 or 0x05 one of
+//  them: the first two wait in one buffer the chip shares and the third
+//  commits all three.  The counter steps through them and then back to
+//  the row's first, or to the next row's under word 0x02 bit 14 for a
+//  write and bit 13 for a read, the row before under bit 15.  The fourth
+//  slot replaces the operand alone and at once, and does not step.  Rows
+//  past the mapped ones take nothing and read the last mapped row's operand.
 //-------------------------------------------------
 
-u16 roland_xv_device::next_address(u16 address)
+bool roland_xv_device::sixteen_bit(u16 address)
 {
-	if ((address & 0xf003) == (SPACE_PRAM | 2))
-		return address + 2;
-	return address + 1;
+	return (address >= IBUS_BANK && address < IBUS_BANK_END) || (address & 0xf000) == SPACE_IORAM;
+}
+
+void roland_xv_device::pram_step(bool write)
+{
+	const u16 slot = m_address & 3;
+	if (slot == 3)
+		return;
+	if (slot < 2)
+		m_address++;
+	else if (!(m_regs[MODE] & (write ? MODE_WRITE_STEP : MODE_READ_STEP)))
+		m_address &= ~3;
+	else
+		m_address = SPACE_PRAM | ((m_address + ((m_regs[MODE] & MODE_STEP_DOWN) ? -6 : 2)) & 0xffc);
+}
+
+u16 roland_xv_device::pram_r()
+{
+	const int n = (m_address >> 2) & (DSP_ROWS - 1);
+	switch (m_address & 3)
+	{
+	case 3: return m_bus_latch;
+	case 0: if (n < DSP_ROWS_MAPPED) return m_rows[n].w0; break;
+	case 1: if (n < DSP_ROWS_MAPPED) return m_rows[n].w1; break;
+	}
+	return m_rows[std::min(n, DSP_ROWS_MAPPED - 1)].operand;
+}
+
+void roland_xv_device::pram_w(u16 data)
+{
+	const int n = (m_address >> 2) & (DSP_ROWS - 1);
+	const u16 slot = m_address & 3;
+	LOGMASKED(LOG_SPACE, "%s: row %03x word %d = %04x\n", machine().describe_context(), n, slot, data);
+	if (slot < 2)
+		m_row_stage[slot] = data;
+	else if (n < DSP_ROWS_MAPPED)
+	{
+		if (slot == 2)
+		{
+			m_rows[n].w0 = m_row_stage[0];
+			m_rows[n].w1 = m_row_stage[1];
+		}
+		m_rows[n].operand = data;
+		row_changed(n);
+	}
+	pram_step(true);
 }
 
 u32 roland_xv_device::space_r(u16 address) const
@@ -811,9 +928,7 @@ u32 roland_xv_device::space_r(u16 address) const
 	}
 	if ((address & 0xf000) == SPACE_PRAM)
 	{
-		const int n = (address >> 2) & (DSP_ROWS - 1);
-		if (n >= DSP_ROWS_MAPPED)
-			return m_rows[DSP_ROWS_MAPPED - 1].operand;
+		const int n = std::min<int>((address >> 2) & (DSP_ROWS - 1), DSP_ROWS_MAPPED - 1);
 		switch (address & 3)
 		{
 		case 0: return m_rows[n].w0;
@@ -841,22 +956,6 @@ void roland_xv_device::space_w(u16 address, u32 data)
 		m_cache[address & (OBJECTS - 1)][(address - SPACE_CACHE) / OBJECTS] = data & 0xfffff;
 	else switch (address & 0xf000)
 	{
-	case SPACE_PRAM:
-	{
-		const int n = (address >> 2) & (DSP_ROWS - 1);
-		if (n >= DSP_ROWS_MAPPED)
-			break;
-		m_space[address] = data & 0xffff;
-		switch (address & 3)
-		{
-		case 0: m_rows[n].w0 = data; break;
-		case 1: m_rows[n].w1 = data; break;
-		default: m_rows[n].operand = data; break;
-		}
-		row_changed(n);
-		break;
-	}
-
 	case SPACE_IORAM:
 		m_space[address] = data & 0x3ff;
 		if (address < SPACE_IORAM + IORAM_WORDS)
@@ -1113,14 +1212,16 @@ void roland_xv_device::service_parameters()
 			continue;
 		}
 		s32 slope = sext(object_long(p, PARAMETER_SLOPE), 20);
-		const u16 next = ramp(u16(m_bank[p] >> 8), object_word(p, BLOCK_CONTROL + 1), control, slope, USE_PARAMETER, false, m_threshold);
+		const u16 next = ramp(u16(m_bank[p] >> 8), object_word(p, BLOCK_CONTROL + 1), control, slope, USE_PARAMETER, !BIT(m_irq_pending, IRQ_PARAMETER_LANDED), m_threshold);
 		m_bank_next[p] = s32(s16(next)) * 256;
 		object_ref(p, BLOCK_CONTROL) = control;
 		set_long(p, PARAMETER_SLOPE, slope & 0xfffff);
+		if ((control & (RAMP_HOLD | RAMP_EVENT)) == (RAMP_HOLD | RAMP_EVENT))
+			raise_irq(IRQ_PARAMETER_LANDED, p);
 	}
 }
 
-// word 0x02 bit 6, and reset: every parameter zero and settled
+// word 0x02 bit 6: every parameter zero and settled
 void roland_xv_device::hold_parameters()
 {
 	std::fill_n(m_bank, IBUS_BANK_END - IBUS_BANK, 0);
@@ -1201,6 +1302,7 @@ void roland_xv_device::launch(int n)
 	v.backward = BIT(object_word(n, VOICE_CONTROL2), 5);
 	v.region = REGION_BEFORE;
 	v.scaled = false;
+	v.end_cell = -1;
 	v.wrap_cells = 0;
 	set_long(n, PHASE, 0);
 	object_ref(n, VOICE_CONTROL2) &= 0x1fff;
@@ -1271,7 +1373,9 @@ void roland_xv_device::cross(int n, u32 address)
 //  sixteen cells, fetching to the next group of four, its producer in word
 //  0x61 bits 12:8 and its accumulator, nineteen bits, in bits 15:13 and
 //  word 0x62; the phase, word 0x70/71, keeps sixteen fraction bits and the
-//  consumer's five.  A voice past the end of a one-shot holds its last sample
+//  consumer's five.  Bit 5 of word 0x61 is the direction.  Past the end of
+//  a one-shot the decoder fills zeros, and the phase stops on the end's own
+//  cell, which sources zero
 //-------------------------------------------------
 
 void roland_xv_device::fill(int n, int consumer)
@@ -1291,7 +1395,8 @@ void roland_xv_device::fill(int n, int consumer)
 		for (int count = 4 - (s.address & 3); count; count--)
 		{
 			bool wrapped = false;
-			if (v.fetching)
+			const bool fetched = v.fetching;
+			if (fetched)
 			{
 				const wave_cell c = cell_at(s.address, wide);
 				acc = (wide ? u32(c.mantissa) : acc + delta_of(c)) & 0x7ffff;
@@ -1299,7 +1404,10 @@ void roland_xv_device::fill(int n, int consumer)
 					object_ref(n, EXPONENTS) = exponent_word(s.address);
 				cross(n, s.address);
 				if (mode == LOOP_NONE && v.region == REGION_END)
+				{
 					v.fetching = false;
+					v.end_cell = producer;
+				}
 				else
 				{
 					const address_step next = advance(n, s, 0xffff);
@@ -1308,46 +1416,60 @@ void roland_xv_device::fill(int n, int consumer)
 				}
 			}
 			const int cell = producer & (CACHE_CELLS - 1);
-			m_cache[n][cell] = acc;
+			m_cache[n][cell] = fetched ? acc : 0;
 			v.wrap_cells = (v.wrap_cells & ~(1 << cell)) | (wrapped << cell);
 			producer = (producer + 1) & 31;
 		}
-	flags = (flags & 0x00ff) | (producer << 8) | ((acc >> 3) & 0xe000);
+	flags = (flags & 0x00df) | (s.backward << 5) | (producer << 8) | ((acc >> 3) & 0xe000);
 	object_ref(n, ACCUMULATOR) = acc & 0xffff;
 	set_long(n, START, s.address);
 	v.backward = s.backward;
 }
 
 // the cache cell at the consumer and the three after it under the XP's
-// interpolation weights, then the gain word 0x60 bits 3:0 give, 6 dB an even
-// step from a half at code 0
+// interpolation weights, each product floored to sixteenths and the sum
+// wrapped to seventeen bits, then floored to quarters for the gain
 s32 roland_xv_device::interpolate(int n, u32 phase, int gain) const
 {
 	const int consumer = phase >> 16;
 	const int fraction = (phase >> 9) & 0x7f;
-	s32 previous = wrap19(m_cache[n][consumer & (CACHE_CELLS - 1)]);
-	s64 sum = s64(previous) * 4096;
-	for (int i = 0; i < 3; i++)
-	{
-		const s32 next = wrap19(m_cache[n][(consumer + i + 1) & (CACHE_CELLS - 1)]);
-		sum += s64(wrap19(next - previous)) * interp_weights[i][fraction];
-		previous = next;
-	}
-	if (BIT(gain, 0))
-		sum = sum * 181 / 128;
-	return clamp24(sum >> (13 - (gain >> 1)));
+	const s32 c0 = interp_weights[0][fraction], c1 = interp_weights[1][fraction], c2 = interp_weights[2][fraction];
+	const s32 weight[4] = { 4096 - c0, c0 - c1, c1 - c2, c2 };
+	s32 sum = 0;
+	for (int i = 0; i < 4; i++)
+		sum += s32((s64(wrap19(m_cache[n][(consumer + i) & (CACHE_CELLS - 1)])) * weight[i]) >> 8);
+	return source_gain(sext(u32(sum), 21) >> 2, gain);
 }
 
-// the sample at the phase; a voice of format 2 or 3 fetches nothing and
-// sources nothing, whatever its cache holds.  A forward loop's fractions move
-// the phase as it reaches the loop's last sample
+// word 0x60 bits 3:0 on a sample in quarters: an even code 2e scales it by
+// 2^(e - 3), so code 2 is unity, and an odd code by a constant near the
+// square root of two more, with one floor either way
+s32 roland_xv_device::source_gain(s32 quarters, int gain)
+{
+	const int e = gain >> 1;
+	if (BIT(gain, 0))
+		return clamp24((s64(quarters) * odd_gain[e]) >> (17 - e));
+	return clamp24(e >= 3 ? s64(quarters) << (e - 3) : s64(quarters) >> (3 - e));
+}
+
+// the sample at the phase; a voice of format 2 or 3 fetches nothing, and
+// sources nothing or full scale whatever its cache holds.  A forward loop's
+// fractions move the phase as it reaches the loop's last sample
 s32 roland_xv_device::source(int n, int gain)
 {
 	voice &v = m_voices[n];
 	u32 phase = object_long(n, PHASE) & PHASE_MASK;
 	const int consumer = phase >> 16;
+	if (v.end_cell == consumer)
+	{
+		set_long(n, PHASE, u32(consumer) << 16);
+		return 0;
+	}
 	s32 sample = 0;
-	if (!BIT(object_word(n, VOICE_CONTROL), 13))
+	const int format = (object_word(n, VOICE_CONTROL) >> 12) & 3;
+	if (format == FORMAT_FULL)
+		sample = source_gain(0x7fff * 4, gain);
+	else if (format != FORMAT_IDLE)
 	{
 		fill(n, consumer);
 		sample = interpolate(n, phase, gain);
@@ -1363,6 +1485,8 @@ s32 roland_xv_device::source(int n, int gain)
 			v.wrap_cells &= ~(1 << (cell & (CACHE_CELLS - 1)));
 			next += s32(loop_fraction(n, true)) - s32(loop_fraction(n, false));
 		}
+	if (v.end_cell >= 0 && (next >> 16) - consumer >= ((v.end_cell - consumer) & 31))
+		next = s64(v.end_cell) << 16;
 	set_long(n, PHASE, u32(next) & PHASE_MASK);
 	return sample;
 }
@@ -1965,7 +2089,7 @@ void roland_xv_device::execute(const dsp_row &row, bool commit, bool predicate)
 		switch (mode)
 		{
 		case MEM_NONE:
-			if (address && s.tap_count < TAPS)
+			if (BIT(address, 9) && s.tap_count < TAPS)
 			{
 				m_tap_cell[s.tap_count] = address | 0x100;
 				m_tap_delay[s.tap_count] = BIT(address, 8) ? b : a;

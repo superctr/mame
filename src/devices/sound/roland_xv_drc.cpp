@@ -1149,7 +1149,7 @@ void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, 
 	switch (mode)
 	{
 	case dev::MEM_NONE:
-		if (address)
+		if (BIT(address, 9))
 		{
 			const u32 skip = m_label++;
 			UML_MOV(b, REG_X, mem(&s.tap_count));

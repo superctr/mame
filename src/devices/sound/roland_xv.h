@@ -37,7 +37,7 @@ public:
 	static constexpr int WORK_CELLS = 0x100;
 	static constexpr int RECORDS = 192;
 	static constexpr int ERAM_CELLS = 1 << 19;
-	static constexpr int TAPS = 64;
+	static constexpr int TAPS = 2 * 768;
 	static constexpr int IORAM_WORDS = 0x100;
 	static constexpr int SERIAL_OUTS = 5;
 	static constexpr int OUTPUTS = 2 * SERIAL_OUTS;
@@ -48,7 +48,7 @@ public:
 	// the registers of the window, by word number
 	enum register_word
 	{
-		MODE = 0x02, DATA_HIGH = 0x04, DATA_LOW = 0x05, ADDRESS = 0x06, FIFO = 0x08, FIFO_CONTROL = 0x09,
+		IDENTITY = 0x00, MODE = 0x02, DATA_HIGH = 0x04, DATA_LOW = 0x05, ADDRESS = 0x06, FIFO = 0x08, FIFO_CONTROL = 0x09,
 		RUN_MASK = 0x0a, RUN_COMMIT = 0x0e, IRQ_MASK = 0x0f, IRQ_ACK = 0x10, IRQ_VOICE = 0x10, STATUS = 0x1b, SWITCH_INDEX = 0x1c,
 		XFER_COMMAND = 0x25, WRITE_ADDRESS = 0x26, WRITE_LENGTH = 0x2a, READ_GO = 0x2d, READ_ADDRESS = 0x2e,
 		READ_LENGTH = 0x32, COMMAND_STROBE = 0x36,
@@ -74,7 +74,7 @@ public:
 	enum irq_reason
 	{
 		IRQ_FINISHED = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_RESONANCE_LANDED = 3,
-		IRQ_AMPLITUDE_LANDED = 4, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8, IRQ_SWITCH = 14
+		IRQ_AMPLITUDE_LANDED = 4, IRQ_PARAMETER_LANDED = 5, IRQ_SEND_A_LANDED = 6, IRQ_SEND_B_LANDED = 7, IRQ_VOICE_MARKER = 8, IRQ_SWITCH = 14
 	};
 
 	enum ramp_control : u16
@@ -102,7 +102,10 @@ public:
 	};
 
 	// word 0x60 bits 13:12
-	enum sample_format { FORMAT_WIDE = 0, FORMAT_DPCM = 1 };
+	enum sample_format { FORMAT_WIDE = 0, FORMAT_DPCM = 1, FORMAT_IDLE = 2, FORMAT_FULL = 3 };
+
+	// word 0x02's upper bits: memories cleared, and the program counter's steps past a row's operand
+	enum mode_bits : u16 { MODE_CLEAR = 0x0040, MODE_READ_STEP = 0x2000, MODE_WRITE_STEP = 0x4000, MODE_STEP_DOWN = 0x8000 };
 
 	// word 0x60 bits 11:10
 	enum loop_mode { LOOP_NONE = 0, LOOP_FORWARD = 1, LOOP_ALTERNATE = 2 };
@@ -284,6 +287,7 @@ protected:
 		u16 wrap_cells = 0;
 		u8 region = REGION_BEFORE;
 		bool scaled = false;
+		s8 end_cell = -1;
 		s32 filter_low = 0;
 		s32 filter_band = 0;
 		s32 pair_smooth = 0;
@@ -385,6 +389,7 @@ private:
 	void cross(int n, u32 address);
 	void fill(int n, int consumer);
 	s32 interpolate(int n, u32 phase, int gain) const;
+	static s32 source_gain(s32 quarters, int gain);
 	s32 source(int n, int gain);
 	s32 filter(int n, int type, s32 sample);
 	void service_ramps(int n);
@@ -394,12 +399,17 @@ private:
 	void run_voice(int n, s64 *mix, u64 &claimed);
 	void run_pair(int n, int kind, s64 *mix, u64 &claimed);
 	void set_long(int n, int word, u32 value);
+	void clear_memories();
+	bool write_only(int word) const;
+	void pram_w(u16 data);
+	u16 pram_r();
+	void pram_step(bool write);
 
 	int object() const { return m_regs[MODE] & (OBJECTS - 1); }
 
 	void sync();
 	void frame();
-	static u16 next_address(u16 address);
+	static bool sixteen_bit(u16 address);
 	void space_w(u16 address, u32 data);
 	u32 space_r(u16 address) const;
 	void row_changed(int n);
@@ -437,6 +447,10 @@ private:
 	u32 m_cache[OBJECTS][CACHE_CELLS];
 	u16 m_address;
 	u16 m_high_latch;
+	u16 m_bus_latch;
+	u32 m_read_latch;
+	int m_read_word;
+	u16 m_row_stage[2];
 	u16 m_fifo[FIFO_DEPTH];
 	int m_fifo_write;
 	int m_fifo_read;
