@@ -90,7 +90,7 @@ void sh_adc_device::adcsr_w(u8 data)
 void sh_adc_device::adcr_w(u8 data)
 {
 	if(V>=1) logerror("adcr_w %02x\n", data);
-	m_adcr = data;
+	m_adcr = m_is_hs ? data & 0x7f : data | 0x7f;
 	mode_update();
 }
 
@@ -133,7 +133,8 @@ void sh_adc_device::device_reset()
 {
 	memset(m_addr, 0, sizeof(m_addr));
 	memset(m_buf, 0, sizeof(m_buf));
-	m_adcsr = m_adcr = 0;
+	m_adcsr = 0;
+	m_adcr = m_is_hs ? 0 : 0x7f;
 	m_trigger = T_SOFT;
 	m_start_mode = IDLE;
 	m_start_channel = m_end_channel = 0;
