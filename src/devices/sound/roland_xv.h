@@ -285,6 +285,7 @@ protected:
 		bool backward = false;
 		bool fetching = true;
 		u16 wrap_cells = 0;
+		u16 wrap_end = 0;
 		u8 region = REGION_BEFORE;
 		bool scaled = false;
 		s8 end_cell = -1;
