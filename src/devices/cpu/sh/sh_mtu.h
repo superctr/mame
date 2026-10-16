@@ -123,7 +123,7 @@ protected:
 
 	int m_tgr_count, m_tbr_count;
 	int m_tgr_clearing;
-	u8 m_tcr, m_tmdr, m_tior, m_tier, m_tsr;
+	u8 m_tcr, m_tmdr, m_tior, m_tier, m_tsr, m_tsr_read;
 	int m_clock_type, m_clock_divider;
 	u16 m_tcnt;
 	std::array<u16, 4> m_tgr;

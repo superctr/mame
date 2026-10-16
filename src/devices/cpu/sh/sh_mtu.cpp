@@ -228,6 +228,7 @@ void sh_mtu_channel_device::device_start()
 	save_item(NAME(m_tior));
 	save_item(NAME(m_tier));
 	save_item(NAME(m_tsr));
+	save_item(NAME(m_tsr_read));
 	save_item(NAME(m_clock_type));
 	save_item(NAME(m_clock_divider));
 	save_item(NAME(m_tcnt));
@@ -240,6 +241,7 @@ void sh_mtu_channel_device::device_start()
 	save_item(NAME(m_channel_active));
 
 	m_tsr = 0xc0;
+	m_tsr_read = 0;
 }
 
 void sh_mtu_channel_device::device_reset()
@@ -376,13 +378,16 @@ void sh_mtu_channel_device::tier_w(u8 data)
 
 u8 sh_mtu_channel_device::tsr_r()
 {
+	if(!machine().side_effects_disabled())
+		m_tsr_read = m_tsr & 0x3f;
 	return m_tsr;
 }
 
 void sh_mtu_channel_device::tsr_w(u8 data)
 {
 	update_counter();
-	m_tsr = (data & 0x80) | (m_tsr & ~data & 0x7f);
+	m_tsr &= ~(m_tsr_read & ~data);
+	m_tsr_read &= m_tsr;
 	recalc_event();
 }
 
