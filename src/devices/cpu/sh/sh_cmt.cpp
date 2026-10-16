@@ -180,9 +180,7 @@ void sh_cmt_device::clock_start(int clk)
 void sh_cmt_device::compute_next_event(int clk)
 {
 	u64 step1 = 1 << (3 + 2*BIT(m_csr[clk], 0, 2));
-	u64 time = m_cpu->current_cycles();
-	if(time & (step1 - 1))
-		time = (time | (step1 - 1)) + 1;
+	u64 time = m_cpu->current_cycles() & ~(step1 - 1);
 	s32 counts = m_cor[clk] + 1 - m_cnt[clk];
 	if(counts < 0)
 		counts += 0x10000;
