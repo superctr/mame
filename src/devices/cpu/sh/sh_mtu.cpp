@@ -512,7 +512,7 @@ void sh_mtu_channel_device::recalc_event(u64 cur_time)
 		for(int i = 0; i < m_tgr_count; i++)
 			if(BIT(m_tier, i) && m_interrupt[i] != -1) {
 				u32 new_delay = 0xffffffff;
-				u16 cmp = m_tgr[i] + 1;
+				u32 cmp = m_tgr[i] + 1;
 				if(cmp > m_tcnt) {
 					if(m_tcnt >= m_counter_cycle || cmp <= m_counter_cycle)
 						new_delay = cmp - m_tcnt;
@@ -576,7 +576,7 @@ void sh_mtu_channel_device::update_counter(u64 cur_time)
 			m_tcnt = tt % m_counter_cycle;
 
 		for(int i = 0; i < m_tgr_count; i++) {
-			u16 cmp = m_tgr[i] + 1;
+			u32 cmp = m_tgr[i] + 1;
 			bool match = m_tcnt == cmp || (tt == cmp && tt == m_counter_cycle);
 			if(!match) {
 				// Need to do additional checks here for software that polls the flags with interrupts disabled, since recalc_event only schedules IRQ events.
