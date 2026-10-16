@@ -1341,7 +1341,7 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, 
 		return index <= loop ? address_step{ s.address, false, false } : address_step{ in_page(s.address, index - 1), true, false };
 	if (index > end)
 		return { in_page(s.address, index - 1), true, false };
-	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, false } : address_step{ s.address, true, false };
+	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, true } : address_step{ s.address, true, false };
 }
 
 // the region a fetched sample lies in, and what word 0x60 makes of the crossing: bit 6
@@ -1454,7 +1454,9 @@ s32 roland_xv_device::source_gain(s32 quarters, int gain)
 
 // the sample at the phase; a voice of format 2 or 3 fetches nothing, and
 // sources nothing or full scale whatever its cache holds.  A forward loop's
-// fractions move the phase as it reaches the loop's last sample
+// fractions move the phase as it reaches the loop's last sample, the loop
+// start's fraction shortening the loop played forwards and lengthening it
+// played backwards
 s32 roland_xv_device::source(int n, int gain)
 {
 	voice &v = m_voices[n];
@@ -1483,7 +1485,8 @@ s32 roland_xv_device::source(int n, int gain)
 		if (BIT(v.wrap_cells, cell & (CACHE_CELLS - 1)))
 		{
 			v.wrap_cells &= ~(1 << (cell & (CACHE_CELLS - 1)));
-			next += s32(loop_fraction(n, true)) - s32(loop_fraction(n, false));
+			const s32 shift = s32(loop_fraction(n, true)) - s32(loop_fraction(n, false));
+			next += v.backward ? -shift : shift;
 		}
 	if (v.end_cell >= 0 && (next >> 16) - consumer >= ((v.end_cell - consumer) & 31))
 		next = s64(v.end_cell) << 16;
