@@ -208,6 +208,7 @@ void roland_xv_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, backward));
 	save_item(STRUCT_MEMBER(m_voices, fetching));
 	save_item(STRUCT_MEMBER(m_voices, wrap_cells));
+	save_item(STRUCT_MEMBER(m_voices, wrap_end));
 	save_item(STRUCT_MEMBER(m_voices, region));
 	save_item(STRUCT_MEMBER(m_voices, scaled));
 	save_item(STRUCT_MEMBER(m_voices, end_cell));
@@ -1304,6 +1305,7 @@ void roland_xv_device::launch(int n)
 	v.scaled = false;
 	v.end_cell = -1;
 	v.wrap_cells = 0;
+	v.wrap_end = 0;
 	set_long(n, PHASE, 0);
 	object_ref(n, VOICE_CONTROL2) &= 0x1fff;
 	object_ref(n, ACCUMULATOR) = 0;
@@ -1332,13 +1334,13 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s, 
 		switch (mode)
 		{
 		case LOOP_FORWARD: return { in_page(s.address, loop), false, true };
-		case LOOP_ALTERNATE: return { s.address, true, false };
+		case LOOP_ALTERNATE: return { s.address, true, true };
 		default: return { s.address, false, false };
 		}
 	}
 
 	if (mode == LOOP_ALTERNATE)
-		return index <= loop ? address_step{ s.address, false, false } : address_step{ in_page(s.address, index - 1), true, false };
+		return index <= loop ? address_step{ s.address, false, true } : address_step{ in_page(s.address, index - 1), true, false };
 	if (index > end)
 		return { in_page(s.address, index - 1), true, false };
 	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, true } : address_step{ s.address, true, false };
@@ -1394,7 +1396,7 @@ void roland_xv_device::fill(int n, int consumer)
 	while (((producer - consumer - 1) & 31) < CACHE_AHEAD)
 		for (int count = 4 - (s.address & 3); count; count--)
 		{
-			bool wrapped = false;
+			bool wrapped = false, at_end = false;
 			const bool fetched = v.fetching;
 			if (fetched)
 			{
@@ -1412,12 +1414,14 @@ void roland_xv_device::fill(int n, int consumer)
 				{
 					const address_step next = advance(n, s, 0xffff);
 					wrapped = next.wrapped && fractions;
+					at_end = next.backward;
 					s = next;
 				}
 			}
 			const int cell = producer & (CACHE_CELLS - 1);
 			m_cache[n][cell] = fetched ? acc : 0;
 			v.wrap_cells = (v.wrap_cells & ~(1 << cell)) | (wrapped << cell);
+			v.wrap_end = (v.wrap_end & ~(1 << cell)) | (at_end << cell);
 			producer = (producer + 1) & 31;
 		}
 	flags = (flags & 0x00df) | (s.backward << 5) | (producer << 8) | ((acc >> 3) & 0xe000);
@@ -1453,10 +1457,11 @@ s32 roland_xv_device::source_gain(s32 quarters, int gain)
 }
 
 // the sample at the phase; a voice of format 2 or 3 fetches nothing, and
-// sources nothing or full scale whatever its cache holds.  A forward loop's
-// fractions move the phase as it reaches the loop's last sample, the loop
-// start's fraction shortening the loop played forwards and lengthening it
-// played backwards
+// sources nothing or full scale whatever its cache holds.  The loop points'
+// fractions move the phase as it reaches a wrap or a turn: a forward loop's
+// start fraction shortens it played forwards and lengthens it played
+// backwards, and an alternating loop's turns move in by the start's and
+// out by the end's, each turn by twice its fraction
 s32 roland_xv_device::source(int n, int gain)
 {
 	voice &v = m_voices[n];
@@ -1485,8 +1490,11 @@ s32 roland_xv_device::source(int n, int gain)
 		if (BIT(v.wrap_cells, cell & (CACHE_CELLS - 1)))
 		{
 			v.wrap_cells &= ~(1 << (cell & (CACHE_CELLS - 1)));
-			const s32 shift = s32(loop_fraction(n, true)) - s32(loop_fraction(n, false));
-			next += v.backward ? -shift : shift;
+			const s32 at_loop = loop_fraction(n, true), at_end = loop_fraction(n, false);
+			if (((object_word(n, VOICE_CONTROL) >> 10) & 3) == LOOP_ALTERNATE)
+				next += BIT(v.wrap_end, cell & (CACHE_CELLS - 1)) ? -2 * at_end : 2 * at_loop;
+			else
+				next += v.backward ? at_end - at_loop : at_loop - at_end;
 		}
 	if (v.end_cell >= 0 && (next >> 16) - consumer >= ((v.end_cell - consumer) & 31))
 		next = s64(v.end_cell) << 16;
