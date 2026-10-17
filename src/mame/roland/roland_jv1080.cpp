@@ -49,6 +49,7 @@ public:
 		, m_pcmcard(*this, "pcmcard")
 		, m_exp(*this, "exp%u", 1U)
 		, m_leds(*this, "led%u", 0U)
+		, m_card_battery(*this, "CARDBAT")
 	{
 	}
 
@@ -74,6 +75,7 @@ private:
 	required_device<roland_sopcm1_slot_device> m_pcmcard;
 	required_device_array<roland_srjv80_slot_device, 4> m_exp;
 	output_finder<25> m_leds;
+	required_ioport m_card_battery;
 };
 
 
@@ -223,6 +225,11 @@ static INPUT_PORTS_START(jv1080)
 
 	PORT_START("DIAL")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
+
+	PORT_START("CARDBAT")
+	PORT_CONFNAME(0x01, 0x01, "DATA card battery")
+	PORT_CONFSETTING(0x00, "None")
+	PORT_CONFSETTING(0x01, "Fitted")
 INPUT_PORTS_END
 
 
@@ -233,7 +240,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
 	// AN2-AN7 are grounded.  AN0 and AN1 are the data card's cell and the
 	// internal one, each through a buffer; 0x1ff-0x2cc of full scale is healthy
-	m_maincpu->read_adc<0>().set([this] () -> u16 { return m_datacard->sense_r() ? 620 : 0; });
+	m_maincpu->read_adc<0>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 620 : 0; });
 	m_maincpu->read_adc<1>().set_constant(620);
 	m_maincpu->read_adc<2>().set_constant(0);
 	m_maincpu->read_adc<3>().set_constant(0);
