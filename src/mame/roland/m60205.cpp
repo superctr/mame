@@ -26,7 +26,8 @@ m60205_device::m60205_device(const machine_config &mconfig, const char *tag, dev
 	, m_lcd_data_cb(*this)
 	, m_led_cb(*this)
 	, m_scan_cb(*this, 0x00)
-	, m_port_cb(*this, 0x00)
+	, m_port_cb(*this, 0xff)
+	, m_port_out_cb(*this)
 	, m_encoder_cb(*this, 0x00)
 {
 }
@@ -42,7 +43,7 @@ void m60205_device::device_start()
 	save_item(NAME(m_config));
 	save_item(NAME(m_led));
 	save_item(NAME(m_scan_state));
-	save_item(NAME(m_port_state));
+	save_item(NAME(m_port_out));
 	save_item(NAME(m_encoder_state));
 	save_item(NAME(m_encoder_delta));
 	save_item(NAME(m_fifo));
@@ -58,7 +59,7 @@ void m60205_device::device_reset()
 	std::fill(std::begin(m_config), std::end(m_config), 0);
 	std::fill(std::begin(m_led), std::end(m_led), 0);
 	std::fill(std::begin(m_scan_state), std::end(m_scan_state), 0);
-	m_port_state = 0;
+	m_port_out = 0;
 	m_encoder_state = 0;
 	m_encoder_delta = 0;
 	m_fifo_head = m_fifo_tail = 0;
@@ -113,14 +114,6 @@ TIMER_CALLBACK_MEMBER(m60205_device::tick_a)
 				queue_key((line * 8 + bit) | (BIT(state, bit) ? 0x80 : 0x00));
 	}
 
-	const u8 port = m_port_cb();
-	u8 changed = port ^ m_port_state;
-	m_port_state = port;
-
-	for (unsigned bit = 0; changed != 0; bit++, changed >>= 1)
-		if (BIT(changed, 0))
-			queue_key((0x20 + bit) | (BIT(port, bit) ? 0x80 : 0x00));
-
 	const u8 encoder = m_encoder_cb();
 	const s8 step = encoder - m_encoder_state;
 	m_encoder_state = encoder;
@@ -148,12 +141,18 @@ u8 m60205_device::read(offs_t offset)
 {
 	switch (offset)
 	{
-	case 0x00:
-		return m_fifo_head != m_fifo_tail ? 0x01 : 0x00;
+	case 0x00: case 0x01: case 0x02: case 0x03:
+		return m_scan_state[offset];
 
 	case 0x10: case 0x11: case 0x12: case 0x13:
 	case 0x14: case 0x15: case 0x16: case 0x17:
 		return m_led[offset & 7];
+
+	case 0x3a:
+		return (m_port_cb[0]() & 0xfe) | (m_port_out & 0x01);
+
+	case 0x3b:
+		return m_port_cb[1]();
 
 	case 0x3c:
 	{
@@ -213,6 +212,11 @@ void m60205_device::write(offs_t offset, u8 data)
 	case 0x14: case 0x15: case 0x16: case 0x17:
 		m_led[offset & 7] = data;
 		m_led_cb(offset & 7, data);
+		break;
+
+	case 0x3a:
+		m_port_out = data;
+		m_port_out_cb(data);
 		break;
 
 	case 0x38:
