@@ -161,8 +161,8 @@ void roland_jv1080_state::init_jv1080()
 
 void roland_jv1080_state::jv_palette(palette_device &palette) const
 {
-	palette.set_pen_color(0, rgb_t(88, 247, 0));
-	palette.set_pen_color(1, rgb_t(3, 3, 60));
+	palette.set_pen_color(0, rgb_t(0x06, 0x08, 0x3c)); // negative LCD: dark blue background
+	palette.set_pen_color(1, rgb_t(88, 247, 0));        // lit dots
 }
 
 HD44780_PIXEL_UPDATE(roland_jv1080_state::lcd_pixel_update)
