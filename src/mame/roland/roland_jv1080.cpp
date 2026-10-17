@@ -73,7 +73,7 @@ private:
 	required_device<roland_datacard_device> m_datacard;
 	required_device<roland_sopcm1_slot_device> m_pcmcard;
 	required_device_array<roland_srjv80_slot_device, 4> m_exp;
-	output_finder<24> m_leds;
+	output_finder<25> m_leds;
 };
 
 
@@ -211,11 +211,15 @@ static INPUT_PORTS_START(jv1080)
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Exit")
 	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Enter")
 
-	PORT_START("PORT")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Inc")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Dec")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("Preview")
-	PORT_BIT(0xf8, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_START("PORTA")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Preview (Volume push)")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Inc")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Dec")
+	PORT_BIT(0xf1, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("PORTB")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Value push")
+	PORT_BIT(0xfe, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("DIAL")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
@@ -252,7 +256,9 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_ga->read_scan<1>().set_ioport("SW1");
 	m_ga->read_scan<2>().set_ioport("SW2");
 	m_ga->read_scan<3>().set_ioport("SW3");
-	m_ga->read_port().set_ioport("PORT");
+	m_ga->read_port<0>().set_ioport("PORTA");
+	m_ga->read_port<1>().set_ioport("PORTB");
+	m_ga->write_port().set([this] (u8 data) { m_leds[24] = BIT(data, 0); });
 	m_ga->read_encoder().set_ioport("DIAL");
 
 	ROLAND_DATACARD(config, m_datacard);

@@ -5,7 +5,8 @@ copyright-holders:superctr
 
 The JV-1080 front panel.  The display is a negative 40 x 2 character module; the
 twenty-four lamps are led<8 * column + row> of the key matrix, so the tone keys, the
-PALETTE / PARAMETER pair, the part-range key and the mode and sound blocks light.
+PALETTE / PARAMETER pair, the part-range key and the mode and sound blocks light; the
+MIDI MESSAGE bar is led24.  The volume knob and the dial push: PREVIEW and the fast dial.
 Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 -->
 <mamelayout version="2">
@@ -129,7 +130,7 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t6"><bounds x="1630" y="60.8" width="229.5" height="42.9"/></element>
 		<element ref="t7"><bounds x="1940" y="65.36" width="322.4" height="37.18"/></element>
 		<element ref="t8"><bounds x="449.7" y="198.48" width="120.6" height="25.74"/></element>
-		<element ref="knob" inputtag="PORT" inputmask="0x04"><bounds x="456" y="261" width="108" height="108"/></element>
+		<element ref="knob" inputtag="PORTA" inputmask="0x02"><bounds x="456" y="261" width="108" height="108"/></element>
 		<element ref="t10"><bounds x="426.9" y="387.32" width="46.2" height="17.16"/></element>
 		<element ref="t11"><bounds x="549.9" y="387.32" width="46.2" height="17.16"/></element>
 		<element ref="t12"><bounds x="417.05" y="413.18" width="185.9" height="18.59"/></element>
@@ -216,11 +217,11 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="key" inputtag="SW1" inputmask="0x01"><bounds x="895" y="680" width="150" height="50"/></element>
 		<element name="led8" ref="win_red"><bounds x="904" y="690" width="12" height="30"/></element>
 		<element ref="t63"><bounds x="2558.25" y="84.48" width="103.5" height="25.74"/></element>
-		<element ref="dial"><bounds x="2480" y="125" width="260" height="260"/></element>
+		<element ref="dial" inputtag="PORTB" inputmask="0x01"><bounds x="2480" y="125" width="260" height="260"/></element>
 		<element ref="t65"><bounds x="2445.05" y="461.04" width="53.9" height="20.02"/></element>
-		<element ref="key" inputtag="PORT" inputmask="0x02"><bounds x="2397" y="495" width="150" height="50"/></element>
+		<element ref="key" inputtag="PORTA" inputmask="0x08"><bounds x="2397" y="495" width="150" height="50"/></element>
 		<element ref="t66"><bounds x="2733.05" y="461.04" width="53.9" height="20.02"/></element>
-		<element ref="key" inputtag="PORT" inputmask="0x01"><bounds x="2685" y="495" width="150" height="50"/></element>
+		<element ref="key" inputtag="PORTA" inputmask="0x04"><bounds x="2685" y="495" width="150" height="50"/></element>
 		<element ref="t67"><bounds x="2596.35" y="548.04" width="27.3" height="20.02"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x08"><bounds x="2535" y="575" width="150" height="50"/></element>
 		<element ref="t68"><bounds x="2438.4" y="628.04" width="67.2" height="20.02"/></element>
@@ -304,7 +305,7 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t96"><bounds x="3998.9" y="403.32" width="46.2" height="17.16"/></element>
 		<element ref="t95"><bounds x="3993.2" y="427.32" width="57.6" height="17.16"/></element>
 		<element ref="t97"><bounds x="4268.4" y="222.48" width="223.2" height="25.74"/></element>
-		<element ref="bar_green"><bounds x="4295" y="260" width="160" height="22"/></element>
+		<element name="led24" ref="bar_green"><bounds x="4295" y="260" width="160" height="22"/></element>
 		<element ref="t99"><bounds x="3585" y="469.9" width="129" height="21.45"/></element>
 		<element ref="recess"><bounds x="3500" y="500" width="600" height="100"/></element>
 		<element ref="mouth"><bounds x="3590" y="526" width="490" height="48"/></element>
