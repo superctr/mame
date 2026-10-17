@@ -16,7 +16,8 @@ public:
 	auto write_lcd_data() { return m_lcd_data_cb.bind(); }
 	auto write_led() { return m_led_cb.bind(); }
 	template <unsigned N> auto read_scan() { return m_scan_cb[N].bind(); }
-	auto read_port() { return m_port_cb.bind(); }
+	template <unsigned N> auto read_port() { return m_port_cb[N].bind(); }
+	auto write_port() { return m_port_out_cb.bind(); }
 	auto read_encoder() { return m_encoder_cb.bind(); }
 
 	u8 read(offs_t offset);
@@ -52,7 +53,8 @@ private:
 	devcb_write8 m_lcd_data_cb;
 	devcb_write8 m_led_cb;
 	devcb_read8::array<SCAN_LINES> m_scan_cb;
-	devcb_read8 m_port_cb;
+	devcb_read8::array<2> m_port_cb;
+	devcb_write8 m_port_out_cb;
 	devcb_read8 m_encoder_cb;
 
 	emu_timer *m_timer_a;
@@ -64,7 +66,7 @@ private:
 	u8 m_config[0x10];
 	u8 m_led[8];
 	u8 m_scan_state[SCAN_LINES];
-	u8 m_port_state;
+	u8 m_port_out;
 	u8 m_encoder_state;
 	s16 m_encoder_delta;
 	u8 m_fifo[FIFO_SIZE];
