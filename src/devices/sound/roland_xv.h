@@ -27,6 +27,7 @@ public:
 	static constexpr int CACHE_CELLS = 16;
 	static constexpr int CACHE_AHEAD = 12;
 	static constexpr u32 PHASE_MASK = 0x1fffff;
+	static constexpr u32 PHASE_LAP = 1 << 21;
 	static constexpr u32 CLOCKS_PER_SAMPLE = 768;
 	static constexpr int RATE_CODES = 16;
 	static constexpr int CELL_BITS = 24;
@@ -284,8 +285,7 @@ protected:
 	{
 		bool backward = false;
 		bool fetching = true;
-		u16 wrap_cells = 0;
-		u16 wrap_end = 0;
+		bool lap = false;
 		u8 region = REGION_BEFORE;
 		bool scaled = false;
 		s8 end_cell = -1;
@@ -357,7 +357,7 @@ private:
 
 	void *alloc_near(size_t bytes, size_t align);
 	u16 word_peek(int word);
-	void word_taken(int word);
+	void word_taken(int word, u16 data);
 	void word_w(int word, u16 data);
 	void object_w(int voice, int word, u16 data);
 	void fifo_rewind();
@@ -385,8 +385,8 @@ private:
 	static s32 delta_of(wave_cell c);
 	u16 exponent_word(u32 address);
 	void launch(int n);
-	u32 loop_fraction(int n, bool at_loop) const;
-	address_step advance(int n, address_step s, u32 phase) const;
+	address_step advance(int n, address_step s) const;
+	u32 seam(int n, u32 phase) const;
 	void cross(int n, u32 address);
 	void fill(int n, int consumer);
 	s32 interpolate(int n, u32 phase, int gain) const;
@@ -402,6 +402,7 @@ private:
 	void set_long(int n, int word, u32 value);
 	void clear_memories();
 	bool write_only(int word) const;
+	bool answers_latch(int word) const;
 	void pram_w(u16 data);
 	u16 pram_r();
 	void pram_step(bool write);
@@ -431,6 +432,7 @@ private:
 	static s64 wrap28(s64 value) { return s64(u64(value) << 36) >> 36; }
 	static s64 wrap29(s64 value) { return s64(u64(value) << 35) >> 35; }
 	static s32 wrap19(s32 value) { return s32(u32(value) << 13) >> 13; }
+	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
 	static s32 wrap24(s32 value) { return s32(u32(value) << 8) >> 8; }
 
 	address_space_config m_wave_config;
@@ -450,7 +452,7 @@ private:
 	u16 m_high_latch;
 	u16 m_bus_latch;
 	u32 m_read_latch;
-	int m_read_word;
+	bool m_run_pending;
 	u16 m_row_stage[2];
 	u16 m_fifo[FIFO_DEPTH];
 	int m_fifo_write;
