@@ -32,6 +32,12 @@ license:CC0-1.0
     with the patch banks cut away; the other five are laid out afresh and
     carry fewer waves than the board does.
 
+    The sets are named by that number: the directory's first word, sixteen
+    bits big-endian at descrambled 0x40, after the name the machine shows
+    at 0x20, the build date at 0x30 and the six-character short name at
+    0x3A.  The boards are srx01 to srx12, the plugin sets srx31 to srx37
+    and srx41.
+
     Which board each PG-SRX re-issue is, is read off its waves: every wave
     of PG-SRX Orchestra, World, Strings and Classic EP stands in SRX-06,
     -09, -04 and -12, and 599 of PG-SRX Keyboards' 619 in SRX-07, where no
@@ -76,7 +82,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "MIKYG Ver.1.02" [Stdio], 2018-08-20, identity 0x24; 1796 samples, 522 waves, no patches -->
-	<software name="srx03a" cloneof="srx03">
+	<software name="srx36" cloneof="srx03">
 		<description>Studio SRX (SRX-03, Roland Cloud re-issue)</description>
 		<year>2018</year>
 		<publisher>Roland</publisher>
@@ -100,7 +106,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "Strings" [Strng], 2018-09-07, identity 0x25; 1287 samples, 196 waves, no patches -->
-	<software name="pgsrxstr" cloneof="srx04">
+	<software name="srx37" cloneof="srx04">
 		<description>Strings (PG-SRX)</description>
 		<year>2018</year>
 		<publisher>Roland</publisher>
@@ -124,7 +130,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "SRX-05 SupDance" [SpDnc], 2001-11-15, identity 0x21; 2140 samples, 326 waves, no patches -->
-	<software name="srx05a" cloneof="srx05">
+	<software name="srx33" cloneof="srx05">
 		<description>Supreme Dance (SRX-05, Roland Cloud re-issue)</description>
 		<year>2001</year>
 		<publisher>Roland</publisher>
@@ -148,7 +154,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "Orchestra" [Orche], 2017-11-06, identity 0x1f; 1447 samples, 430 waves, no patches -->
-	<software name="pgsrxorc" cloneof="srx06">
+	<software name="srx31" cloneof="srx06">
 		<description>Orchestra (PG-SRX)</description>
 		<year>2017</year>
 		<publisher>Roland</publisher>
@@ -172,7 +178,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "Keyboards" [Keys], 2018-02-20, identity 0x20; 3191 samples, 619 waves, no patches -->
-	<software name="pgsrxkbd" cloneof="srx07">
+	<software name="srx32" cloneof="srx07">
 		<description>Keyboards (PG-SRX)</description>
 		<year>2018</year>
 		<publisher>Roland</publisher>
@@ -196,7 +202,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "Dance" [PlTrx], 2002-07-14, identity 0x22; 2712 samples, 829 waves, no patches -->
-	<software name="srx08a" cloneof="srx08">
+	<software name="srx34" cloneof="srx08">
 		<description>Platinum Trax (SRX-08, Roland Cloud re-issue)</description>
 		<year>2002</year>
 		<publisher>Roland</publisher>
@@ -220,7 +226,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "World" [World], 2018-08-25, identity 0x23; 2470 samples, 867 waves, no patches -->
-	<software name="pgsrxwld" cloneof="srx09">
+	<software name="srx35" cloneof="srx09">
 		<description>World (PG-SRX)</description>
 		<year>2018</year>
 		<publisher>Roland</publisher>
@@ -268,7 +274,7 @@ license:CC0-1.0
 		</part>
 	</software>
 	<!-- Roland Cloud: "Classic EP" [Cl_EP], 2018-09-12, identity 0x29; 4690 samples, 168 waves, no patches -->
-	<software name="pgsrxcep" cloneof="srx12">
+	<software name="srx41" cloneof="srx12">
 		<description>Classic EP (PG-SRX)</description>
 		<year>2018</year>
 		<publisher>Roland</publisher>
