@@ -1355,7 +1355,7 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s) 
 	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, true } : address_step{ s.address, true, false };
 }
 
-// the region a fetched sample lies in, and what word 0x60 makes of the crossing: bit 6
+// the loop or end cell a fetch lands on, and what word 0x60 makes of landing there after another cell: bit 6
 // picks the crossing that adopts the second pitch scale, bits 9:8 the one that finishes
 void roland_xv_device::cross(int n, u32 address)
 {
@@ -1367,7 +1367,10 @@ void roland_xv_device::cross(int n, u32 address)
 	else if (index == (object_long(n, LOOP_START) & PAGE_MASK))
 		region = REGION_LOOP;
 	else
+	{
+		v.region = REGION_BEFORE;
 		return;
+	}
 	const bool arrived = region != v.region;
 	v.region = region;
 	const u16 control = object_word(n, VOICE_CONTROL);
