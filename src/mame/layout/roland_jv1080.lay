@@ -261,9 +261,9 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="key" inputtag="SW3" inputmask="0x20"><bounds x="2910" y="500" width="150" height="50"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x40"><bounds x="3075" y="500" width="150" height="50"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x80"><bounds x="3240" y="500" width="150" height="50"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2984" y="555" width="2" height="22"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2985" y="576" width="210" height="2"/></element>
-		<element ref="t84"><bounds x="3205" y="573.32" width="103.2" height="17.16"/></element>
+		<element ref="rule_e9e9e5"><bounds x="3014" y="555" width="2" height="28"/></element>
+		<element ref="rule_e9e9e5"><bounds x="3015" y="582" width="210" height="2"/></element>
+		<element ref="t84"><bounds x="3240" y="579.32" width="103.2" height="17.16"/></element>
 		<element ref="t85"><bounds x="3588.15" y="116.04" width="133.7" height="20.02"/></element>
 		<element ref="t86"><bounds x="3756.1" y="116.04" width="93.8" height="20.02"/></element>
 		<element ref="t87"><bounds x="3931.05" y="116.04" width="53.9" height="20.02"/></element>
