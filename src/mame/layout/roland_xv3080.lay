@@ -67,9 +67,9 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 	<element name="t55"><text string="F"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="t56"><text string="G"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="t57"><text string="H"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t58"><text string="1-8" align="2"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t59"><text string="*"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t60"><text string="9-16" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="t58"><text string="1-8" align="2"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t59"><text string="*"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="t60"><text string="9-16" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
 	<element name="t61"><text string="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
 	<element name="rule_f39a32"><rect><color red="0.953" green="0.604" blue="0.196"/></rect></element>
 	<element name="t63"><text string="2"><color red="0.953" green="0.604" blue="0.196"/></text></element>
@@ -119,7 +119,7 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 	<element name="t107"><text string="EFFECTS"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="t108"><text string="ON/OFF"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="recess"></element>
-	<element name="mouth"><rect><color red="0.000" green="0.000" blue="0.000"/></rect></element>
+	<element name="mouth"></element>
 	<element name="t111"><text string="MEMORY CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="t112"><text string="POWER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 
@@ -145,12 +145,12 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="bezel"><bounds x="660" y="105" width="1640" height="250"/></element>
 		<element ref="glass"><bounds x="740" y="175" width="1487" height="115"/></element>
 		<screen index="0"><bounds x="740" y="176.737" width="1487" height="111.525"/></screen>
-		<element ref="t16"><bounds x="2300" y="81.48" width="103.5" height="25.74"/></element>
+		<element ref="t16"><bounds x="2310" y="81.48" width="103.5" height="25.74"/></element>
 		<element ref="dial" inputtag="PANEL" inputmask="0x02"><bounds x="2400" y="95" width="250" height="250"/></element>
-		<element ref="t18"><bounds x="2320" y="317.18" width="87.1" height="18.59"/></element>
-		<element ref="t19"><bounds x="2320" y="342.18" width="136.5" height="18.59"/></element>
-		<element ref="t20"><bounds x="2724" y="80.76" width="92" height="22.88"/></element>
-		<element ref="t21"><bounds x="2716.4" y="106.76" width="107.2" height="22.88"/></element>
+		<element ref="t18"><bounds x="2313" y="320.18" width="87.1" height="18.59"/></element>
+		<element ref="t19"><bounds x="2313" y="343.18" width="136.5" height="18.59"/></element>
+		<element ref="t20"><bounds x="2724" y="78.76" width="92" height="22.88"/></element>
+		<element ref="t21"><bounds x="2716.4" y="108.76" width="107.2" height="22.88"/></element>
 		<element ref="lens" inputtag="KEY3" inputmask="0x80"><bounds x="2715" y="165" width="110" height="110"/></element>
 		<element name="led30" ref="glow_orange"><bounds x="2717" y="167" width="106" height="106"/></element>
 		<element ref="t24"><bounds x="3186.6" y="77.76" width="76.8" height="22.88"/></element>
@@ -320,8 +320,8 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t108"><bounds x="3429.8" y="685.32" width="80.4" height="17.16"/></element>
 		<element ref="key" inputtag="KEY4" inputmask="0x10"><bounds x="3395" y="715" width="150" height="90"/></element>
 		<element name="led22" ref="win_red"><bounds x="3461" y="722" width="18" height="28"/></element>
-		<element ref="recess"><bounds x="3660" y="665" width="450" height="110"/></element>
-		<element ref="mouth"><bounds x="3685" y="704.6" width="400" height="24.2"/></element>
+		<element ref="recess"><bounds x="3670" y="691" width="430" height="83"/></element>
+		<element ref="mouth"><bounds x="3682.9" y="724.2" width="404.2" height="18.26"/></element>
 		<element ref="t111"><bounds x="3799.125" y="823.9" width="171.75" height="21.45"/></element>
 		<element ref="bezel"><bounds x="4210" y="570" width="280" height="220"/></element>
 		<element ref="recess"><bounds x="4226" y="586" width="248" height="188"/></element>
