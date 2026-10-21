@@ -15,8 +15,6 @@ license:CC0-1.0
     the sixteen-character names the JV-1080 firmware keeps for the cards it
     knows, and the cards it does not know are listed by part number alone
     rather than guessed at.
-
-    Not dumped: SO-PCM1-05 (Accordion).
 -->
 
 <softwarelist name="roland_sopcm1" description="Roland PCM cards (JD-800, JD-990)">
@@ -104,18 +102,6 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- CRD05100, 1992-11-10 -->
-	<software name="sojd8008">
-		<description>SO-JD80-08</description>
-		<year>1992</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="19921110"/>
-		<part name="card" interface="sopcm1">
-			<dataarea name="rom" size="0x100000">
-				<rom name="so-jd80-08.ic1" size="0x100000" crc="b68d39ad" sha1="3ef3a4bb31bab2e9f8ce0ec91f8f5081443ffec7" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
 	<!-- CRD01010, 1991-11-12 -->
 	<software name="sopcm101">
 		<description>SO-PCM1-01 Piano</description>
@@ -161,6 +147,18 @@ license:CC0-1.0
 		<part name="card" interface="sopcm1">
 			<dataarea name="rom" size="0x100000">
 				<rom name="so-pcm1-04.ic1" size="0x100000" crc="c86fb282" sha1="cb07857e8acea7afa4d2329202a07285a58f8ce0" offset="0"/>
+			</dataarea>
+		</part>
+	</software>
+	<!-- CRD05100, 1992-11-10 -->
+	<software name="sopcm105">
+		<description>SO-PCM1-05 Accordion</description>
+		<year>1992</year>
+		<publisher>Roland</publisher>
+		<info name="release" value="19921110"/>
+		<part name="card" interface="sopcm1">
+			<dataarea name="rom" size="0x100000">
+				<rom name="so-pcm1-05.ic1" size="0x100000" crc="b68d39ad" sha1="3ef3a4bb31bab2e9f8ce0ec91f8f5081443ffec7" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
