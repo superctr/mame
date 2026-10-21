@@ -1274,7 +1274,7 @@ void roland_xp_device::decode_program()
 		s.eram_offset = 0;
 		s.cram = c;
 		s.coefficient = mantissa << shift_select[c >> 14];
-		s.raw = BIT(c, 15) ? s32((c & 0x3fff) << 13) : mantissa;
+		s.raw = BIT(c, 15) ? s32(u32(util::sext(c, 15)) << 13) : mantissa;
 		s.logic = BIT(c, 15) ? s32((c & 0x7fff) << 13) : (util::sext(c, 15) & 0xffffff);
 	}
 

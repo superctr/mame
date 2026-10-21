@@ -62,7 +62,7 @@ std::string roland_xp_disassembler::constant(offs_t pc) const
 		return "K";
 
 	const u16 c = coefficient_word(pc);
-	return util::string_format("%d", BIT(c, 15) ? (s32(c & 0x3fff) << 13) : s32(util::sext(c, 14)));
+	return util::string_format("%d", BIT(c, 15) ? s32(u32(util::sext(c, 15)) << 13) : s32(util::sext(c, 14)));
 }
 
 std::string roland_xp_disassembler::logic(offs_t pc) const
