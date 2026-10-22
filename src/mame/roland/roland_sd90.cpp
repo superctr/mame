@@ -51,7 +51,6 @@
     SCI and SCIF, the SD-90's IrDA channel and SCIF.
 
     TODO:
-    - the wave mask ROMs are undumped
     - the USB controller is a stub: no USB MIDI or audio, so the SD-90
       is given a settings record that starts it in MIDI mode
     - which XV DAC pairs feed the MR3 and DACs is unconfirmed
@@ -775,13 +774,13 @@ INPUT_PORTS_END
 
 
 //-------------------------------------------------
-//  ROM definitions.  Neither wave ROM is dumped.
+//  ROM definitions
 //-------------------------------------------------
 
 #define ROM_WAVEROM \
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00) \
-	ROM_LOAD("upd23c128040algy525mjh.ic28", 0x0000000, 0x1000000, NO_DUMP) \
-	ROM_LOAD("upd23c128040algy526mkh.ic29", 0x1000000, 0x1000000, NO_DUMP)
+	ROM_LOAD("upd23c128040algy525mjh.ic28", 0x0000000, 0x1000000, CRC(07bb82cf) SHA1(1d299735125bf29db5e4e00072504a16f625385b)) \
+	ROM_LOAD("upd23c128040algy526mkh.ic29", 0x1000000, 0x1000000, CRC(4f8a469b) SHA1(3eb4e8c63128da65a269e27296b653ca2639ccf2))
 
 ROM_START(sd80)
 	// the flash read off IC3, the two bytes of every word exchanged
