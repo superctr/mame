@@ -74,23 +74,29 @@ private:
 	{
 		OP_NONE, OP_UNSUPPORTED,
 		OP_A,
-		OP_B_SUM, OP_B_SQUARE, OP_B_NEWTON, OP_B_ROOT_STEP, OP_B_MOVE, OP_B_DOUBLE, OP_B_MUL, OP_B_MAC, OP_B_F2, OP_B_F3,
+		OP_B_SUM, OP_B_SQUARE, OP_B_NEWTON, OP_B_ROOT_STEP, OP_B_MOVE, OP_B_MUL, OP_B_MAC, OP_B_F2, OP_B_F3,
+		OP_B_ADD_REGISTER, OP_B_ADD_SELECTOR,
 		OP_C_ARRIVAL_CLEAR, OP_C_ADVANCE, OP_C_CLAMP, OP_C_BIT, OP_C_FRACTION, OP_C_LOGIC, OP_C_MIN, OP_C_MAX,
 		OP_C_COMPARE, OP_C_SET, OP_C_RECIPROCAL, OP_C_SEED, OP_C_RATIO, OP_C_ROOT, OP_C_EXPONENT, OP_C_LOGARITHM, OP_C_SIGN, OP_C_FLOOR,
 		OP_C_FLOOR14, OP_C_FRACTION14, OP_C_SELECTOR, OP_C_ADD_SELECTOR, OP_C_F3, OP_C_ABS_MAX, OP_C_FRAME,
 		OP_C_UNARY0, OP_C_UNARY1, OP_C_UNARY2, OP_C_UNARY3, OP_C_UNARY4, OP_C_UNARY5, OP_C_UNARY6,
 		OP_C_SCALE, OP_C_SHIFT, OP_C_RIGHT_SHIFT, OP_C_FREXP, OP_C_SAVE, OP_C_RESTORE,
+		OP_C_LOGIC_COMPLEMENT, OP_C_ABS_MIN, OP_C_UNARY7, OP_C_FLOOR32, OP_C_ADDRESS,
 		OP_D_SELECT, OP_D_ADDRESS, OP_D_ADDRESS_REGISTER, OP_D_JUMP, OP_D_CALL, OP_D_CALL_REGISTER, OP_D_NOTIFY, OP_D_CLEAR, OP_D_COUNTER, OP_D_STEP, OP_D_RETURN,
-		OP_E_OPERAND, OP_E_CONSTANT, OP_E_PUBLISH, OP_E_INDIRECT, OP_E_DELAY, OP_E_TOKEN, OP_E_SAMPLE, OP_E_REQUEST,
-		OP_E_LOCAL, OP_E_BUS, OP_E_SHORT, OP_E_DIRECT, OP_E_PARAMETER, OP_E_TARGET
+		OP_D_SKIP, OP_D_END,
+		OP_E_OPERAND, OP_E_PUBLISH, OP_E_INDIRECT, OP_E_DELAY, OP_E_TOKEN, OP_E_SAMPLE, OP_E_REQUEST, OP_E_CELL_REQUEST,
+		OP_E_LOCAL, OP_E_BUS, OP_E_FORM, OP_E_ZERO
 	};
 
 	enum : u8
 	{
 		F_SIGMA = 0x01, F_SECOND = 0x02, F_SECOND_IMMEDIATE = 0x04, F_SECOND_ALONE = 0x08,
 		F_NEGATE = 0x10, F_ADDEND = 0x20, F_HALVE = 0x40, F_MOVE = 0x80,
-		F_CONDITIONAL = 0x02, F_STORE = 0x02, F_INDEXED = 0x04
+		F_CONDITIONAL = 0x02, F_ADD = 0x04, F_NEGATIVE = 0x08,
+		F_STORE = 0x02, F_INDEXED = 0x04, F_STEP = 0x08
 	};
+
+	static constexpr u8 NO_SELECTOR = 4;
 
 	struct source
 	{
@@ -111,6 +117,8 @@ private:
 		source s, t;
 		double q;
 		u32 value;
+		u16 base, mask;
+		u8 sel, step;
 	};
 
 	struct packet
@@ -209,6 +217,7 @@ private:
 		u32 target_queued[TARGETS / 32];
 		u32 target_pending[TARGETS / 32];
 		u16 notify_pending;
+		bool skip_next, end_after_delay;
 	};
 
 	devcb_write_line::array<IRQ_COUNT> m_irq_cb;
@@ -221,6 +230,7 @@ private:
 	std::unique_ptr<unit_state[]> m_unit;
 	std::unique_ptr<u32[]> m_memory;
 	double m_shared[0x100];
+	double m_kbank[0x40];
 	double m_port[0x100];
 	mb8aa4181_dsp_device *m_port_link = nullptr;
 	u8 m_output_port = 0;
@@ -271,6 +281,7 @@ private:
 	static source make_source(const packet &p, unsigned code, bool subtract);
 	static double get(const source &s, const double *r) { return s.mode == 2 ? s.value : s.mode ? -r[s.reg] : r[s.reg]; }
 	void classify(const packet &p, unsigned k, operation &op);
+	void classify_form(operation &op);
 	bool condition(const unit_state &u, u16 word) const;
 	double read_operand(unsigned unit, u16 address) const;
 	void write_operand(unsigned unit, u16 address, double value);

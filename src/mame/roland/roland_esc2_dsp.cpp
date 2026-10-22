@@ -78,6 +78,34 @@ double reciprocal(double x)
 	return saturate(1.0 / x);
 }
 
+double constant(unsigned n)
+{
+	static const double transcendental[16] = {
+		std::numbers::ln2, std::log(10.0), 1.0 / std::numbers::ln2, std::log2(10.0), std::log10(std::numbers::e), std::log10(2.0),
+		2.0 * std::numbers::pi, std::numbers::pi, std::numbers::pi / 2.0, std::numbers::pi / 4.0, 1.0 / (2.0 * std::numbers::pi),
+		1.0 / std::numbers::pi, 2.0 / std::numbers::pi, 4.0 / std::numbers::pi, std::numbers::e, 1.0 / std::numbers::e };
+	if (!n || (n >= 0x2b && n < 0x30))
+		return 0.0;
+	if (n < 0x2a)
+		return std::ldexp(1.0, int(n) - 0x21);
+	if (n == 0x2a)
+		return 512.0 - std::ldexp(1.0, -15);
+	return transcendental[n - 0x30];
+}
+
+u32 q23(double x)
+{
+	return u32(s64(std::trunc(x * 8388608.0)));
+}
+
+double bit_test(double x, unsigned n)
+{
+	const s64 v = s64(std::floor(x));
+	if (n <= 8)
+		return double((v >> n) & 1);
+	return (n == 9 && v < 0) ? -1.0 : 0.0;
+}
+
 double noise(double x)
 {
 	s64 word = s64(x * 16777216.0);
@@ -197,6 +225,7 @@ void mb8aa4181_dsp_device::device_start()
 	}
 	save_pointer(NAME(m_memory), MEMORY_CELLS);
 	save_item(NAME(m_shared));
+	save_item(NAME(m_kbank));
 	save_item(NAME(m_port));
 	save_item(NAME(m_field));
 	save_item(NAME(m_flags));
@@ -213,6 +242,7 @@ void mb8aa4181_dsp_device::device_reset()
 	std::fill_n(m_input_port, INPUT_LANES, 0xff);
 	m_input_read = m_input_write = 0;
 	std::fill_n(m_shared, 0x100, 0.0);
+	std::fill_n(m_kbank, 0x40, 0.0);
 	std::fill_n(m_port, 0x100, 0.0);
 	m_field = 0;
 	m_flags = 0;
@@ -692,12 +722,12 @@ double mb8aa4181_dsp_device::read_operand(unsigned unit, u16 address) const
 			return std::bit_cast<float>(u.target[address & (TARGETS - 1)][2]);
 		break;
 	case 0xe:
-		if (address == 0xe000)
-			return 0.0;
-		if (address <= 0xe021)
-			return std::ldexp(1.0, int(address & 0xff) - 0x21);
+		if (address < 0xe040)
+			return constant(address & 0x3f);
 		if (address == 0xe043)
 			return double(u.packets_run & 0xfff) / 4096.0;
+		if ((address & 0xffc0) == 0xe800)
+			return m_kbank[address & 0x3f];
 		break;
 	}
 	if (!m_unsupported.count(0x10000000 | address))
@@ -757,9 +787,20 @@ void mb8aa4181_dsp_device::write_operand(unsigned unit, u16 address, double valu
 			return;
 		}
 		break;
+	case 0xc:
+		if (address < 0xc000 + TARGETS)
+		{
+			u.target[address & (TARGETS - 1)][2] = std::bit_cast<u32>(float(value));
+			return;
+		}
+		break;
 	case 0xe:
 		if ((address & 0xff00) == 0xe800)
+		{
+			if ((address & 0xffc0) == 0xe800)
+				m_kbank[address & 0x3f] = value;
 			return;
+		}
 		break;
 	}
 	if (!m_unsupported.count(0x20000000 | address))
@@ -827,13 +868,18 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 	switch (op.kind)
 	{
 	case KIND_A:
-		if (!f)
+	{
+		if (!f || (f == 1 && BIT(w, 15)))
+		{
+			op.type = OP_NONE;
 			break;
+		}
+		const unsigned width = (op.aux >> 10) & 3, code = (op.aux >> 6) & 15;
+		const bool ones = f == 3 && !width && !(code & 8) && !BIT(w, 15);
 		op.type = OP_A;
-		op.s = (w & 63) ? make_source(p, w & 63, false) : source{ 1.0, 0, 2 };
+		op.s = ((w & 63) && !(ones && !(w & 0x38))) ? make_source(p, w & 63, false) : source{ 1.0, 0, 2 };
 		if (f & 2)
 		{
-			const unsigned width = (op.aux >> 10) & 3, code = (op.aux >> 6) & 15;
 			op.y = (op.aux >> 12) & 7;
 			op.flags |= F_SECOND;
 			if (width)
@@ -841,15 +887,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 				op.q = number(p, code, width + 1);
 				op.flags |= F_SECOND_IMMEDIATE;
 			}
-			else if (code >= 8)
-				op.value = code & 7;
-			else if (!code)
+			else if (ones || !code)
 				op.flags |= F_SECOND_ALONE;
 			else
-			{
-				op.type = OP_UNSUPPORTED;
-				break;
-			}
+				op.value = code & 7;
 			if (BIT(op.aux, 15))
 				op.flags |= F_NEGATE;
 		}
@@ -861,6 +902,7 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		if (BIT(w, 15))
 			op.flags |= F_HALVE;
 		break;
+	}
 
 	case KIND_B:
 		op.s = make_source(p, w & 63, true);
@@ -868,6 +910,15 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		{
 			op.type = OP_B_SUM;
 			op.y = (w >> 9) & 7;
+		}
+		else if (!f && BIT(w, 9))
+			op.type = OP_B_ADD_REGISTER;
+		else if (!f && (op.x == 0 || op.x == 3 || (op.x == 2 && (w & 0x30) == 0x30)))
+			op.type = OP_NONE;
+		else if (!f && op.x >= 4)
+		{
+			op.type = OP_B_ADD_SELECTOR;
+			op.y = op.x - 4;
 		}
 		else if (!f && op.x == 2 && (w & 0x30) == 0x20)
 			op.type = OP_B_SQUARE;
@@ -880,11 +931,6 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_B_MOVE;
 			op.flags |= F_MOVE;
 		}
-		else if (!f && op.x == 4)
-		{
-			op.type = OP_B_DOUBLE;
-			op.t = make_source(p, w & 63, false);
-		}
 		else if (f == 1)
 			op.type = BIT(w, 9) ? OP_B_MAC : OP_B_MUL;
 		else if (f == 2)
@@ -896,7 +942,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 	case KIND_C:
 	{
 		const unsigned function = (w >> 3) & 7;
-		if ((w & 0xfffc) == 0xff70 || (w & 0x8ffe) == 0x8f74 || w == 0xcf64)
+		if ((w & 0xfffc) == 0xff70 || (w & 0x8ffe) == 0x8f74 || w == 0xcf64 || (w & 0x8fff) == 0x8f63 || (w & 0x8fff) == 0x8f64
+				|| (w & 0x8fff) == 0x8f66 || (w & 0x8fff) == 0x8f67)
 			op.type = OP_NONE;
 		else if (w == 0xbf7c)
 			op.type = OP_C_ARRIVAL_CLEAR;
@@ -904,10 +951,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_ADVANCE;
 		else if ((w & 0x8fff) == 0x8f6b)
 			op.type = OP_C_CLAMP;
-		else if ((w & 0x8ff8) == 0x8f80)
+		else if ((w & 0x8fc0) == 0x8f80)
 		{
 			op.type = OP_C_BIT;
-			op.y = w & 7;
+			op.y = w & 0x3f;
 		}
 		else if ((w & 0x8ff8) == 0x8f40)
 			op.type = OP_C_FRACTION;
@@ -917,14 +964,20 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.s = make_source(p, w & 63, false);
 			op.value = f;
 		}
+		else if (!BIT(w, 15) && BIT(w, 9) && f < 3)
+		{
+			op.type = OP_C_LOGIC_COMPLEMENT;
+			op.s = make_source(p, w & 63, true);
+			op.value = f;
+		}
 		else if ((w & 0x8c00) == 0x8000 || (w & 0x8c00) == 0x8400)
 		{
 			op.type = (w & 0x400) ? OP_C_MAX : OP_C_MIN;
 			op.s = make_source(p, w & 63, false);
 		}
-		else if ((w & 0x8e00) == 0x8a00)
+		else if ((w & 0x8c00) == 0x8800)
 		{
-			op.type = OP_C_ABS_MAX;
+			op.type = BIT(w, 9) ? OP_C_ABS_MAX : OP_C_ABS_MIN;
 			op.s = make_source(p, w & 63, false);
 		}
 		else if ((w & 0x8fc0) == 0x8e00)
@@ -961,6 +1014,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_C_FRACTION14;
 		else if ((w & 0x8fff) == 0x8f5c)
 			op.type = OP_C_FRAME;
+		else if ((w & 0x8fff) == 0x8f5d)
+			op.type = OP_C_ADDRESS;
 		else if ((w & 0x8ffc) == 0x8f58)
 		{
 			op.type = OP_C_SELECTOR;
@@ -980,9 +1035,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		}
 		else if ((w & 0x8fc0) == 0x8ec0)
 		{
-			if (function < 7)
-				op.type = OP_C_UNARY0 + function;
+			op.type = function < 7 ? OP_C_UNARY0 + function : OP_C_UNARY7;
 		}
+		else if ((w & 0x8e38) == 0x8c38)
+			op.type = OP_C_FLOOR32;
 		else if ((w & 0x8e38) == 0x8c28 || (w & 0x8e38) == 0x8c30)
 		{
 			op.type = OP_C_SCALE;
@@ -1012,19 +1068,25 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		const unsigned low = w & 0xff;
 		if (w >= 0x4000)
 		{
-			if ((w & 0xff00) == 0x4000)
+			if (w < 0xc000)
 			{
 				const unsigned code = w & 63;
 				op.y = (w >> 6) & 3;
+				if (w & 0x3f00)
+					op.flags |= F_CONDITIONAL;
+				if (w >= 0x8000)
+					op.flags |= F_ADD;
 				if (code & 0x30)
 				{
 					op.type = OP_D_ADDRESS;
-					op.q = double(raw(p, code & 15, ((code >> 4) & 3) + 1));
+					op.q = (code & 0x30) == 0x30 ? 0.0 : double(raw(p, code & 15, ((code >> 4) & 3) + 1));
 				}
 				else
 				{
 					op.type = OP_D_ADDRESS_REGISTER;
 					op.x = code & 7;
+					if (code & 8)
+						op.flags |= F_NEGATIVE;
 				}
 			}
 			break;
@@ -1044,11 +1106,9 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 				if (j != k)
 					others[m++] = j;
 			const unsigned high = (low >> 4) & 15, lower = low & 15;
-			if (high > m || lower > m)
-				break;
 			op.type = OP_D_SELECT;
-			op.drop_true = lower ? 1 << others[lower - 1] : 0;
-			op.drop_false = high ? 1 << others[high - 1] : 0;
+			op.drop_true = (lower && lower <= m) ? 1 << others[lower - 1] : 0;
+			op.drop_false = (high && high <= m) ? 1 << others[high - 1] : 0;
 			op.named = op.drop_true | op.drop_false;
 		}
 		else if (low >= 0x80 && low < 0xc0)
@@ -1064,12 +1124,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		}
 		else if (low >= 0xd0 && low < 0xd8)
 			op.type = OP_D_CLEAR;
-		else if (low >= 0xd8 && low < 0xe0 && !(w >> 8))
+		else if (low >= 0xd8 && low < 0xe0)
 			op.type = OP_D_STEP;
-		else if (low == 0xe7)
+		else if (low >= 0xe0 && low < 0xe8)
 			op.type = OP_D_COUNTER;
-		else if (low == 0xf8)
-			op.type = OP_D_RETURN;
 		else if (low == 0xe8)
 		{
 			op.type = OP_D_ADDRESS;
@@ -1077,6 +1135,19 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.q = 0.0;
 		}
 		else if (low == 0xe9 || low == 0xf1)
+			op.type = OP_NONE;
+		else if (low >= 0xf4 && low < 0xf8)
+			op.type = OP_D_SKIP;
+		else if (low >= 0xf8 && low < 0xfc)
+			op.type = OP_D_RETURN;
+		else if (low == 0xfc)
+			op.type = OP_D_END;
+		else if (low == 0xfd)
+		{
+			op.type = OP_D_JUMP;
+			op.value = (p.pc + 2 * p.length) & 0xffff;
+		}
+		else if (low < 0x08 || low >= 0xfe)
 			op.type = OP_NONE;
 		break;
 	}
@@ -1090,11 +1161,6 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.value = raw(p, w & 15, 2);
 			if (BIT(w, 4))
 				op.flags |= F_INDEXED;
-		}
-		else if ((w & 0x8fc0) == 0x0f00)
-		{
-			op.type = OP_E_CONSTANT;
-			op.value = 0xe000 | (w & 0x3f);
 		}
 		else if ((w & 0x8ff8) == 0x89b0)
 		{
@@ -1138,22 +1204,109 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_E_LOCAL;
 			op.value = w & 31;
 		}
-		else if ((w & 0x0f30) == 0x0200)
+		else if ((w & 0x8f80) == 0x0980)
 		{
-			op.type = OP_E_SHORT;
-			op.y = (w >> 6) & 3;
+			op.type = OP_E_CELL_REQUEST;
+			op.y = (w >> 4) & 3;
 			op.value = w & 15;
+			if (BIT(w, 6))
+				op.flags |= F_STEP;
 		}
-		else if ((w & 0x0fd0) == 0x0d80)
+		else
+			classify_form(op);
+		break;
+	}
+}
+
+void mb8aa4181_dsp_device::classify_form(operation &op)
+{
+	const u16 w = op.word;
+	const bool store = BIT(w, 15);
+	const unsigned group = (w >> 8) & 15, mode = (w >> 6) & 3, k = (w >> 4) & 3;
+	op.sel = op.step = NO_SELECTOR;
+	op.mask = 0;
+	auto absolute = [&op] (u16 base, u16 offset) { op.type = OP_E_FORM; op.base = base; op.value = offset; };
+	auto indexed = [&op] (u16 base, unsigned sel, u16 offset, u16 mask, bool step)
+	{
+		op.type = OP_E_FORM;
+		op.base = base;
+		op.sel = sel;
+		op.value = offset;
+		op.mask = mask;
+		if (step)
+			op.step = sel;
+	};
+	switch (group)
+	{
+	case 0x0: case 0x1:
+		if (w)
+			absolute(0x0000, w & 0x1ff);
+		break;
+	case 0x2: case 0x3:
+		if (group == 3 && store && mode != 3)
+			break;
+		indexed(0x0000, mode, w & 0x3f, 0x1fff, group == 3);
+		break;
+	case 0x4: case 0x5:
+		absolute(0x2000, w & 0x1ff);
+		break;
+	case 0x7:
+		indexed(0x2000, mode, w & 0x3f, 0xfff, true);
+		break;
+	case 0x8:
+		if (mode < 2)
+			absolute(0x4000, w & 0x7f);
+		else if (mode == 3 || !store)
+			indexed(0x4000, k, w & 15, 0x3ff, mode == 3);
+		break;
+	case 0x9:
+		if (!store && mode < 2)
+			op.type = OP_NONE;
+		break;
+	case 0xa:
+		if (!store && mode != 2)
 		{
-			op.type = (w & 0x20) ? OP_E_PARAMETER : OP_E_DIRECT;
-			op.value = w & 15;
+			op.type = OP_E_FORM;
+			op.base = op.mask = 0;
+			op.sel = NO_SELECTOR;
+			op.step = mode == 3 ? k : NO_SELECTOR;
+			op.flags |= F_STEP;
 		}
-		else if ((w & 0x8ff0) == 0x0ea0)
+		break;
+	case 0xb:
+		if (mode < 2)
+			absolute(0x6000, w & 0x7f);
+		else
+			indexed(0x6000, k, w & 15, 0xff, mode == 3);
+		break;
+	case 0xd:
+		if (mode < 2)
 		{
-			op.type = OP_E_TARGET;
-			op.value = w & 15;
+			if (store)
+				op.type = OP_NONE;
+			else
+				absolute(0xa000, w & 0x7f);
 		}
+		else if (mode == 2 && !k)
+			absolute(0xa000, w & 15);
+		else
+			indexed(0xa000, k, w & 15, 0xff, mode == 3);
+		break;
+	case 0xe:
+		if (mode < 2)
+			absolute(0xc000, w & 0x7f);
+		else
+			indexed(0xc000, k, w & 15, 0x1ff, mode == 3);
+		break;
+	case 0xf:
+		if ((w & 0x0fe0) == 0x0fc0)
+			op.type = store ? OP_NONE : OP_E_ZERO;
+		else if (mode == 2)
+			absolute(0xe800, w & 0x3f);
+		else if (store)
+			op.type = OP_NONE;
+		else
+			absolute(mode ? 0xe040 : 0xe000, w & 0x3f);
 		break;
 	}
 }
@@ -1190,11 +1343,13 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 
 	struct write { u8 reg; double value; };
 	struct store { u8 type; u32 address; double value; };
+	struct selector_write { u8 reg; bool add; double value; };
 	write loads[MAX_OPS], sets[MAX_OPS * 2], shadows[MAX_OPS];
 	store stores[MAX_OPS];
-	write selector_sets[MAX_OPS];
+	selector_write selector_sets[MAX_OPS];
+	write selector_steps[MAX_OPS * 2];
 	store requests[MAX_OPS];
-	unsigned nloads = 0, nsets = 0, nshadows = 0, nstores = 0, nselectors = 0, nrequests = 0;
+	unsigned nloads = 0, nsets = 0, nshadows = 0, nstores = 0, nselectors = 0, nsteps = 0, nrequests = 0;
 	double results[MAX_OPS];
 	u8 has_result = 0;
 	double arithmetic[2] = { 0.0, 0.0 };
@@ -1214,8 +1369,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 	int transfer = NO_TRANSFER;
 	kind = TRANSFER_RETURN;
 
-	enum : u8 { STORE_OPERAND, STORE_SHORT, STORE_LOCAL, STORE_DIRECT, STORE_CELL };
-	enum : u8 { REQUEST_DELAY, REQUEST_TOKEN, REQUEST_SAMPLE };
+	enum : u8 { STORE_OPERAND, STORE_LOCAL, STORE_CELL };
+	enum : u8 { REQUEST_DELAY, REQUEST_TOKEN, REQUEST_SAMPLE, REQUEST_CELL };
 
 	for (unsigned k = 0; k < n; k++)
 	{
@@ -1269,11 +1424,12 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			break;
 		}
 		case OP_B_MOVE: value = get(op.s, r); break;
-		case OP_B_DOUBLE: value = 2.0 * r[d] + get(op.t, r); break;
 		case OP_B_MUL: value = r[x] * get(op.s, r); break;
 		case OP_B_MAC: value = r[d] + r[x] * get(op.s, r); break;
 		case OP_B_F2: value = sigma * r[d] * r[x] + get(op.s, r); break;
 		case OP_B_F3: value = sigma * r[x] + get(op.s, r); break;
+		case OP_B_ADD_REGISTER: value = r[d] + get(op.s, r) + r[x]; break;
+		case OP_B_ADD_SELECTOR: value = r[d] + get(op.s, r) + u.sel[y] / 16384.0; break;
 
 		case OP_C_ARRIVAL_CLEAR:
 			u.arrival = false;
@@ -1297,7 +1453,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			break;
 		}
 		case OP_C_BIT:
-			value = double((s64(r[d]) >> y) & 1);
+			value = bit_test(r[d], y);
 			is_function = true;
 			target = -1;
 			break;
@@ -1310,10 +1466,21 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			value = double(result) / 8388608.0;
 			break;
 		}
+		case OP_C_LOGIC_COMPLEMENT:
+		{
+			const u32 left = ~q23(r[x]), right = q23(get(op.s, r));
+			const u32 result = op.value == 0 ? left & right : op.value == 1 ? left | right : left ^ right;
+			value = double(result) / 8388608.0;
+			break;
+		}
 		case OP_C_MIN: value = std::min(sigma * r[x], get(op.s, r)); break;
 		case OP_C_MAX: value = std::max(sigma * r[x], get(op.s, r)); break;
 		case OP_C_ABS_MAX: value = std::max(std::fabs(r[x]), std::fabs(get(op.s, r))); break;
+		case OP_C_ABS_MIN: value = std::min(std::fabs(r[x]), std::fabs(get(op.s, r))); break;
 		case OP_C_FRAME: value = double(m_frames & 0x3fffff) / 16384.0; break;
+		case OP_C_ADDRESS: value = double(p.pc / 2 + 2) / 16384.0; break;
+		case OP_C_FLOOR32: value = std::ldexp(std::floor(std::ldexp(r[x], 8 - int(y))), -32); break;
+		case OP_C_UNARY7: value = double(~q23(r[y])) / 8388608.0; is_function = true; break;
 		case OP_C_COMPARE:
 			value = r[d] + get(op.s, r);
 			is_test = true;
@@ -1422,8 +1589,8 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			break;
 		case OP_C_SHIFT:
 		{
-			const double e = r[y];
-			if (e != std::trunc(e) || std::fabs(e) > 1024.0)
+			const double e = std::floor(r[y]);
+			if (std::fabs(e) > 1024.0)
 			{
 				unsupported(unitnum, p, op);
 				has = false;
@@ -1441,12 +1608,28 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		}
 
 		case OP_D_ADDRESS:
-			selector_sets[nselectors++] = { u8(y), op.q };
-			has = false;
-			break;
 		case OP_D_ADDRESS_REGISTER:
-			selector_sets[nselectors++] = { u8(y), r[x] * 16384.0 };
 			has = false;
+			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
+			{
+				const double v = op.type == OP_D_ADDRESS ? op.q : ((op.flags & F_NEGATIVE) ? -r[x] : r[x]) * 16384.0;
+				selector_sets[nselectors++] = { u8(y), bool(op.flags & F_ADD), v };
+			}
+			break;
+		case OP_D_SKIP:
+			has = false;
+			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
+				u.skip_next = true;
+			break;
+		case OP_D_END:
+			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
+			{
+				u.end_after_delay = true;
+				value = 0.0;
+				target = 1;
+			}
+			else
+				has = false;
 			break;
 		case OP_D_JUMP:
 		case OP_D_CALL:
@@ -1485,14 +1668,19 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
 			{
-				value = r[7] - 1.0 / 16384.0;
+				value = r[y] - 1.0 / 16384.0;
 				has = is_test = true;
-				target = 7;
+				target = y;
 			}
 			break;
 		case OP_D_STEP:
-			value = r[y] + 1.0 / 16384.0;
-			target = y;
+			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
+			{
+				value = r[y] + 1.0 / 16384.0;
+				target = y;
+			}
+			else
+				has = false;
 			break;
 		case OP_D_RETURN:
 			has = false;
@@ -1506,6 +1694,11 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			u32 address = op.value;
 			if ((op.flags & F_INDEXED) && BIT(address, 11))
 				address = ((address & ~0x800) + s32(u.sel[2])) & 0xffff;
+			else if ((op.flags & F_INDEXED) && (address >> 12) == 0x3)
+			{
+				address = (address - 0x1000 + s32(std::floor(u.sel[0]))) & 0xffff;
+				selector_steps[nsteps++] = { 0, 1.0 };
+			}
 			else if (op.flags & F_INDEXED)
 			{
 				address = (address + s32(u.sel[0])) & 0xffff;
@@ -1518,9 +1711,31 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
 			break;
 		}
-		case OP_E_CONSTANT:
+		case OP_E_FORM:
+		{
 			has = false;
-			loads[nloads++] = { u8(d), read_operand(unitnum, op.value) };
+			if (op.step != NO_SELECTOR)
+				selector_steps[nsteps++] = { op.step, 1.0 };
+			if (op.flags & F_STEP)
+				break;
+			u32 address = op.base | op.value;
+			if (op.sel != NO_SELECTOR)
+				address = op.base | ((u32(s32(std::floor(u.sel[op.sel]))) + op.value) & op.mask);
+			if (op.flags & F_STORE)
+				stores[nstores++] = { STORE_OPERAND, address, r[d] };
+			else
+				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
+			break;
+		}
+		case OP_E_ZERO:
+			has = false;
+			loads[nloads++] = { u8(d), 0.0 };
+			break;
+		case OP_E_CELL_REQUEST:
+			has = false;
+			requests[nrequests++] = { REQUEST_CELL, (u32(s32(std::floor(u.sel[y]))) + op.value) & (SLOTS - 1), r[d] };
+			if (op.flags & F_STEP)
+				selector_steps[nsteps++] = { u8(y), 1.0 };
 			break;
 		case OP_E_PUBLISH:
 			has = false;
@@ -1566,31 +1781,6 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 				loads[nloads++] = { u8(d), read_operand(unitnum, address) };
 			break;
 		}
-		case OP_E_SHORT:
-		{
-			has = false;
-			const u32 address = u32(u.sel[y]) + op.value;
-			if (op.flags & F_STORE)
-				stores[nstores++] = { STORE_SHORT, address, r[d] };
-			else
-				loads[nloads++] = { u8(d), shortmem(u, address) };
-			break;
-		}
-		case OP_E_DIRECT:
-		case OP_E_PARAMETER:
-		{
-			has = false;
-			const u32 address = (op.type == OP_E_PARAMETER ? u32(u.sel[2]) : 0) + op.value;
-			if (op.flags & F_STORE)
-				stores[nstores++] = { STORE_DIRECT, address, r[d] };
-			else
-				loads[nloads++] = { u8(d), std::bit_cast<float>(u.direct[address & (DIRECT_WORDS - 1)]) };
-			break;
-		}
-		case OP_E_TARGET:
-			has = false;
-			loads[nloads++] = { u8(d), std::bit_cast<float>(u.target[(u32(u.sel[2]) + op.value) & (TARGETS - 1)][2]) };
-			break;
 
 		default:
 			unsupported(unitnum, p, op);
@@ -1643,9 +1833,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		switch (s.type)
 		{
 		case STORE_OPERAND: write_operand(unitnum, s.address, s.value); break;
-		case STORE_SHORT: u.shortmem[short_index(u, s.address)] = s.value; break;
 		case STORE_LOCAL: u.local[s.address & (SHORT_WORDS - 1)] = s.value; break;
-		case STORE_DIRECT: direct_store(u, s.address & (DIRECT_WORDS - 1), s.value); break;
 		case STORE_CELL: set_cell(s.address, s.value); break;
 		}
 	}
@@ -1680,6 +1868,16 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 				}
 			}
 		}
+		else if (q.type == REQUEST_CELL)
+		{
+			const u32 address = u32(s64(std::floor(position))) + (u.moving ? u.origin : 0);
+			u.requested[q.address] = cell(address);
+			if (!u.requested_valid[q.address])
+			{
+				u.requested_valid[q.address] = 1;
+				u.pending.push_back(q.address);
+			}
+		}
 		else
 		{
 			const s64 address = s64(std::floor(q.value * 65536.0));
@@ -1687,9 +1885,15 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		}
 	}
 	for (unsigned i = 0; i < nselectors; i++)
-		u.sel[selector_sets[i].reg] = selector_sets[i].value;
+		if (!selector_sets[i].add)
+			u.sel[selector_sets[i].reg] = selector_sets[i].value;
+	for (unsigned i = 0; i < nselectors; i++)
+		if (selector_sets[i].add)
+			u.sel[selector_sets[i].reg] += selector_sets[i].value;
 	if (step_index)
 		u.sel[0] += 1.0;
+	for (unsigned i = 0; i < nsteps; i++)
+		u.sel[selector_steps[i].reg] += selector_steps[i].value;
 	for (unsigned i = 0; i < nloads; i++)
 		u.r[loads[i].reg] = saturate(loads[i].value);
 	for (unsigned i = 0; i < nsets; i++)
@@ -1814,17 +2018,24 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 	begin_frame(u);
 	u.depth = 0;
 	int index = u.first;
-	bool pending = false, pending_call = false;
+	bool pending = false, pending_call = false, ending = false;
 	int pending_target = NO_TRANSFER;
 	for (unsigned count = 0; index >= 0 && count < FRAME_PACKETS; count++)
 	{
 		const packet &p = u.packets[index];
 		u8 kind;
+		u.skip_next = u.end_after_delay = false;
 		const int transfer = step(unit, p, kind);
 		u.packets_run++;
+		if (ending)
+			break;
+		ending = u.end_after_delay;
+		int following = p.next;
+		if (u.skip_next && following >= 0)
+			following = u.packets[following].next;
 		if (!pending)
 		{
-			index = p.next;
+			index = following;
 			if (transfer == NO_TRANSFER)
 				continue;
 			if (kind == TRANSFER_JUMP && u.moving)
@@ -1844,8 +2055,8 @@ void mb8aa4181_dsp_device::run_frame(unsigned unit)
 			index = u.depth ? int(u.stack[--u.depth]) : -1;
 			continue;
 		}
-		if (pending_call && u.depth < STACK_DEPTH && p.next >= 0)
-			u.stack[u.depth++] = p.next;
+		if (pending_call && u.depth < STACK_DEPTH && following >= 0)
+			u.stack[u.depth++] = following;
 		index = transfer_index(unit, pending_target);
 	}
 	end_frame(u);
