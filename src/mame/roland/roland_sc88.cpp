@@ -92,6 +92,8 @@ public:
 	void sc88(machine_config &config) ATTR_COLD;
 	void sc88pro(machine_config &config) ATTR_COLD;
 	void vegspro(machine_config &config) ATTR_COLD;
+	void sk88pro(machine_config &config) ATTR_COLD;
+	void xpgs(machine_config &config) ATTR_COLD;
 
 	void init_sc88() ATTR_COLD;
 
@@ -105,7 +107,10 @@ protected:
 	void main_map(address_map &map) ATTR_COLD;
 	void sc88pro_map(address_map &map) ATTR_COLD;
 	void vegspro_map(address_map &map) ATTR_COLD;
+	void sk88pro_map(address_map &map) ATTR_COLD;
+	void xpgs_map(address_map &map) ATTR_COLD;
 	void xp_rom_map(address_map &map) ATTR_COLD;
+	void xpgs_xp_rom_map(address_map &map) ATTR_COLD;
 	void pro_xp_rom_map(address_map &map) ATTR_COLD;
 
 	u8 ga_r(offs_t offset);
@@ -116,6 +121,7 @@ protected:
 	u16 ram_alias_r(offs_t offset) { return m_nvram[0x4000 + offset]; }
 	void ram_alias_w(offs_t offset, u16 data, u16 mem_mask) { COMBINE_DATA(&m_nvram[0x4000 + offset]); }
 	void xp_int_w(int state);
+	void xp_irq0_w(int state);
 	void lsp_serial_w(offs_t port, u32 data);
 	u32 lsp_serial_r(offs_t strobe);
 	void lsp_mute_w(u8 data);
@@ -373,6 +379,12 @@ void roland_sc88_state::xp_int_w(int state)
 	m_maincpu->set_input_line(1, state ? ASSERT_LINE : CLEAR_LINE);
 }
 
+void roland_sc88_state::xp_irq0_w(int state)
+{
+	m_xp_int = state;
+	m_maincpu->set_input_line(0, state ? ASSERT_LINE : CLEAR_LINE);
+}
+
 //-------------------------------------------------
 //  the XP clocks the LSP: SDOB carries the EFX send to TRR, TRS0 comes back on SDIA5
 //-------------------------------------------------
@@ -543,6 +555,23 @@ void roland_sc88_state::vegspro_map(address_map &map)
 	map(0xf00000, 0xf000ff).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
 }
 
+// the overlay ROM's first 128 KB replace the main ROM's, vector table included
+void roland_sc88_state::sk88pro_map(address_map &map)
+{
+	sc88pro_map(map);
+	map(0x000000, 0x01ffff).rom().region("progrom", 0x100000);
+	map(0x100000, 0x17ffff).mirror(0x080000).rom().region("progrom", 0x100000);
+}
+
+void roland_sc88_state::xpgs_map(address_map &map)
+{
+	map(0x000000, 0x07ffff).rom().region("progrom", 0);
+	map(0x008000, 0x00ffff).rw(FUNC(roland_sc88_state::ram_alias_r), FUNC(roland_sc88_state::ram_alias_w));
+	map(0x080000, 0x08ffff).ram().share(m_nvram);
+	map(0x0e8000, 0x0effff).rw(FUNC(roland_sc88_state::ram_alias_r), FUNC(roland_sc88_state::ram_alias_w));
+	map(0x0e0000, 0x0e3fff).rw(m_xp, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
+}
+
 // the XP's region number: bits 6-4 select the ROM chip, bits 3-0 the 1 MB page in it
 void roland_sc88_state::xp_rom_map(address_map &map)
 {
@@ -550,6 +579,12 @@ void roland_sc88_state::xp_rom_map(address_map &map)
 	map(0x1000000, 0x11fffff).rom().region("waverom", 0x200000);
 	map(0x2000000, 0x21fffff).rom().region("waverom", 0x400000);
 	map(0x3000000, 0x31fffff).rom().region("waverom", 0x600000);
+}
+
+void roland_sc88_state::xpgs_xp_rom_map(address_map &map)
+{
+	xp_rom_map(map);
+	map(0x4000000, 0x41fffff).rom().region("waverom", 0x800000);
 }
 
 // five 32 Mbit ROMs, XWCS0-4 = IC20-IC24 (service notes, main circuit diagram)
@@ -751,6 +786,12 @@ static INPUT_PORTS_START(sc88pro)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level <")
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level >")
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
+	// the model strap, read at power-on beside the gate array's readback (set where the gate array is missing)
+	//   no GA  strap  identity
+	//     0      0    SC-88Pro
+	//     0      1    SC-88ProVL
+	//     1      0    03-SC-R
+	//     1      1    SC-88ProVL BOARD
 	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("KEY3")
@@ -940,6 +981,40 @@ void roland_sc88_state::vegspro(machine_config &config)
 	m_maincpu->write_port3().set(FUNC(roland_sc88_state::lsp_mute_w));
 }
 
+void roland_sc88_state::sk88pro(machine_config &config)
+{
+	sc88pro(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::sk88pro_map);
+}
+
+void roland_sc88_state::xpgs(machine_config &config)
+{
+	HD6415108(config, m_maincpu, 20_MHz_XTAL);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::xpgs_map);
+	m_maincpu->read_adc<0>().set(FUNC(roland_sc88_state::battery_r));
+	m_maincpu->read_port4().set(FUNC(roland_sc88_state::port4_r));
+	m_maincpu->read_port5().set(FUNC(roland_sc88_state::port5_r));
+	m_maincpu->write_port4().set(FUNC(roland_sc88_state::port4_w));
+	m_maincpu->read_port8().set(FUNC(roland_sc88_state::port8_r));
+	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
+
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
+	mdin.rxd_handler().set(m_maincpu, FUNC(hd6415108_device::sci_rx_w<0>));
+	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
+	mdin2.rxd_handler().set(m_maincpu, FUNC(hd6415108_device::sci_rx_w<1>));
+	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+
+	SPEAKER(config, "speaker", 2).front();
+
+	ROLAND_XP(config, m_xp, 24.576_MHz_XTAL);
+	m_xp->set_addrmap(roland_xp_device::AS_WAVE, &roland_sc88_state::xpgs_xp_rom_map);
+	m_xp->int_callback().set(FUNC(roland_sc88_state::xp_irq0_w));
+	m_xp->add_route(2, "speaker", 1.0, 0);
+	m_xp->add_route(3, "speaker", 1.0, 1);
+}
+
 #define ROM_LOAD16_WORD_SWAP_BIOS(bios,name,offset,length,hash) \
 		ROMX_LOAD(name, offset, length, hash, ROM_GROUPWORD | ROM_REVERSE | ROM_BIOS(bios))
 #define ROM_LOAD16_WORD_BIOS(bios,name,offset,length,hash) \
@@ -1003,21 +1078,34 @@ ROM_START(sc88pro)
 	ROM_LOAD("roland-r01124790-521.ic24", 0x1000000, 0x400000, BAD_DUMP CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
 ROM_END
 
-/*
 ROM_START(sk88pro)
-	ROM_REGION16_BE(0x100000, "progrom", 0)
-	ROM_LOAD("roland-r01348078.ic8", 0x00000, 0x100000, NO_DUMP)
-	ROM_LOAD("roland_r01454223.ic7", 0x00000, 0x80000, NO_DUMP) // overlay
+	ROM_REGION16_BE(0x200000, "progrom", 0)
+	// the 8M main ROM is undumped; the VE-GSPro's has the same tone-data pages
+	ROM_LOAD16_WORD_SWAP("roland-r01348078.ic8", 0x000000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
+	// overlay ROM, program v1.01
+	ROM_LOAD("roland-r01454223.ic7", 0x100000, 0x080000, CRC(f86ba134) SHA1(29067eef8fe3e5ec2fb3d64bee6c6c9b4920da82))
 
 	ROM_REGION(0x2000, "subcpu", 0)
 	ROM_LOAD("roland-r01235734-m38881m2-152gp.ic5", 0x0000, 0x2000, NO_DUMP)
 
 	ROM_REGION(0x1400000, "waverom", 0)
-	ROM_LOAD("roland-r01348723.ic13", 0x0000000, 0x800000, BAD_DUMP CRC(5754EE2E) SHA1(5cc1700b3f41921ed81fe3b92ba9ec28bd6649c9))
-	ROM_LOAD("roland-r01348734.ic15", 0x0800000, 0x800000, BAD_DUMP CRC(E2B57861) SHA1(78b37ce0e735ad2c3e51338e74219a103d7fadba))
-	ROM_LOAD("roland-r01233667-314.ic17", 0x1000000, 0x400000, CRC(93541E95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
+	ROM_LOAD("roland-r01348723.ic13", 0x0000000, 0x800000, BAD_DUMP CRC(5754ee2e) SHA1(5cc1700b3f41921ed81fe3b92ba9ec28bd6649c9))
+	ROM_LOAD("roland-r01348734.ic15", 0x0800000, 0x800000, BAD_DUMP CRC(e2b57861) SHA1(78b37ce0e735ad2c3e51338e74219a103d7fadba))
+	ROM_LOAD("roland-r01233667-314.ic17", 0x1000000, 0x400000, CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
 ROM_END
-*/
+
+ROM_START(xpgs)
+	ROM_REGION16_BE(0x80000, "progrom", 0)
+	ROM_LOAD("xpgs_control.bin", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
+
+	ROM_REGION(0xa00000, "waverom", 0)
+	// the first four wave ROMs are undumped; the program's checksum table matches the SC-88's
+	ROM_LOAD("sc88-pcm-ic-325.ic14", 0x000000, 0x200000, BAD_DUMP CRC(f9dd9e49) SHA1(860dcd9804ded4cd46aab38bfc3764a1ad7a6b65))
+	ROM_LOAD("sc88-pcm-ic-326.ic8",  0x200000, 0x200000, BAD_DUMP CRC(05f939f2) SHA1(ac95c26c46c40aacb944f5d45634c93bee9e6d90))
+	ROM_LOAD("sc88-pcm-ic-327.ic7",  0x400000, 0x200000, BAD_DUMP CRC(a6fc7393) SHA1(d88bf13c3d74097991b783295d95ccfae2c9282d))
+	ROM_LOAD("sc88-pcm-ic-328.ic6",  0x600000, 0x200000, BAD_DUMP CRC(7bc514aa) SHA1(03e70ae2efd190f41af24be01b1abaa84bfa93d9))
+	ROM_LOAD("xpgs_wave4.bin",       0x800000, 0x200000, CRC(8726d8a2) SHA1(0a4c24a70cce2fc4c2e8a1ff93e8ce858ec04a9f))
+ROM_END
 
 ROM_START(vegspro)
 	ROM_REGION16_BE(0x100000, "progrom", 0)
@@ -1038,5 +1126,6 @@ ROM_END
 SYST(1994, sc88, 0, 0, sc88, sc88, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88", 0)
 SYST(1995, sc88vl, sc88, 0, sc88vl, sc88vl, roland_sc88vl_state, init_sc88, "Roland", "Sound Canvas SC-88VL", 0)
 SYST(1996, sc88pro, 0, 0, sc88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88Pro", 0)
-//SYST(1998, sk88pro, 0, 0, sk88pro, sc88, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
+SYST(1997, sk88pro, 0, 0, sk88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
 SYST(1998, vegspro, 0, 0, vegspro, 0, roland_sc88_state, init_sc88, "Roland", "VE-GSPro Voice Expansion Board", MACHINE_NOT_WORKING)
+SYST(1997, xpgs, 0, 0, xpgs, 0, roland_sc88_state, init_sc88, "Roland", "XP-GS sound board", MACHINE_NOT_WORKING)
