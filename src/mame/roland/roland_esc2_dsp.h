@@ -83,7 +83,7 @@ private:
 		OP_C_SCALE, OP_C_SHIFT, OP_C_RIGHT_SHIFT, OP_C_FREXP, OP_C_SAVE, OP_C_RESTORE,
 		OP_C_LOGIC_COMPLEMENT, OP_C_ABS_MIN, OP_C_UNARY7, OP_C_FLOOR32, OP_C_ADDRESS,
 		OP_D_SELECT, OP_D_ADDRESS, OP_D_ADDRESS_REGISTER, OP_D_JUMP, OP_D_CALL, OP_D_CALL_REGISTER, OP_D_NOTIFY, OP_D_CLEAR, OP_D_COUNTER, OP_D_STEP, OP_D_RETURN,
-		OP_D_SKIP, OP_D_END,
+		OP_D_SKIP, OP_D_END, OP_D_LOOP,
 		OP_E_OPERAND, OP_E_PUBLISH, OP_E_INDIRECT, OP_E_DELAY, OP_E_TOKEN, OP_E_SAMPLE, OP_E_REQUEST, OP_E_CELL_REQUEST,
 		OP_E_LOCAL, OP_E_BUS, OP_E_FORM, OP_E_ZERO
 	};
@@ -92,7 +92,7 @@ private:
 	{
 		F_SIGMA = 0x01, F_SECOND = 0x02, F_SECOND_IMMEDIATE = 0x04, F_SECOND_ALONE = 0x08,
 		F_NEGATE = 0x10, F_ADDEND = 0x20, F_HALVE = 0x40, F_MOVE = 0x80,
-		F_CONDITIONAL = 0x02, F_ADD = 0x04, F_NEGATIVE = 0x08,
+		F_CONDITIONAL = 0x02, F_ADD = 0x04, F_NEGATIVE = 0x08, F_DECREMENT = 0x10, F_NONZERO = 0x20, F_DISTANCE = 0x40,
 		F_STORE = 0x02, F_INDEXED = 0x04, F_STEP = 0x08
 	};
 
@@ -282,6 +282,7 @@ private:
 	static double get(const source &s, const double *r) { return s.mode == 2 ? s.value : s.mode ? -r[s.reg] : r[s.reg]; }
 	void classify(const packet &p, unsigned k, operation &op);
 	void classify_form(operation &op);
+	void classify_loop(const packet &p, operation &op);
 	bool condition(const unit_state &u, u16 word) const;
 	double read_operand(unsigned unit, u16 address) const;
 	void write_operand(unsigned unit, u16 address, double value);

@@ -59,7 +59,7 @@ constexpr u32 FIELD_NUMERIC = 1 << 30;
 constexpr int NO_TRANSFER = -1;
 constexpr int RETURN = -2;
 
-enum : u8 { TRANSFER_RETURN, TRANSFER_JUMP, TRANSFER_CALL };
+enum : u8 { TRANSFER_RETURN, TRANSFER_JUMP, TRANSFER_CALL, TRANSFER_LOOP };
 
 double wrap(double x)
 {
@@ -1089,6 +1089,8 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 						op.flags |= F_NEGATIVE;
 				}
 			}
+			else
+				classify_loop(p, op);
 			break;
 		}
 		if (w >> 8)
@@ -1136,6 +1138,14 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 		}
 		else if (low == 0xe9 || low == 0xf1)
 			op.type = OP_NONE;
+		else if (low >= 0xea && low < 0xf4)
+		{
+			op.type = OP_D_ADDRESS;
+			op.y = low & 3;
+			op.q = low < 0xec ? 0.0 : low < 0xf0 ? 1.0 : -1.0;
+			if (low >= 0xec)
+				op.flags |= F_ADD;
+		}
 		else if (low >= 0xf4 && low < 0xf8)
 			op.type = OP_D_SKIP;
 		else if (low >= 0xf8 && low < 0xfc)
@@ -1178,9 +1188,10 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			op.type = OP_E_DELAY;
 			op.value = w & 15;
 		}
-		else if ((w & 0x8ff0) == 0x0a80)
+		else if ((w & 0x8fc0) == 0x0a80 && (w & 0x30) != 0x10)
 		{
 			op.type = OP_E_TOKEN;
+			op.y = (w >> 4) & 3;
 			op.value = w & 15;
 		}
 		else if ((w & 0x8ff0) == 0x08b0)
@@ -1216,6 +1227,49 @@ void mb8aa4181_dsp_device::classify(const packet &p, unsigned k, operation &op)
 			classify_form(op);
 		break;
 	}
+}
+
+void mb8aa4181_dsp_device::classify_loop(const packet &p, operation &op)
+{
+	const u16 w = op.word;
+	const unsigned top = w >> 12, n = (w >> 4) & 15, low = w & 0xff;
+	const s32 offset = s8(low);
+	if (top >= 0xe)
+	{
+		if (!n)
+			op.type = OP_NONE;
+		return;
+	}
+	if (top == 0xd)
+	{
+		if (BIT(w, 11) || (((w >> 8) & 7) == 1 && 256 - low == p.length))
+			return;
+		op.type = OP_D_LOOP;
+		op.value = u32(offset);
+		return;
+	}
+	op.x = (w >> 8) & 7;
+	op.flags |= F_DECREMENT;
+	if (!BIT(w, 11))
+	{
+		op.type = OP_D_LOOP;
+		op.value = u32(offset);
+		op.flags |= F_NONZERO;
+		return;
+	}
+	if (n & 1)
+	{
+		if (BIT(w, 3))
+			return;
+		op.type = OP_D_LOOP;
+		op.y = w & 7;
+		op.flags |= F_DISTANCE;
+		return;
+	}
+	op.type = OP_D_LOOP;
+	op.value = u32(s32(s16(raw(p, w & 15, 2))));
+	if (!n)
+		op.flags |= F_NONZERO;
 }
 
 void mb8aa4181_dsp_device::classify_form(operation &op)
@@ -1256,7 +1310,7 @@ void mb8aa4181_dsp_device::classify_form(operation &op)
 	case 0x8:
 		if (mode < 2)
 			absolute(0x4000, w & 0x7f);
-		else if (mode == 3 || !store)
+		else
 			indexed(0x4000, k, w & 15, 0x3ff, mode == 3);
 		break;
 	case 0x9:
@@ -1682,6 +1736,24 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			else
 				has = false;
 			break;
+		case OP_D_LOOP:
+		{
+			has = false;
+			bool taken = true;
+			if (op.flags & F_DECREMENT)
+			{
+				const double left = r[x] - 1.0 / 16384.0;
+				sets[nsets++] = { u8(x), left };
+				taken = !(op.flags & F_NONZERO) || left != 0.0;
+			}
+			if (taken)
+			{
+				const s32 distance = (op.flags & F_DISTANCE) ? s32(std::floor(r[y] * 16384.0)) : s32(op.value);
+				transfer = (p.pc + 2 * p.length + 2 * distance) & 0xffff;
+				kind = TRANSFER_LOOP;
+			}
+			break;
+		}
 		case OP_D_RETURN:
 			has = false;
 			if (!(op.flags & F_CONDITIONAL) || condition(u, op.word))
@@ -1751,7 +1823,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 			break;
 		case OP_E_TOKEN:
 			has = false;
-			requests[nrequests++] = { REQUEST_TOKEN, op.value, r[d] };
+			requests[nrequests++] = { REQUEST_TOKEN, (y << 16) | op.value, r[d] };
 			break;
 		case OP_E_SAMPLE:
 			has = false;
@@ -1854,7 +1926,7 @@ int mb8aa4181_dsp_device::step(unsigned unitnum, const packet &p, u8 &kind)
 		}
 		else if (q.type == REQUEST_TOKEN)
 		{
-			const unsigned slot = (u32(u.sel[0]) + q.address) & (SLOTS - 1);
+			const unsigned slot = (u32(u.sel[q.address >> 16]) + (q.address & 15)) & (SLOTS - 1);
 			const u32 address = token_cell(u, q.value);
 			const double values[3] = { cell(address), cell(address + 1), position - std::floor(position) };
 			for (unsigned j = 0; j < 3; j++)
