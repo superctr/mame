@@ -59,6 +59,8 @@
 
 #include "emu.h"
 
+#include "roland_uipc.h"
+
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
 #include "cpu/sh/sh7014.h"
@@ -73,7 +75,6 @@
 #include <algorithm>
 
 #define LOG_GA      (1U << 1)
-#define LOG_UIPC    (1U << 2)
 
 #define VERBOSE (LOG_GENERAL)
 #include "logmacro.h"
@@ -92,7 +93,7 @@ public:
 		, m_lsp(*this, "lsp")
 		, m_lcdc(*this, "lcdc")
 		, m_computer_sw(*this, "COMPUTER")
-		, m_uipc_sw(*this, "SWITCH")
+		, m_uipc(*this, "uipc")
 		, m_panel(*this, "PANEL")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_dial(*this, "VALUE")
@@ -133,8 +134,6 @@ private:
 	void sc8820_porte_w(u16 data);
 	void sc8820_panel_update();
 
-	template <int Channel> u8 uipc_r(offs_t offset);
-	template <int Channel> void uipc_w(offs_t offset, u8 data);
 
 	u16 computer_sw_r() { return m_computer_sw.read_safe(0); }
 
@@ -150,7 +149,7 @@ private:
 	required_device<roland_lsp_device> m_lsp;
 	optional_device<sed1330_device> m_lcdc;
 	optional_ioport m_computer_sw;
-	optional_ioport m_uipc_sw;
+	required_device<roland_uipc_device> m_uipc;
 	optional_ioport m_panel;
 	optional_ioport_array<4> m_keys;
 	optional_ioport m_dial;
@@ -174,7 +173,6 @@ private:
 	bool m_scan_encoder = false;
 	u8 m_dial_position = 0;
 	s32 m_encoder = 0;
-	u32 m_uipc_step = 0;
 	u16 m_porta = 0xffff;
 	u16 m_porte = 0xffff;
 	u8 m_lamp_rows[3]{};
@@ -229,7 +227,6 @@ void roland_sc8850_state::machine_start()
 	save_item(NAME(m_scan_encoder));
 	save_item(NAME(m_dial_position));
 	save_item(NAME(m_encoder));
-	save_item(NAME(m_uipc_step));
 	save_item(NAME(m_porta));
 	save_item(NAME(m_porte));
 	save_item(NAME(m_lamp_rows));
@@ -247,7 +244,6 @@ void roland_sc8850_state::machine_reset()
 	m_scan_encoder = false;
 	m_dial_position = 0;
 	m_encoder = 0;
-	m_uipc_step = 0;
 	m_porta = 0xffff;
 	m_porte = 0xffff;
 	std::fill(std::begin(m_lamp_rows), std::end(m_lamp_rows), 0);
@@ -479,65 +475,6 @@ void roland_sc8850_state::sc8820_panel_update()
 
 
 //-------------------------------------------------
-//  the two host channels of the M37640 USB controller, "UIPC" to the
-//  firmware: +0 data, +1 status, with bit 0 of the status saying a byte has
-//  arrived on channel 1 and bit 1 that channel 0 will take one.  A byte
-//  whose status has any of bits 4-7 set is a tagged one and the firmware's
-//  plain reader discards it.
-//
-//  The controller runs a 32 KB program that the SC-8850's own flash carries
-//  at 0x00250674 and pushes across this mailbox at power-on: it waits for
-//  fa, answers a tagged byte, then fb, sends the two bytes of a constant,
-//  waits for fc, and then either fe (send the program) or fd followed by ff
-//  (the controller is already running).  Nothing here emulates the
-//  controller, so this walks the short branch of that handshake and then
-//  goes quiet, which is what gets the machine past its power-on wait.
-//-------------------------------------------------
-
-template <int Channel>
-u8 roland_sc8850_state::uipc_r(offs_t offset)
-{
-	if (Channel == 0)
-		return offset ? 0x02 : 0x00;
-
-	// what an absent controller looks like to both handshakes: the untagged
-	// fa the SC-8850's download aborts on, then the tag 9 byte the SC-8820
-	// asks for either way, then the ff that ends the exchange.  That byte
-	// carries the SC-8820's rear COMPUTER switch, whose four positions go to
-	// the controller's IFSEL0 to IFSEL3 pins and not to the CPU's A/D; the
-	// firmware picks its MIDI routing tables by it - 0 USB, 1 MIDI, 2 and 3
-	// the two serial positions.  The SC-8850 has no such port.
-	const u8 boot[][2] = {
-		{ 0x01, 0xfa }, { 0x91, u8(m_uipc_sw.read_safe(0)) }, { 0x01, 0xff }
-	};
-
-	if (m_uipc_step >= std::size(boot))
-		return 0x00;
-
-	if (offset == 0)
-	{
-		const u8 data = boot[m_uipc_step][1];
-		if (!machine().side_effects_disabled())
-		{
-			LOGMASKED(LOG_UIPC, "%s: uipc handshake byte %02x\n", machine().describe_context(), data);
-			m_uipc_step++;
-		}
-		return data;
-	}
-
-	return boot[m_uipc_step][0];
-}
-
-template <int Channel>
-void roland_sc8850_state::uipc_w(offs_t offset, u8 data)
-{
-	LOGMASKED(LOG_UIPC, "%s: uipc%d write %d = %02x\n", machine().describe_context(), Channel, offset, data);
-}
-
-
-
-
-//-------------------------------------------------
 //  the link between the two XPs: six SDOA and six SDIA lines in both
 //  directions, carrying fourteen words a frame.  Both programs strobe port A
 //  on the same eight slots, so each chip reads what the other has at that
@@ -619,8 +556,8 @@ void roland_sc8850_state::sc8850_map(address_map &map)
 	map(0x00200000, 0x002fffff).rom().region("progrom", 0);
 	map(0x00500000, 0x00500000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
 	map(0x00500001, 0x00500001).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
-	map(0x00540000, 0x00540001).rw(FUNC(roland_sc8850_state::uipc_r<0>), FUNC(roland_sc8850_state::uipc_w<0>));
-	map(0x00580000, 0x00580001).rw(FUNC(roland_sc8850_state::uipc_r<1>), FUNC(roland_sc8850_state::uipc_w<1>));
+	map(0x00540000, 0x00540001).rw(m_uipc, FUNC(roland_uipc_device::tx_r), FUNC(roland_uipc_device::tx_w));
+	map(0x00580000, 0x00580001).rw(m_uipc, FUNC(roland_uipc_device::rx_r), FUNC(roland_uipc_device::rx_w));
 	map(0x005c0000, 0x005c000f).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
 	map(0x006c0000, 0x006c00ff).rw(FUNC(roland_sc8850_state::ga_r), FUNC(roland_sc8850_state::ga_w));
 	map(0x00a00000, 0x00a03fff).rw(m_slave, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
@@ -636,8 +573,8 @@ void roland_sc8850_state::sc8820_map(address_map &map)
 {
 	map(0x00000000, 0x0000ffff).rom().region("cpurom", 0);
 	map(0x00500000, 0x0050000f).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
-	map(0x00540000, 0x00540001).rw(FUNC(roland_sc8850_state::uipc_r<0>), FUNC(roland_sc8850_state::uipc_w<0>));
-	map(0x00580000, 0x00580001).rw(FUNC(roland_sc8850_state::uipc_r<1>), FUNC(roland_sc8850_state::uipc_w<1>));
+	map(0x00540000, 0x00540001).rw(m_uipc, FUNC(roland_uipc_device::tx_r), FUNC(roland_uipc_device::tx_w));
+	map(0x00580000, 0x00580001).rw(m_uipc, FUNC(roland_uipc_device::rx_r), FUNC(roland_uipc_device::rx_w));
 	map(0x00900000, 0x00903fff).rw(m_master, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
 	map(0x00d00000, 0x00efffff).rom().region("progrom", 0);
 	map(0x01000000, 0x0107ffff).mirror(0x00f80000).ram();
@@ -766,6 +703,12 @@ void roland_sc8850_state::sc8850(machine_config &config)
 	m_maincpu->read_adc<0>().set(FUNC(roland_sc8850_state::computer_sw_r));
 	m_maincpu->read_porta().set(FUNC(roland_sc8850_state::porta_r));
 
+	// an absent controller as both firmwares' start-up exchanges see it:
+	// the fa that aborts the SC-8850's program download, the tag 9 byte
+	// carrying the SC-8820's rear COMPUTER switch, and the ff that ends it
+	ROLAND_UIPC(config, m_uipc);
+	m_uipc->set_announcement({ { 0x01, 0xfa }, { 0x91, roland_uipc_device::IFSEL }, { 0x01, 0xff } });
+
 	// MIDI IN A and B are the two on-chip serial ports, MIDI OUT/THRU is SCI0's transmitter
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(sh7014_device::sci_rx_w<0>));
@@ -826,6 +769,10 @@ void roland_sc8850_state::sc8820(machine_config &config)
 	m_maincpu->read_porte().set(FUNC(roland_sc8850_state::sc8820_porte_r));
 	m_maincpu->write_porte().set(FUNC(roland_sc8850_state::sc8820_porte_w));
 	m_maincpu->write_porta().set(FUNC(roland_sc8850_state::sc8820_porta_w));
+
+	ROLAND_UIPC(config, m_uipc);
+	m_uipc->set_announcement({ { 0x01, 0xfa }, { 0x91, roland_uipc_device::IFSEL }, { 0x01, 0xff } });
+	m_uipc->ifsel_callback().set_ioport("SWITCH");
 
 	// one MIDI IN and one MIDI OUT/THRU, both on SCI0; SCI1 is the COMPUTER
 	// serial port alone here, and nothing answers it
