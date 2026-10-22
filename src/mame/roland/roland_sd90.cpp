@@ -60,6 +60,8 @@
 
 #include "emu.h"
 
+#include "roland_uipc.h"
+
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
 #include "cpu/sh/sh3comn.h"
@@ -92,6 +94,7 @@ public:
 	sd90_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
+		, m_uipc(*this, "uipc")
 		, m_xv(*this, "xv%u", 0U)
 		, m_mr3(*this, "mr3")
 		, m_flash(*this, "flash")
@@ -131,8 +134,6 @@ protected:
 	void sd90_port_e_w(u64 data);
 	void update_dac();
 
-	template <int Channel> u8 uipc_r(offs_t offset);
-	template <int Channel> void uipc_w(offs_t offset, u8 data);
 	u8 usb_r(offs_t offset);
 	void usb_w(offs_t offset, u8 data);
 
@@ -151,7 +152,6 @@ protected:
 
 	enum { LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM, LEDS };
 
-	u32 m_uipc_step = 0;
 	u8 m_dial_last = 0;
 	s8 m_dial_pending = 0;
 	u8 m_encoder_phase = 0;
@@ -172,6 +172,7 @@ protected:
 	emu_timer *m_knob_timer = nullptr;
 
 	required_device<sh7709_device> m_maincpu;
+	optional_device<roland_uipc_device> m_uipc;
 	required_device_array<roland_xv_device, 2> m_xv;
 	optional_device<roland_mr_device> m_mr3;
 	optional_device<intelfsh16_device> m_flash;
@@ -195,7 +196,6 @@ void sd90_state::machine_start()
 	if (m_knob[0])
 		m_knob_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
 
-	save_item(NAME(m_uipc_step));
 	save_item(NAME(m_dial_last));
 	save_item(NAME(m_dial_pending));
 	save_item(NAME(m_encoder_phase));
@@ -214,7 +214,6 @@ void sd90_state::machine_start()
 
 void sd90_state::machine_reset()
 {
-	m_uipc_step = 0;
 	m_usb_state = 0;
 
 	m_tg_reset = true;
@@ -425,57 +424,6 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_knobs)
 
 
 //-------------------------------------------------
-//  the USB controller's mailboxes.  IC13A, a TC74VHCT139A, decodes the
-//  chip select XCSIPC into XS0 and XS1, which are the S0 and S1 pins of
-//  IC17's bus interface unit, with the CPU's A1 at its A0 and XRD and XWR
-//  at its R and W; its IBF and OBF come back as IRQ2 and IRQ3.  So each
-//  window is one channel: data at +0, status at +2, bit 1 of
-//  UIPC(0) set while the byte just written is still there and bit 0 of
-//  UIPC(1) set while one waits, with bits 4-7 of the status the byte's
-//  tag -- the same channels, bits and tags as the SC-8850's.
-//
-//  At power-on the firmware waits for an untagged 0xaa from the
-//  controller, reads one byte after it, and then pushes two blocks of its
-//  own across the channel.  Nothing here emulates the M37641M8, whose
-//  program is a mask ROM of its own and undumped, so this answers that
-//  announcement and then goes quiet, which is what gets the machine past
-//  its power-on wait.
-//-------------------------------------------------
-
-template <int Channel>
-u8 sd90_state::uipc_r(offs_t offset)
-{
-	// the outbound channel always takes the byte at once
-	if (Channel == 0)
-		return 0;
-
-	static const u8 boot[][2] = { { 0x01, 0xaa }, { 0x01, 0x00 } };
-
-	if (m_uipc_step >= std::size(boot))
-		return 0;
-
-	if (offset == 0)
-	{
-		const u8 data = boot[m_uipc_step][1];
-		if (!machine().side_effects_disabled())
-		{
-			LOGMASKED(LOG_UIPC, "%s: uipc announcement byte %02x\n", machine().describe_context(), data);
-			m_uipc_step++;
-		}
-		return data;
-	}
-
-	return boot[m_uipc_step][0];
-}
-
-template <int Channel>
-void sd90_state::uipc_w(offs_t offset, u8 data)
-{
-	LOGMASKED(LOG_UIPC, "%s: uipc(%d) write %x = %02x\n", machine().describe_context(), Channel, offset, data);
-}
-
-
-//-------------------------------------------------
 //  what the SD-90 has there instead: the MR3's host port at 0x18000000,
 //  and at 0x18800000 its USB controller, a window of 48 bytes the two
 //  CPUs share, on IRQ2.  +8 is the controller's reason byte, +10 the
@@ -532,8 +480,14 @@ void sd90_state::sd80_map(address_map &map)
 	m_tg_view[0](0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC19
 	m_tg_view[0](0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC27
 	m_tg_view[1](0x14000000, 0x17ffffff).noprw();
-	map(0x18000000, 0x18000003).rw(FUNC(sd90_state::uipc_r<0>), FUNC(sd90_state::uipc_w<0>));   // area 6, XS0
-	map(0x19000000, 0x19000003).rw(FUNC(sd90_state::uipc_r<1>), FUNC(sd90_state::uipc_w<1>));   // XS1
+	// IC13A decodes XCSIPC into XS0 and XS1, the S0 and S1 pins of IC17's bus
+	// interface unit, with the CPU's A1 at its A0; IBF and OBF are IRQ2 and IRQ3
+	map(0x18000000, 0x18000003).lrw8(                                     // area 6, XS0
+			NAME([this] (offs_t offset) { return m_uipc->tx_r(offset >> 1); }),
+			NAME([this] (offs_t offset, u8 data) { m_uipc->tx_w(offset >> 1, data); }));
+	map(0x19000000, 0x19000003).lrw8(                                     // XS1
+			NAME([this] (offs_t offset) { return m_uipc->rx_r(offset >> 1); }),
+			NAME([this] (offs_t offset, u8 data) { m_uipc->rx_w(offset >> 1, data); }));
 }
 
 void sd90_state::sd90_map(address_map &map)
@@ -600,6 +554,10 @@ void sd90_state::sd80(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
+
+	// the controller's announcement: an untagged aa, then one byte more
+	ROLAND_UIPC(config, m_uipc);
+	m_uipc->set_announcement({ { 0x01, 0xaa }, { 0x01, 0x00 } });
 
 	// IC19's SDO4 carries OUTPUT 1 and its SDO5 OUTPUT 2, the stream's first
 	// two pairs; its SDO3 goes to the digital transmitter, which is not here
