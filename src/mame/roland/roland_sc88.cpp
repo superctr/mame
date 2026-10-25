@@ -55,6 +55,7 @@
 #include "sound/roland_lsp.h"
 #include "sound/roland_xp.h"
 #include "video/hd44780.h"
+#include "video/t6a04.h"
 
 #include "emupal.h"
 #include "screen.h"
@@ -199,6 +200,7 @@ class roland_sc880_state : public roland_sc88_state
 public:
 	roland_sc880_state(const machine_config &mconfig, device_type type, const char *tag)
 		: roland_sc88_state(mconfig, type, tag)
+		, m_glcd(*this, "glcd")
 		, m_digits(*this, "digit%u", 0U)
 	{
 	}
@@ -206,18 +208,15 @@ public:
 	void sc880(machine_config &config) ATTR_COLD;
 
 protected:
-	virtual void machine_start() override ATTR_COLD;
 	virtual void lcd_write(offs_t offset, u8 data) override;
 
 private:
 	void sc880_map(address_map &map) ATTR_COLD;
-	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void glass_palette(palette_device &palette) const ATTR_COLD;
+	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
-	output_finder<34> m_digits;
-
-	u8 m_glcd[34][17]{};
-	u8 m_glcd_x = 0;
-	u8 m_glcd_y = 0;
+	required_device<t6a04_device> m_glcd;
+	output_finder<25> m_digits;
 };
 
 
@@ -673,48 +672,39 @@ static void lcd_fill(bitmap_ind16 &bitmap, int x, int y, int w, int h, int state
 			bitmap.pix(yy, xx) = state;
 }
 
-void roland_sc880_state::machine_start()
-{
-	roland_sc88_state::machine_start();
-
-	save_item(NAME(m_glcd));
-	save_item(NAME(m_glcd_x));
-	save_item(NAME(m_glcd_y));
-}
-
-// a byte-wide bitmap, 17 bytes by 34 lines: 2x picks the byte column, 8x-Ax the line, and data steps down.
-// Lines 0 and 1 are the two commons of the glass's 8-segment row, four columns to a digit:
-// line 0 holds segments a g c b, line 1 f e d and the eighth
 void roland_sc880_state::lcd_write(offs_t offset, u8 data)
 {
 	if (offset)
-	{
-		if (m_glcd_y < 34 && m_glcd_x < 17)
-		{
-			m_glcd[m_glcd_y][m_glcd_x] = data;
-			if (m_glcd_y < 2)
-				for (int half = 0; half < 2; half++)
-				{
-					const u8 com0 = m_glcd[0][m_glcd_x] >> (4 - half * 4);
-					const u8 com1 = m_glcd[1][m_glcd_x] >> (4 - half * 4);
-					m_digits[m_glcd_x * 2 + half] = BIT(com0, 3) | BIT(com0, 0) << 1 | BIT(com0, 1) << 2 | BIT(com1, 1) << 3
-							| BIT(com1, 2) << 4 | BIT(com1, 3) << 5 | BIT(com0, 2) << 6 | BIT(com1, 0) << 7;
-				}
-		}
-		m_glcd_y++;
-	}
-	else if ((data & 0xe0) == 0x20)
-		m_glcd_x = data & 0x1f;
-	else if ((data & 0xc0) == 0x80)
-		m_glcd_y = data & 0x3f;
+		m_glcd->data_write(data);
+	else
+		m_glcd->control_write(data);
 }
 
-u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+void roland_sc880_state::glass_palette(palette_device &palette) const
 {
-	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
-		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
-			bitmap.pix(y, x) = BIT(m_glcd[y + 2][x >> 3], 7 - (x & 7)) ? rgb_t(0x10, 0x30, 0x18) : rgb_t(0x8c, 0xc8, 0x6c);
-	return 0;
+	palette.set_pen_color(0, rgb_t(0x8c, 0xc8, 0x6c));
+	palette.set_pen_color(1, rgb_t(0x10, 0x30, 0x18));
+}
+
+// Lines 0 and 1 are the two commons of the glass's row of 25 8-segment digits, four columns to a
+// digit: line 0 holds segments a g c b, line 1 f e d and the eighth.  Byte columns 0, 4, 8 and 12
+// and the last half column are not wired to it; lines 2-33 are the dot area
+u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+{
+	int digit = 0;
+	for (int column = 0; column < 17; column++)
+	{
+		if (!(column & 3) && column != 16)
+			continue;
+		for (int half = 0; half < 2 && digit < 25; half++)
+		{
+			const u8 com0 = m_glcd->ram_r(0, column) >> (4 - half * 4);
+			const u8 com1 = m_glcd->ram_r(1, column) >> (4 - half * 4);
+			m_digits[digit++] = BIT(com0, 3) | BIT(com0, 0) << 1 | BIT(com0, 1) << 2 | BIT(com1, 1) << 3
+					| BIT(com1, 2) << 4 | BIT(com1, 3) << 5 | BIT(com0, 2) << 6 | BIT(com1, 0) << 7;
+		}
+	}
+	return m_glcd->screen_update(screen, bitmap, cliprect);
 }
 
 u32 roland_sc88vl_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -1079,11 +1069,14 @@ void roland_sc880_state::sc880(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc880_state::sc880_map);
 
 	config.device_remove("lcd");
-	config.device_remove("palette");
-	m_screen->set_no_palette();
-	m_screen->set_size(136, 32);
-	m_screen->set_visarea_full();
+	subdevice<palette_device>("palette")->set_init(FUNC(roland_sc880_state::glass_palette));
+	m_screen->set_size(136, 34);
+	m_screen->set_visarea(0, 135, 2, 33);
 	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
+
+	T6A04(config, m_glcd);
+	m_glcd->set_size(136, 34);
+	m_glcd->set_ram_width(17);
 
 	config.set_default_layout(layout_roland_sc880);
 }
