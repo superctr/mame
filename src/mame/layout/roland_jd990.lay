@@ -141,24 +141,24 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="key" inputtag="KEY4" inputmask="0x40"><bounds x="2720" y="735" width="140" height="50"/></element>
 		<element ref="t34"><bounds x="3068.275" y="95.18" width="99.45" height="18.59"/></element>
 		<element ref="key" inputtag="KEY0" inputmask="0x01"><bounds x="3048" y="122" width="140" height="50"/></element>
-		<element name="led0" ref="win_red"><bounds x="3057" y="132" width="12" height="30"/></element>
+		<element name="led0" ref="win_red"><bounds x="3102" y="128" width="32" height="11"/></element>
 		<element ref="t36"><bounds x="3234.625" y="95.18" width="74.75" height="18.59"/></element>
 		<element ref="key" inputtag="KEY0" inputmask="0x02"><bounds x="3202" y="122" width="140" height="50"/></element>
-		<element name="led1" ref="win_red"><bounds x="3211" y="132" width="12" height="30"/></element>
+		<element name="led1" ref="win_red"><bounds x="3256" y="128" width="32" height="11"/></element>
 		<element ref="t37"><bounds x="3382.45" y="95.18" width="87.1" height="18.59"/></element>
 		<element ref="key" inputtag="KEY0" inputmask="0x04"><bounds x="3356" y="122" width="140" height="50"/></element>
-		<element name="led2" ref="win_red"><bounds x="3365" y="132" width="12" height="30"/></element>
+		<element name="led2" ref="win_red"><bounds x="3410" y="128" width="32" height="11"/></element>
 		<element ref="t38"><bounds x="3086.8" y="248.18" width="62.4" height="18.59"/></element>
 		<element ref="t39"><bounds x="3231.8" y="224.32" width="80.4" height="17.16"/></element>
 		<element ref="t40"><bounds x="3237.5" y="249.32" width="69" height="17.16"/></element>
 		<element ref="t41"><bounds x="3380.1" y="224.32" width="91.8" height="17.16"/></element>
 		<element ref="t42"><bounds x="3385.8" y="249.32" width="80.4" height="17.16"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x01"><bounds x="3048" y="275" width="140" height="50"/></element>
-		<element name="led4" ref="win_red"><bounds x="3057" y="285" width="12" height="30"/></element>
+		<element name="led4" ref="win_red"><bounds x="3102" y="281" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x02"><bounds x="3202" y="275" width="140" height="50"/></element>
-		<element name="led5" ref="win_red"><bounds x="3211" y="285" width="12" height="30"/></element>
+		<element name="led5" ref="win_red"><bounds x="3256" y="281" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x04"><bounds x="3356" y="275" width="140" height="50"/></element>
-		<element name="led6" ref="win_red"><bounds x="3365" y="285" width="12" height="30"/></element>
+		<element name="led6" ref="win_red"><bounds x="3410" y="281" width="32" height="11"/></element>
 		<element ref="t43"><bounds x="3163.8" y="369.18" width="62.4" height="18.59"/></element>
 		<element ref="rule_e9e9e5"><bounds x="3048" y="376" width="85" height="2"/></element>
 		<element ref="rule_e9e9e5"><bounds x="3257" y="376" width="85" height="2"/></element>
@@ -170,13 +170,13 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t47"><bounds x="3413.325" y="395.18" width="25.35" height="18.59"/></element>
 		<element ref="t48"><bounds x="3567.325" y="395.18" width="25.35" height="18.59"/></element>
 		<element ref="key" inputtag="KEY2" inputmask="0x01"><bounds x="3048" y="420" width="140" height="50"/></element>
-		<element name="led8" ref="win_red"><bounds x="3057" y="430" width="12" height="30"/></element>
+		<element name="led8" ref="win_red"><bounds x="3102" y="426" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY2" inputmask="0x02"><bounds x="3202" y="420" width="140" height="50"/></element>
-		<element name="led9" ref="win_red"><bounds x="3211" y="430" width="12" height="30"/></element>
+		<element name="led9" ref="win_red"><bounds x="3256" y="426" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY2" inputmask="0x04"><bounds x="3356" y="420" width="140" height="50"/></element>
-		<element name="led10" ref="win_red"><bounds x="3365" y="430" width="12" height="30"/></element>
+		<element name="led10" ref="win_red"><bounds x="3410" y="426" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY2" inputmask="0x08"><bounds x="3510" y="420" width="140" height="50"/></element>
-		<element name="led11" ref="win_red"><bounds x="3519" y="430" width="12" height="30"/></element>
+		<element name="led11" ref="win_red"><bounds x="3564" y="426" width="32" height="11"/></element>
 		<element ref="t49"><bounds x="3274.575" y="515.18" width="148.85" height="18.59"/></element>
 		<element ref="rule_f39a32"><bounds x="3048" y="521.25" width="159" height="3.5"/></element>
 		<element ref="rule_f39a32"><bounds x="3491" y="521.25" width="159" height="3.5"/></element>
@@ -185,13 +185,13 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t51"><bounds x="3413.325" y="545.18" width="25.35" height="18.59"/></element>
 		<element ref="t52"><bounds x="3567.325" y="545.18" width="25.35" height="18.59"/></element>
 		<element ref="key" inputtag="KEY3" inputmask="0x01"><bounds x="3048" y="570" width="140" height="50"/></element>
-		<element name="led12" ref="win_red"><bounds x="3057" y="580" width="12" height="30"/></element>
+		<element name="led12" ref="win_red"><bounds x="3102" y="576" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY3" inputmask="0x02"><bounds x="3202" y="570" width="140" height="50"/></element>
-		<element name="led13" ref="win_red"><bounds x="3211" y="580" width="12" height="30"/></element>
+		<element name="led13" ref="win_red"><bounds x="3256" y="576" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY3" inputmask="0x04"><bounds x="3356" y="570" width="140" height="50"/></element>
-		<element name="led14" ref="win_red"><bounds x="3365" y="580" width="12" height="30"/></element>
+		<element name="led14" ref="win_red"><bounds x="3410" y="576" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY3" inputmask="0x08"><bounds x="3510" y="570" width="140" height="50"/></element>
-		<element name="led15" ref="win_red"><bounds x="3519" y="580" width="12" height="30"/></element>
+		<element name="led15" ref="win_red"><bounds x="3564" y="576" width="32" height="11"/></element>
 		<element ref="t53"><bounds x="3105.325" y="631.18" width="25.35" height="18.59"/></element>
 		<element ref="t54"><bounds x="3259.325" y="631.18" width="25.35" height="18.59"/></element>
 		<element ref="t55"><bounds x="3413.325" y="631.18" width="25.35" height="18.59"/></element>
@@ -204,13 +204,13 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t51"><bounds x="3414.3" y="687.32" width="23.4" height="17.16"/></element>
 		<element ref="t52"><bounds x="3568.3" y="687.32" width="23.4" height="17.16"/></element>
 		<element ref="key" inputtag="KEY4" inputmask="0x01"><bounds x="3048" y="710" width="140" height="50"/></element>
-		<element name="led16" ref="win_red"><bounds x="3057" y="720" width="12" height="30"/></element>
+		<element name="led16" ref="win_red"><bounds x="3102" y="716" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY4" inputmask="0x02"><bounds x="3202" y="710" width="140" height="50"/></element>
-		<element name="led17" ref="win_red"><bounds x="3211" y="720" width="12" height="30"/></element>
+		<element name="led17" ref="win_red"><bounds x="3256" y="716" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY4" inputmask="0x04"><bounds x="3356" y="710" width="140" height="50"/></element>
-		<element name="led18" ref="win_red"><bounds x="3365" y="720" width="12" height="30"/></element>
+		<element name="led18" ref="win_red"><bounds x="3410" y="716" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY4" inputmask="0x08"><bounds x="3510" y="710" width="140" height="50"/></element>
-		<element name="led19" ref="win_red"><bounds x="3519" y="720" width="12" height="30"/></element>
+		<element name="led19" ref="win_red"><bounds x="3564" y="716" width="32" height="11"/></element>
 		<element ref="t58"><bounds x="3105.325" y="782.18" width="25.35" height="18.59"/></element>
 		<element ref="t59"><bounds x="3259.325" y="782.18" width="25.35" height="18.59"/></element>
 		<element ref="t60"><bounds x="3413.325" y="782.18" width="25.35" height="18.59"/></element>
