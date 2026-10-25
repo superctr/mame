@@ -29,6 +29,11 @@ public:
 		m_height = h;
 	}
 
+	// bytes per line of display RAM: 15 on the T6A04 itself (120 columns)
+	void set_ram_width(int bytes) { m_ram_width = bytes; }
+
+	uint8_t ram_r(int line, int column) const { return m_lcd_ram[(line & 0x3f) * m_ram_width + column]; }
+
 	// device interface
 	void control_write(uint8_t data);
 	uint8_t control_read();
@@ -45,7 +50,7 @@ protected:
 
 private:
 	uint8_t m_busy_flag;
-	uint8_t m_lcd_ram[960];   //7680 bit (64*120)
+	std::unique_ptr<uint8_t[]> m_lcd_ram;
 	uint8_t m_display_on;
 	uint8_t m_contrast;
 	uint8_t m_xpos;
@@ -60,6 +65,7 @@ private:
 
 	uint8_t m_height;           // number of lines
 	uint8_t m_width;            // pixels for line
+	uint8_t m_ram_width;
 };
 
 // device type definition

@@ -24,7 +24,7 @@ DEFINE_DEVICE_TYPE(T6A04, t6a04_device, "t6a04", "Toshiba T6A04 LCD Controller")
 
 void t6a04_device::device_validity_check(validity_checker &valid) const
 {
-	if (m_height == 0 || m_width == 0)
+	if (m_height == 0 || m_width == 0 || m_ram_width == 0 || m_ram_width > 32 || m_width > m_ram_width * 8)
 		osd_printf_error("Configured with invalid parameter\n");
 }
 
@@ -42,7 +42,7 @@ t6a04_device::t6a04_device(const machine_config &mconfig, const char *tag, devic
 	m_xpos(0), m_ypos(0), m_zpos(0),
 	m_direction(0), m_active_counter(0), m_word_len(0),
 	m_opa1(0), m_opa2(0), m_output_reg(0),
-	m_height(0), m_width(0)
+	m_height(0), m_width(0), m_ram_width(15)
 {
 }
 
@@ -53,6 +53,8 @@ t6a04_device::t6a04_device(const machine_config &mconfig, const char *tag, devic
 
 void t6a04_device::device_start()
 {
+	m_lcd_ram = std::make_unique<uint8_t[]>(64 * m_ram_width);
+
 	save_item(NAME(m_busy_flag));
 	save_item(NAME(m_display_on));
 	save_item(NAME(m_contrast));
@@ -65,7 +67,7 @@ void t6a04_device::device_start()
 	save_item(NAME(m_opa1));
 	save_item(NAME(m_opa2));
 	save_item(NAME(m_output_reg));
-	save_item(NAME(m_lcd_ram));
+	save_pointer(NAME(m_lcd_ram), 64 * m_ram_width);
 }
 
 
@@ -76,7 +78,7 @@ void t6a04_device::device_start()
 void t6a04_device::device_reset()
 {
 	//values taken from the datasheet
-	memset(m_lcd_ram, 0x00, sizeof(m_lcd_ram));
+	std::fill_n(m_lcd_ram.get(), 64 * m_ram_width, 0);
 	m_busy_flag = 0;
 	m_display_on = 0;
 	m_contrast = 0;
@@ -106,7 +108,7 @@ uint32_t t6a04_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap
 		for (int y=0; y<ypages; y++)
 			for (int x=m_zpos; x<last_line; x++)
 			{
-				uint8_t data = m_lcd_ram[(x&0x3f)*15 + y];
+				uint8_t data = m_lcd_ram[(x&0x3f)*m_ram_width + y];
 
 				for (int b=7; b>=0; b--)
 				{
@@ -189,7 +191,8 @@ void t6a04_device::data_write(uint8_t data)
 	if (m_word_len)
 	{
 		//8bit mode
-		m_lcd_ram[m_xpos*15 + m_ypos] = data;
+		if (m_ypos < m_ram_width)
+			m_lcd_ram[m_xpos*m_ram_width + m_ypos] = data;
 	}
 	else
 	{
@@ -197,7 +200,7 @@ void t6a04_device::data_write(uint8_t data)
 		data = data<<0x02;
 		uint8_t start_bit = m_ypos * 6;
 		uint8_t pos_bit = start_bit & 0x07;
-		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
+		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*m_ram_width)+(start_bit>>3)];
 
 		ti82_video[0] = (ti82_video[0] & ~(0xFC>>pos_bit)) | (data>>pos_bit);
 		if(pos_bit>0x02)
@@ -219,14 +222,14 @@ uint8_t t6a04_device::data_read()
 	if (m_word_len)
 	{
 		//8bit mode
-		output_reg = m_lcd_ram[m_xpos*15 + m_ypos];
+		output_reg = (m_ypos < m_ram_width) ? m_lcd_ram[m_xpos*m_ram_width + m_ypos] : 0;
 	}
 	else
 	{
 		//6bit mode
 		uint8_t start_bit = m_ypos * 6;
 		uint8_t pos_bit = start_bit & 7;
-		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
+		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*m_ram_width)+(start_bit>>3)];
 
 		output_reg = ((((*ti82_video)<<8)+ti82_video[1])>>(10-pos_bit));
 	}
