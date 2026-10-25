@@ -199,6 +199,7 @@ class roland_sc880_state : public roland_sc88_state
 public:
 	roland_sc880_state(const machine_config &mconfig, device_type type, const char *tag)
 		: roland_sc88_state(mconfig, type, tag)
+		, m_digits(*this, "digit%u", 0U)
 	{
 	}
 
@@ -211,6 +212,8 @@ protected:
 private:
 	void sc880_map(address_map &map) ATTR_COLD;
 	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+	output_finder<34> m_digits;
 
 	u8 m_glcd[34][17]{};
 	u8 m_glcd_x = 0;
@@ -679,13 +682,25 @@ void roland_sc880_state::machine_start()
 	save_item(NAME(m_glcd_y));
 }
 
-// a byte-wide bitmap, 17 bytes by 34 lines: 2x picks the byte column, 8x-Ax the line, and data steps down
+// a byte-wide bitmap, 17 bytes by 34 lines: 2x picks the byte column, 8x-Ax the line, and data steps down.
+// Lines 0 and 1 are the two commons of the glass's 8-segment row, four columns to a digit:
+// line 0 holds segments a g c b, line 1 f e d and the eighth
 void roland_sc880_state::lcd_write(offs_t offset, u8 data)
 {
 	if (offset)
 	{
 		if (m_glcd_y < 34 && m_glcd_x < 17)
+		{
 			m_glcd[m_glcd_y][m_glcd_x] = data;
+			if (m_glcd_y < 2)
+				for (int half = 0; half < 2; half++)
+				{
+					const u8 com0 = m_glcd[0][m_glcd_x] >> (4 - half * 4);
+					const u8 com1 = m_glcd[1][m_glcd_x] >> (4 - half * 4);
+					m_digits[m_glcd_x * 2 + half] = BIT(com0, 3) | BIT(com0, 0) << 1 | BIT(com0, 1) << 2 | BIT(com1, 1) << 3
+							| BIT(com1, 2) << 4 | BIT(com1, 3) << 5 | BIT(com0, 2) << 6 | BIT(com1, 0) << 7;
+				}
+		}
 		m_glcd_y++;
 	}
 	else if ((data & 0xe0) == 0x20)
@@ -698,7 +713,7 @@ u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_rgb32 &bitma
 {
 	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
-			bitmap.pix(y, x) = BIT(m_glcd[y][x >> 3], 7 - (x & 7)) ? rgb_t(0x10, 0x30, 0x18) : rgb_t(0x8c, 0xc8, 0x6c);
+			bitmap.pix(y, x) = BIT(m_glcd[y + 2][x >> 3], 7 - (x & 7)) ? rgb_t(0x10, 0x30, 0x18) : rgb_t(0x8c, 0xc8, 0x6c);
 	return 0;
 }
 
@@ -1066,7 +1081,7 @@ void roland_sc880_state::sc880(machine_config &config)
 	config.device_remove("lcd");
 	config.device_remove("palette");
 	m_screen->set_no_palette();
-	m_screen->set_size(136, 34);
+	m_screen->set_size(136, 32);
 	m_screen->set_visarea_full();
 	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
 
