@@ -38,6 +38,10 @@
     SK-88Pro: 37-key keyboard with a built in SC-88Pro compatible tone
     generator. Contains a 4M overlay ROM.
 
+    SC-880: the SC-88Pro in a 1U full-width rack with patch, performance and
+    user tone modes. One 2 MB flash holds the whole program, the battery
+    backed SRAM grows to 256 KB, and a graphic glass replaces the HD44780.
+
 ****************************************************************************/
 
 #include "emu.h"
@@ -58,6 +62,7 @@
 
 #include "roland_sc88.lh"
 #include "roland_sc88pro.lh"
+#include "roland_sc880.lh"
 #include "roland_sc88vl.lh"
 
 #define LOG_GA      (1U << 1)
@@ -117,6 +122,7 @@ protected:
 	void ga_w(offs_t offset, u8 data);
 	void ga_int_update();
 	TIMER_CALLBACK_MEMBER(lcd_done);
+	virtual void lcd_write(offs_t offset, u8 data) { m_lcd->write(offset, data); }
 	// the upper half of the battery RAM is also selected in pages 0 and E
 	u16 ram_alias_r(offs_t offset) { return m_nvram[0x4000 + offset]; }
 	void ram_alias_w(offs_t offset, u16 data, u16 mem_mask) { COMBINE_DATA(&m_nvram[0x4000 + offset]); }
@@ -186,6 +192,29 @@ private:
 
 	output_finder<> m_model_label;
 	bool m_lcd_lit = false;
+};
+
+class roland_sc880_state : public roland_sc88_state
+{
+public:
+	roland_sc880_state(const machine_config &mconfig, device_type type, const char *tag)
+		: roland_sc88_state(mconfig, type, tag)
+	{
+	}
+
+	void sc880(machine_config &config) ATTR_COLD;
+
+protected:
+	virtual void machine_start() override ATTR_COLD;
+	virtual void lcd_write(offs_t offset, u8 data) override;
+
+private:
+	void sc880_map(address_map &map) ATTR_COLD;
+	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+	u8 m_glcd[34][17]{};
+	u8 m_glcd_x = 0;
+	u8 m_glcd_y = 0;
 };
 
 
@@ -344,11 +373,11 @@ void roland_sc88_state::ga_w(offs_t offset, u8 data)
 		int bytes = m_lcd_fifo_count;
 		if (m_lcd_command_pending)
 		{
-			m_lcd->write(0, m_ga_regs[0x1f]);
+			lcd_write(0, m_ga_regs[0x1f]);
 			bytes++;
 		}
 		for (int i = 0; i < m_lcd_fifo_count; i++)
-			m_lcd->write(1, m_lcd_fifo[i]);
+			lcd_write(1, m_lcd_fifo[i]);
 		m_lcd_command_pending = false;
 		m_lcd_fifo_count = 0;
 		m_lcd_timer->adjust(attotime::from_usec(40 * (bytes + 1)));
@@ -563,6 +592,16 @@ void roland_sc88_state::sk88pro_map(address_map &map)
 	map(0x100000, 0x17ffff).mirror(0x080000).rom().region("progrom", 0x100000);
 }
 
+void roland_sc880_state::sc880_map(address_map &map)
+{
+	map(0x000000, 0x1fffff).rom().region("progrom", 0);
+	map(0xc00000, 0xc3ffff).ram().share(m_nvram);
+	map(0xc80000, 0xc83fff).rw(m_xp, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
+	map(0xe00000, 0xe000ff).rw(m_subcpu, FUNC(sc88_sub_device::read), FUNC(sc88_sub_device::write));
+	map(0xefc100, 0xefc1ff).rw(FUNC(roland_sc880_state::ga_r), FUNC(roland_sc880_state::ga_w));
+	map(0xf00000, 0xf000ff).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
+}
+
 void roland_sc88_state::xpgs_map(address_map &map)
 {
 	map(0x000000, 0x07ffff).rom().region("progrom", 0);
@@ -629,6 +668,38 @@ static void lcd_fill(bitmap_ind16 &bitmap, int x, int y, int w, int h, int state
 	for (int yy = y; yy < y + h; yy++)
 		for (int xx = x; xx < x + w; xx++)
 			bitmap.pix(yy, xx) = state;
+}
+
+void roland_sc880_state::machine_start()
+{
+	roland_sc88_state::machine_start();
+
+	save_item(NAME(m_glcd));
+	save_item(NAME(m_glcd_x));
+	save_item(NAME(m_glcd_y));
+}
+
+// a byte-wide bitmap, 17 bytes by 34 lines: 2x picks the byte column, 8x-Ax the line, and data steps down
+void roland_sc880_state::lcd_write(offs_t offset, u8 data)
+{
+	if (offset)
+	{
+		if (m_glcd_y < 34 && m_glcd_x < 17)
+			m_glcd[m_glcd_y][m_glcd_x] = data;
+		m_glcd_y++;
+	}
+	else if ((data & 0xe0) == 0x20)
+		m_glcd_x = data & 0x1f;
+	else if ((data & 0xc0) == 0x80)
+		m_glcd_y = data & 0x3f;
+}
+
+u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+{
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
+		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
+			bitmap.pix(y, x) = BIT(m_glcd[y][x >> 3], 7 - (x & 7)) ? rgb_t(0x10, 0x30, 0x18) : rgb_t(0x8c, 0xc8, 0x6c);
+	return 0;
 }
 
 u32 roland_sc88vl_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -987,6 +1058,21 @@ void roland_sc88_state::sk88pro(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::sk88pro_map);
 }
 
+void roland_sc880_state::sc880(machine_config &config)
+{
+	sc88pro(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc880_state::sc880_map);
+
+	config.device_remove("lcd");
+	config.device_remove("palette");
+	m_screen->set_no_palette();
+	m_screen->set_size(136, 34);
+	m_screen->set_visarea_full();
+	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
+
+	config.set_default_layout(layout_roland_sc880);
+}
+
 void roland_sc88_state::xpgs(machine_config &config)
 {
 	HD6415108(config, m_maincpu, 20_MHz_XTAL);
@@ -1094,6 +1180,20 @@ ROM_START(sk88pro)
 	ROM_LOAD("roland-r01233667-314.ic17", 0x1000000, 0x400000, CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
 ROM_END
 
+ROM_START(sc880)
+	ROM_REGION16_BE(0x200000, "progrom", 0)
+	ROM_LOAD("sc880_control.bin", 0x000000, 0x200000, CRC(bdd297ee) SHA1(8aa92e2e8a6a221ba8d35ff54ea324ddcd304515))
+
+	ROM_REGION(0x2000, "subcpu", 0)
+	ROM_LOAD("subcpu", 0x0000, 0x2000, NO_DUMP)
+
+	ROM_REGION(0x1400000, "waverom", 0)
+	// stand-ins: the VE-GS Pro's wave ROMs
+	ROM_LOAD("roland-r01567167-301.bin", 0x0000000, 0x800000, BAD_DUMP CRC(5754ee2e) SHA1(5cc1700b3f41921ed81fe3b92ba9ec28bd6649c9))
+	ROM_LOAD("roland-r01567178-302.bin", 0x0800000, 0x800000, BAD_DUMP CRC(e2b57861) SHA1(78b37ce0e735ad2c3e51338e74219a103d7fadba))
+	ROM_LOAD("roland-r01233667-314.bin", 0x1000000, 0x400000, BAD_DUMP CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
+ROM_END
+
 ROM_START(xpgs)
 	ROM_REGION16_BE(0x80000, "progrom", 0)
 	ROM_LOAD("xpgs_control.bin", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
@@ -1128,4 +1228,5 @@ SYST(1995, sc88vl, sc88, 0, sc88vl, sc88vl, roland_sc88vl_state, init_sc88, "Rol
 SYST(1996, sc88pro, 0, 0, sc88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88Pro", 0)
 SYST(1997, sk88pro, 0, 0, sk88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
 SYST(1998, vegspro, 0, 0, vegspro, 0, roland_sc88_state, init_sc88, "Roland", "VE-GSPro Voice Expansion Board", MACHINE_NOT_WORKING)
+SYST(1998, sc880, 0, 0, sc880, sc88pro, roland_sc880_state, init_sc88, "Roland", "Sound Canvas SC-880", MACHINE_NOT_WORKING)
 SYST(1997, xpgs, 0, 0, xpgs, 0, roland_sc88_state, init_sc88, "Roland", "XP-GS sound board", MACHINE_NOT_WORKING)
