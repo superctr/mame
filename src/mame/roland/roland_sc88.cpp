@@ -889,6 +889,56 @@ static INPUT_PORTS_START(sc88pro)
 	PORT_CONFSETTING(0x03, "Mac")
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(sc880)
+	PORT_START("KEY0")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Write")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Enter")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Info")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Exit")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Value +")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Phrase Preview")
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Value (push)")
+
+	PORT_START("KEY1")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Tone")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("System")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Rhythm")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Utility")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Value -")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEY2")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Perform")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("M-FX")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Patch")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Edit")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Cursor >")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEY3")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Cursor <")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Cursor ^")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Cursor v")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part >")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("COMPUTER")
+	PORT_CONFNAME(0x03, 0x00, "Computer Switch")
+	PORT_CONFSETTING(0x00, "MIDI")
+	PORT_CONFSETTING(0x01, "PC-2")
+	PORT_CONFSETTING(0x02, "PC-1")
+	PORT_CONFSETTING(0x03, "Mac")
+INPUT_PORTS_END
+
+
 // the SC-88's matrix less the user instrument keys and PREVIEW; the POWER/STANDBY key
 // SW401 takes the position the SC-88 leaves free (service notes, May 1995, p.13)
 static INPUT_PORTS_START(sc88vl)
@@ -1074,6 +1124,8 @@ void roland_sc880_state::sc880(machine_config &config)
 	m_screen->set_visarea(0, 135, 2, 33);
 	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
 
+	m_subcpu->set_strobes_active_low(true);
+
 	T6A04(config, m_glcd);
 	m_glcd->set_size(136, 34);
 	m_glcd->set_ram_width(17);
@@ -1196,10 +1248,11 @@ ROM_START(sc880)
 	ROM_LOAD("subcpu", 0x0000, 0x2000, NO_DUMP)
 
 	ROM_REGION(0x1400000, "waverom", 0)
-	// stand-ins: the VE-GS Pro's wave ROMs
-	ROM_LOAD("roland-r01567167-301.bin", 0x0000000, 0x800000, BAD_DUMP CRC(5754ee2e) SHA1(5cc1700b3f41921ed81fe3b92ba9ec28bd6649c9))
-	ROM_LOAD("roland-r01567178-302.bin", 0x0800000, 0x800000, BAD_DUMP CRC(e2b57861) SHA1(78b37ce0e735ad2c3e51338e74219a103d7fadba))
-	ROM_LOAD("roland-r01233667-314.bin", 0x1000000, 0x400000, BAD_DUMP CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
+	// the SK-88Pro's two 8M chips; the VE-GS Pro's dumps stand in
+	ROM_LOAD("roland-r01348723", 0x0000000, 0x800000, BAD_DUMP CRC(5754ee2e) SHA1(5cc1700b3f41921ed81fe3b92ba9ec28bd6649c9))
+	ROM_LOAD("roland-r01348734", 0x0800000, 0x800000, BAD_DUMP CRC(e2b57861) SHA1(78b37ce0e735ad2c3e51338e74219a103d7fadba))
+	// part number unreadable on the board; the 314 that the SK-88Pro and VE-GS Pro carry stands in
+	ROM_LOAD("roland-r01233667-314", 0x1000000, 0x400000, BAD_DUMP CRC(93541e95) SHA1(e2ad5f0b2e5bdad84e42d080fc2e2fad523cb84b))
 ROM_END
 
 ROM_START(xpgs)
@@ -1236,5 +1289,5 @@ SYST(1995, sc88vl, sc88, 0, sc88vl, sc88vl, roland_sc88vl_state, init_sc88, "Rol
 SYST(1996, sc88pro, 0, 0, sc88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SC-88Pro", 0)
 SYST(1997, sk88pro, 0, 0, sk88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
 SYST(1998, vegspro, 0, 0, vegspro, 0, roland_sc88_state, init_sc88, "Roland", "VE-GSPro Voice Expansion Board", MACHINE_NOT_WORKING)
-SYST(1998, sc880, 0, 0, sc880, sc88pro, roland_sc880_state, init_sc88, "Roland", "Sound Canvas SC-880", MACHINE_NOT_WORKING)
+SYST(1998, sc880, 0, 0, sc880, sc880, roland_sc880_state, init_sc88, "Roland", "Sound Canvas SC-880", MACHINE_NOT_WORKING)
 SYST(1997, xpgs, 0, 0, xpgs, 0, roland_sc88_state, init_sc88, "Roland", "XP-GS sound board", MACHINE_NOT_WORKING)
