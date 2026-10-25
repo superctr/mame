@@ -289,9 +289,10 @@ u8 sc88_sub_device::port_r()
 	case 4:
 	{
 		// P0 returns the switch matrix rows selected by the strobes on PB0-PB3
+		const u8 strobes = m_strobes_low ? ~m_pb : m_pb;
 		u8 keys = 0xff;
 		for (int row = 0; row < 4; row++)
-			if (BIT(m_pb, row))
+			if (BIT(strobes, row))
 				keys &= m_keys_cb[row]();
 		return keys;
 	}

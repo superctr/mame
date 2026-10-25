@@ -51,6 +51,8 @@ public:
 	auto int_callback() { return m_int_cb.bind(); }
 	// switch matrix rows selected by the strobes on PB0-PB3
 	template <unsigned N> auto keys_callback() { return m_keys_cb[N].bind(); }
+	// the SC-880's panel selects a row with its strobe low
+	void set_strobes_active_low(bool low) { m_strobes_low = low; }
 	// serial data for the MIDI OUT connector
 	auto tx_callback() { return m_tx_cb.bind(); }
 	// port B pins: PB0-PB3 strobe the switch matrix, PB4 and PB5 drive the board's MIDI switches
@@ -101,6 +103,7 @@ private:
 
 	devcb_write_line m_int_cb;
 	devcb_read8::array<4> m_keys_cb;
+	bool m_strobes_low = false;
 	devcb_write_line m_tx_cb;
 	devcb_write8 m_pb_cb;
 	required_device_array<sc88_sub_rx_device, 3> m_rx;
