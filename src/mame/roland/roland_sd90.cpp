@@ -138,6 +138,7 @@ protected:
 	void usb_w(offs_t offset, u8 data);
 
 	void led_w(offs_t offset, u8 data);
+	void sd90_led_w(offs_t offset, u8 data);
 	void out2_update();
 	u64 scp_r();
 	bool enca() const { return m_encoder_phase != 1 && m_encoder_phase != 2; }
@@ -150,7 +151,8 @@ protected:
 
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
-	enum { LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM, LEDS };
+	enum { LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM,
+		LED_BYPASS, LED_EDIT, LED_SELECT, LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, LEDS };
 
 	u8 m_dial_last = 0;
 	s8 m_dial_pending = 0;
@@ -325,6 +327,20 @@ void sd90_state::led_w(offs_t offset, u8 data)
 	const int strobe = offset >> 3, line = offset & 7;
 	if (strobe < 3 && line < 3)
 		m_leds[led[strobe][line]] = data;
+}
+
+// the SD-90's, as the firmware lights them: each key's lamp is the LED one
+// strobe below its switch; GAIN and PEAK are not among them
+void sd90_state::sd90_led_w(offs_t offset, u8 data)
+{
+	static const int led[32] = {
+		LED_PREVIEW, -1, LED_EFFECTS, LED_INST_DRUM, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		LED_SYSTEM, LED_BYPASS, LED_EDIT, LED_SELECT, -1, -1, -1, -1,
+		LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, -1, -1, -1, -1
+	};
+	if (offset < 32 && led[offset] >= 0)
+		m_leds[led[offset]] = data;
 }
 
 
@@ -634,6 +650,7 @@ void sd90_state::sd90(machine_config &config)
 	m_glcd->set_panel(128, 64, 131, -1);
 	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
 	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
+	m_xv[0]->led_callback().set(FUNC(sd90_state::sd90_led_w));
 
 	// The MR3 chip acts as the system mixer.
 	// The input buses are:
