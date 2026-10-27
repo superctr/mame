@@ -20,8 +20,6 @@ public:
 	auto write_txd() { return m_txd_cb.bind(); }
 
 	// Interrupt request lines.
-	// The SH3 INTC has no SCIF sources wired up yet, so these
-	// are left unconnected.
 	auto write_eri() { return m_eri_cb.bind(); }
 	auto write_rxi() { return m_rxi_cb.bind(); }
 	auto write_bri() { return m_bri_cb.bind(); }

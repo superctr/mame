@@ -895,16 +895,9 @@ void sh3_base_device::port_7709_map(address_map& map)
 	map(0x04000136, 0x04000136).rw(FUNC(sh3_base_device::scpdr_r), FUNC(sh3_base_device::scpdr_w));
 }
 
-void sh3_base_device::irda_7709_map(address_map& map)
+void sh7709_base_device::irda_7709_map(address_map& map)
 {
-	map(0x04000140, 0x04000140).rw(FUNC(sh3_base_device::scsmr1_r), FUNC(sh3_base_device::scsmr1_w));
-	map(0x04000142, 0x04000142).rw(FUNC(sh3_base_device::scbrr1_r), FUNC(sh3_base_device::scbrr1_w));
-	map(0x04000144, 0x04000144).rw(FUNC(sh3_base_device::scscr1_r), FUNC(sh3_base_device::scscr1_w));
-	map(0x04000146, 0x04000146).rw(FUNC(sh3_base_device::scftdr1_r), FUNC(sh3_base_device::scftdr1_w));
-	map(0x04000148, 0x04000149).rw(FUNC(sh3_base_device::scssr1_r), FUNC(sh3_base_device::scssr1_w));
-	map(0x0400014a, 0x0400014a).rw(FUNC(sh3_base_device::scfrdr1_r), FUNC(sh3_base_device::scfrdr1_w));
-	map(0x0400014c, 0x0400014c).rw(FUNC(sh3_base_device::scfcr1_r), FUNC(sh3_base_device::scfcr1_w));
-	map(0x0400014e, 0x0400014f).rw(FUNC(sh3_base_device::scfdr1_r), FUNC(sh3_base_device::scfdr1_w));
+	map(0x04000140, 0x0400014f).m(m_irda, FUNC(sh7709_scif_device::map));
 }
 
 void sh7709_base_device::scif_7709_map(address_map& map)
@@ -977,6 +970,7 @@ sh3_base_device::~sh3_base_device()
 
 sh7709_base_device::sh7709_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endianness)
 	: sh3_base_device(mconfig, type, tag, owner, clock, endianness)
+	, m_irda(*this, "irda")
 	, m_scif(*this, "scif")
 {
 }
@@ -985,9 +979,25 @@ void sh7709_base_device::device_add_mconfig(machine_config &config)
 {
 	sh3_base_device::device_add_mconfig(config);
 
-	// Clocked from the peripheral clock, which is CPU clock / 4 with the
-	// reset FRQCR setting.
-	SH7709_SCIF(config, m_scif, DERIVED_CLOCK(1, 4));
+	SH7709_SCIF(config, m_irda, 0);
+	m_irda->write_eri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDAERI) : sh4_exception_unrequest(SH4_INTC_IRDAERI); });
+	m_irda->write_rxi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDARXI) : sh4_exception_unrequest(SH4_INTC_IRDARXI); });
+	m_irda->write_bri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDABRI) : sh4_exception_unrequest(SH4_INTC_IRDABRI); });
+	m_irda->write_txi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDATXI) : sh4_exception_unrequest(SH4_INTC_IRDATXI); });
+
+	SH7709_SCIF(config, m_scif, 0);
+	m_scif->write_eri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFERI) : sh4_exception_unrequest(SH4_INTC_SCIFERI); });
+	m_scif->write_rxi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFRXI) : sh4_exception_unrequest(SH4_INTC_SCIFRXI); });
+	m_scif->write_bri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFBRI) : sh4_exception_unrequest(SH4_INTC_SCIFBRI); });
+	m_scif->write_txi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFTXI) : sh4_exception_unrequest(SH4_INTC_SCIFTXI); });
+}
+
+void sh7709_base_device::device_start()
+{
+	sh3_base_device::device_start();
+
+	m_irda->set_unscaled_clock(m_pm_clock);
+	m_scif->set_unscaled_clock(m_pm_clock);
 }
 
 
@@ -2788,16 +2798,6 @@ void sh3_base_device::device_reset()
 	m_pldr = 0;
 	m_scpdr = 0;
 
-	// IRDA 7709
-	m_scsmr1 = 0;
-	m_scbrr1 = 0xff;
-	m_scscr1 = 0;
-	m_scftdr1 = 0;
-	m_scssr1 = 0x60;
-	m_scfrdr1 = 0;
-	m_scfcr1 = 0;
-	m_scfdr1 = 0;
-
 	// UDI 7709S
 	m_sdir = 0xffff;
 }
@@ -3350,16 +3350,6 @@ void sh3_base_device::device_start()
 	save_item(NAME(m_pkdr));
 	save_item(NAME(m_pldr));
 	save_item(NAME(m_scpdr));
-
-	// IRDA 7709
-	save_item(NAME(m_scsmr1));
-	save_item(NAME(m_scbrr1));
-	save_item(NAME(m_scscr1));
-	save_item(NAME(m_scftdr1));
-	save_item(NAME(m_scssr1));
-	save_item(NAME(m_scfrdr1));
-	save_item(NAME(m_scfcr1));
-	save_item(NAME(m_scfdr1));
 
 	// UDI 7709S
 	save_item(NAME(m_sdir));

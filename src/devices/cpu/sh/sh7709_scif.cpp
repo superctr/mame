@@ -11,10 +11,8 @@
   which is all the SCIF is capable of on this part.
 
   TODO:
-    - The interrupt request lines are generated but the SH3 INTC has no SCIF
-      sources yet (sh3_base_device::ipre_w only stores the register), so they
-      currently go nowhere.  Wire them up when a driver needs them - the first
-      consumer, cave/cv1k.cpp (mmmbanc), polls the status register instead.
+    - The IrDA channel's IrDA mode (SCSMR IRMOD) is not modelled; it runs as
+      a plain SCIF.
     - Serial clock input/output (SCSCR CKE) is ignored, the internal baud rate
       generator is always used.
     - No modem control (SCFCR MCE, SCSPTR), no loopback, no break generation.
