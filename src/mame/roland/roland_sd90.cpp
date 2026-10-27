@@ -647,8 +647,11 @@ void sd90_state::sd90(machine_config &config)
 	//   4-5: Digital Out
 	//   6-7: Record Out (to USB)
 	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
-	m_xv[0]->add_route(0, m_mr3, 1.0, 0);
-	m_xv[0]->add_route(1, m_mr3, 1.0, 1);
+	// the resident mixer gives INST twice the gain of the other strips, so the
+	// XV's word is taken to reach the MR3 a bit down; the serial format of the
+	// link (the SD-90 moves chip 0's word clock edges) is unread
+	m_xv[0]->add_route(0, m_mr3, 0.5, 0);
+	m_xv[0]->add_route(1, m_mr3, 0.5, 1);
 	m_mr3->add_route(0, "out1", 1.0, 0);
 	m_mr3->add_route(1, "out1", 1.0, 1);
 	m_mr3->add_route(2, "out2", 1.0, 0);
