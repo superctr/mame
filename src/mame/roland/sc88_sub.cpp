@@ -467,7 +467,9 @@ void sc88_sub_device::send_sysex(int src, source &s)
 	u8 code;
 	u8 chan = 0;
 	u8 request = 0;
-	if (x.size() >= 8 && x[0] == 0x41 && (x[2] == 0x42 || x[2] == 0x45) && (x[3] == 0x12 || x[3] == 0x11))
+	if (m_raw_45 && x.size() >= 9 && x[0] == 0x41 && x[2] == 0x45 && (x[3] == 0x12 || x[3] == 0x11))
+		code = 0xeb; // the main CPU checks the device ID and takes the four-byte address
+	else if (x.size() >= 8 && x[0] == 0x41 && (x[2] == 0x42 || x[2] == 0x45) && (x[3] == 0x12 || x[3] == 0x11))
 	{
 		if (x[1] != m_dpram[DEVICE_ID + src] && x[1] != 0x7f)
 		{

@@ -1125,6 +1125,7 @@ void roland_sc880_state::sc880(machine_config &config)
 	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
 
 	m_subcpu->set_strobes_active_low(true);
+	m_subcpu->set_raw_45(true);
 
 	T6A04(config, m_glcd);
 	m_glcd->set_size(136, 34);
