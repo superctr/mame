@@ -906,10 +906,15 @@ INPUT_PORTS_END
 
 
 ROM_START(fantom)
-	// out of Roland's own updater, Fantom118_SMF.exe: a boot block, then
-	// the program in two zlib containers, and the top half left erased
+	// out of Roland's own updaters, the 1.20 floppy set and Fantom118_SMF.exe:
+	// a boot block, then the program in two zlib containers, and the top half
+	// left erased
 	ROM_REGION16_BE(0x400000, "flash", 0)
-	ROM_LOAD("fantom_v1.18.ic5", 0x000000, 0x400000, CRC(f9fae390) SHA1(86f6924893d1496b491fc124173d349694c30c1b))
+	ROM_DEFAULT_BIOS("v120")
+	ROM_SYSTEM_BIOS(0, "v120", "Version 1.20")
+	ROMX_LOAD("fantom_v1.20.ic5", 0x000000, 0x400000, CRC(318821c0) SHA1(0feaab22c4a7987a25c2cbbb0965072a2c015053), ROM_BIOS(0))
+	ROM_SYSTEM_BIOS(1, "v118", "Version 1.18")
+	ROMX_LOAD("fantom_v1.18.ic5", 0x000000, 0x400000, CRC(f9fae390) SHA1(86f6924893d1496b491fc124173d349694c30c1b), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
 	ROM_LOAD("upd23c128040lgy-849.ic48", 0x0000000, 0x1000000, NO_DUMP)
