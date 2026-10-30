@@ -132,7 +132,8 @@ public:
 
 	// a key going down closes its first contact at once and its second
 	// after the travel time; going up, the second opens at once and the
-	// first after the travel time
+	// first after the travel time; a key's changes follow one another, so
+	// one let go before its second contact has closed closes it first
 	void key_w(int key, int state, const attotime &travel);
 
 protected:
@@ -161,6 +162,7 @@ private:
 	void contact_w(int key, int contact, int state);
 	void push(u8 status, u8 key);
 	void update_int();
+	void arm_travel();
 	u16 stamp() const;
 	TIMER_CALLBACK_MEMBER(wrap);
 	TIMER_CALLBACK_MEMBER(travel);
@@ -255,22 +257,44 @@ void fantom_keyscan_device::key_w(int key, int state, const attotime &travel)
 {
 	if (key < 0 || key >= int(KEYS))
 		return;
-	contact_w(key, state ? 0 : 1, state);
-	m_pending.push_back(pending{ machine().time() + travel, u8(key), u8(state ? 1 : 0), u8(state ? 1 : 0) });
-	if (m_pending.size() == 1)
-		m_travel_timer->adjust(travel);
+
+	const attotime now = machine().time();
+	attotime at = now;
+	for (const pending &p : m_pending)
+		if (p.key == key && p.when > at)
+			at = p.when;
+
+	if (at == now)
+		contact_w(key, state ? 0 : 1, state);
+	else
+		m_pending.push_back(pending{ at, u8(key), u8(state ? 0 : 1), u8(state ? 1 : 0) });
+	m_pending.push_back(pending{ at + travel, u8(key), u8(state ? 1 : 0), u8(state ? 1 : 0) });
+	arm_travel();
+}
+
+void fantom_keyscan_device::arm_travel()
+{
+	attotime next = attotime::never;
+	for (const pending &p : m_pending)
+		if (p.when < next)
+			next = p.when;
+	m_travel_timer->adjust(next.is_never() ? attotime::never : next - machine().time());
 }
 
 TIMER_CALLBACK_MEMBER(fantom_keyscan_device::travel)
 {
-	while (!m_pending.empty() && m_pending.front().when <= machine().time())
+	const attotime now = machine().time();
+	for (auto it = m_pending.begin(); it != m_pending.end(); )
 	{
-		const pending &p = m_pending.front();
-		contact_w(p.key, p.contact, p.state);
-		m_pending.pop_front();
+		if (it->when <= now)
+		{
+			contact_w(it->key, it->contact, it->state);
+			it = m_pending.erase(it);
+		}
+		else
+			++it;
 	}
-	if (!m_pending.empty())
-		m_travel_timer->adjust(m_pending.front().when - machine().time());
+	arm_travel();
 }
 
 u16 fantom_keyscan_device::read(offs_t offset)
