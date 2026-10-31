@@ -61,6 +61,7 @@
 #include "emu.h"
 
 #include "roland_uipc.h"
+#include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
@@ -113,7 +114,8 @@ public:
 	void sd80(machine_config &config) ATTR_COLD;
 	void sd90(machine_config &config) ATTR_COLD;
 
-	void init_sd80() ATTR_COLD { m_analog_gpio = true; }
+	void init_sd90() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
+	void init_sd80() ATTR_COLD { init_sd90(); m_analog_gpio = true; }
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -755,10 +757,11 @@ INPUT_PORTS_END
 //  ROM definitions
 //-------------------------------------------------
 
+// the set as read through the chips, put back through an SRX board's wiring
 #define ROM_WAVEROM \
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00) \
-	ROM_LOAD("upd23c128040algy525mjh.ic28", 0x0000000, 0x1000000, CRC(07bb82cf) SHA1(1d299735125bf29db5e4e00072504a16f625385b)) \
-	ROM_LOAD("upd23c128040algy526mkh.ic29", 0x1000000, 0x1000000, CRC(4f8a469b) SHA1(3eb4e8c63128da65a269e27296b653ca2639ccf2))
+	ROM_LOAD("upd23c128040algy525mjh.ic28", 0x0000000, 0x1000000, CRC(bb778083) SHA1(57cd6709274329a1e109f22564d2b706832ecdb0)) \
+	ROM_LOAD("upd23c128040algy526mkh.ic29", 0x1000000, 0x1000000, CRC(dbbdc726) SHA1(68e3d39248bfde38b8e2cc509f7972feac066760))
 
 ROM_START(sd80)
 	// the flash read off IC3, the two bytes of every word exchanged
@@ -783,5 +786,5 @@ ROM_END
 
 
 //    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY   FULLNAME  FLAGS
-SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, empty_init, "Roland", "Studio Canvas SD-90", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, init_sd90,  "Roland", "Studio Canvas SD-90", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
 SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, init_sd80,  "Roland", "Studio Canvas SD-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
