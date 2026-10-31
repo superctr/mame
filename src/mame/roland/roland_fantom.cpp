@@ -341,6 +341,8 @@ public:
 
 	void fantom(machine_config &config) ATTR_COLD;
 
+	void init_waverom() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
+
 	DECLARE_INPUT_CHANGED_MEMBER(key_changed);
 
 protected:
@@ -941,16 +943,16 @@ ROM_START(fantom)
 	ROMX_LOAD("fantom_v1.18.ic5", 0x000000, 0x400000, CRC(f9fae390) SHA1(86f6924893d1496b491fc124173d349694c30c1b), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
-	ROM_LOAD("upd23c128040lgy-849.ic48", 0x0000000, 0x1000000, NO_DUMP)
-	ROM_LOAD("upd23c128040lgy-850.ic51", 0x1000000, 0x1000000, NO_DUMP)
-	// the pair as Roland's JV-1080 and SRX plugins carry it: the XV-3080
-	// and XV-5080's 32 MB wave set, which this machine's own wave list and
-	// sample records say it shares byte for byte
-	ROM_LOAD("xv3080rom_ver001.bin", 0x0000000, 0x2000000, BAD_DUMP CRC(34e32c1a) SHA1(258f124ae67e4da4a0ae332c4bac79bb96acaf29))
+	// the XV-3080's and XV-5080's two parts, which this machine's own wave
+	// list and sample records say it shares byte for byte
+	// not read off the chips: the 32 MB set Roland's plugins carry
+	// descrambled, put back through an SRX board's wiring and split
+	ROM_LOAD("upd23c128040lgy-849.ic48", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
+	ROM_LOAD("upd23c128040lgy-850.ic51", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 ROM_END
 
 } // anonymous namespace
 
 
-//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY   FULLNAME        FLAGS
-SYST( 2001, fantom, 0,      0,      fantom,  fantom, fantom_state, empty_init, "Roland", "Fantom (FA-76)", MACHINE_NOT_WORKING )
+//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT          COMPANY   FULLNAME        FLAGS
+SYST( 2001, fantom, 0,      0,      fantom,  fantom, fantom_state, init_waverom, "Roland", "Fantom (FA-76)", MACHINE_NOT_WORKING )
