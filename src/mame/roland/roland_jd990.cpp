@@ -236,26 +236,10 @@ private:
 
 void roland_jd990_state::machine_start()
 {
-	static const u8 addr_lines[20] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14, 19 };
-	static const u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
 	const u32 size = m_waverom.bytes();
 	m_wave = std::make_unique<u8[]>(size);
-	for (u32 region = 0; region < size; region += 0x100000)
-	{
-		for (u32 i = 0; i < 0x100000; i++)
-		{
-			u32 src = 0;
-			for (int bit = 0; bit < 20; bit++)
-				if (BIT(i, bit))
-					src |= 1 << addr_lines[bit];
-			const u8 raw = m_waverom[region + src];
-			u8 data = 0;
-			for (int bit = 0; bit < 8; bit++)
-				if (BIT(raw, data_lines[bit]))
-					data |= 1 << bit;
-			m_wave[region + i] = data;
-		}
-	}
+	std::copy_n(&m_waverom[0], size, m_wave.get());
+	roland_srjv80_slot_device::descramble_rom(m_wave.get(), size);
 	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
 	m_rambank->set_base(&m_ram[0x4000]);
 
