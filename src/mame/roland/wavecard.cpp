@@ -131,6 +131,11 @@ roland_srjv80_slot_device::roland_srjv80_slot_device(const machine_config &mconf
 {
 }
 
+void roland_srjv80_slot_device::descramble_rom(u8 *rom, u32 size)
+{
+	descramble(rom, size, srjv80_lines, 19);
+}
+
 roland_srx_slot_device::roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: roland_wavecard_device(mconfig, ROLAND_SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18, "srxboard", "srx")
 {
