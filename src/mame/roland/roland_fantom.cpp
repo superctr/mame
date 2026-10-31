@@ -945,8 +945,6 @@ ROM_START(fantom)
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
 	// the XV-3080's and XV-5080's two parts, which this machine's own wave
 	// list and sample records say it shares byte for byte
-	// not read off the chips: the 32 MB set Roland's plugins carry
-	// descrambled, put back through an SRX board's wiring and split
 	ROM_LOAD("upd23c128040lgy-849.ic48", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
 	ROM_LOAD("upd23c128040lgy-850.ic51", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 ROM_END
