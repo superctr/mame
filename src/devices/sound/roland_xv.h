@@ -44,6 +44,7 @@ public:
 	static constexpr int OUTPUTS = 2 * SERIAL_OUTS;
 	static constexpr u32 ADDRESS_MASK = 0x0fffffff;
 	static constexpr u32 PAGE_MASK = 0x000fffff;
+	static constexpr u32 INDEX_MASK = 0x01ffffff;
 	static constexpr int BANK_BYTE_WIDE = 1;
 
 	// the registers of the window, by word number
@@ -380,6 +381,7 @@ private:
 
 	static u32 cell_of(u32 sample, bool wide);
 	static u32 in_page(u32 address, u32 index) { return (address & ~PAGE_MASK) | (index & PAGE_MASK); }
+	static u32 in_bank(u32 address, u32 index) { return (address & ~INDEX_MASK) | (index & INDEX_MASK); }
 	u8 sample_byte(u32 sample);
 	wave_cell cell_at(u32 address, bool wide);
 	static s32 delta_of(wave_cell c);

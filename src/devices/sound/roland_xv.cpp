@@ -1331,28 +1331,28 @@ void roland_xv_device::launch(int n)
 
 roland_xv_device::address_step roland_xv_device::advance(int n, address_step s) const
 {
-	const u32 loop = object_long(n, LOOP_START) & PAGE_MASK;
-	const u32 end = object_long(n, END) & PAGE_MASK;
-	const u32 index = s.address & PAGE_MASK;
+	const u32 loop = object_long(n, LOOP_START) & INDEX_MASK;
+	const u32 end = object_long(n, END) & INDEX_MASK;
+	const u32 index = s.address & INDEX_MASK;
 	const int mode = (object_word(n, VOICE_CONTROL) >> 10) & 3;
 
 	if (!s.backward)
 	{
 		if (index < end)
-			return { in_page(s.address, index + 1), false, false };
+			return { in_bank(s.address, index + 1), false, false };
 		switch (mode)
 		{
-		case LOOP_FORWARD: return { in_page(s.address, loop), false, true };
+		case LOOP_FORWARD: return { in_bank(s.address, loop), false, true };
 		case LOOP_ALTERNATE: return { s.address, true, true };
 		default: return { s.address, false, false };
 		}
 	}
 
 	if (mode == LOOP_ALTERNATE)
-		return index <= loop ? address_step{ s.address, false, true } : address_step{ in_page(s.address, index - 1), true, false };
+		return index <= loop ? address_step{ s.address, false, true } : address_step{ in_bank(s.address, index - 1), true, false };
 	if (index > end)
-		return { in_page(s.address, index - 1), true, false };
-	return mode == LOOP_FORWARD ? address_step{ in_page(s.address, loop), true, true } : address_step{ s.address, true, false };
+		return { in_bank(s.address, index - 1), true, false };
+	return mode == LOOP_FORWARD ? address_step{ in_bank(s.address, loop), true, true } : address_step{ s.address, true, false };
 }
 
 // the loop or end cell a fetch lands on, and what word 0x60 makes of landing there after another cell: bit 6
@@ -1360,11 +1360,11 @@ roland_xv_device::address_step roland_xv_device::advance(int n, address_step s) 
 void roland_xv_device::cross(int n, u32 address)
 {
 	voice &v = m_voices[n];
-	const u32 index = address & PAGE_MASK;
+	const u32 index = address & INDEX_MASK;
 	u8 region;
-	if (index == (object_long(n, END) & PAGE_MASK))
+	if (index == (object_long(n, END) & INDEX_MASK))
 		region = REGION_END;
-	else if (index == (object_long(n, LOOP_START) & PAGE_MASK))
+	else if (index == (object_long(n, LOOP_START) & INDEX_MASK))
 		region = REGION_LOOP;
 	else
 	{
