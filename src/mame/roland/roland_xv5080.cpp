@@ -1150,8 +1150,6 @@ ROM_START(xv3080)
 	ROM_LOAD("xv-3080_v1.11.ic1", 0x000000, 0x200000, CRC(4d5b2473) SHA1(3c94673a837eca602664ab62aaf36140f677039d))
 
 	ROM_REGION(0x2000000, "waverom", ROMREGION_ERASE00)
-	// not read off the chips: the 32 MB set Roland's plugins carry
-	// descrambled, put back through an SRX board's wiring and split
 	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
 	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 ROM_END
@@ -1170,8 +1168,6 @@ ROM_START(xv5080)
 	ROMX_LOAD("xv-5080_v1.28.ic1", 0x000000, 0x200000, CRC(91da248e) SHA1(cc928f20c7367d1cee789f30af50434381a8e4c7), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
-	// not read off the chips: the 32 MB set Roland's plugins carry
-	// descrambled, put back through an SRX board's wiring and split
 	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
 	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 
