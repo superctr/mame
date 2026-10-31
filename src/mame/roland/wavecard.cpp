@@ -73,24 +73,24 @@ void roland_wavecard_device::device_start()
 // the address lines permuted within a block of their own size and the eight
 // data lines; the data table is the one Roland's own wave ROMs use and the
 // address table is the board's or the card's own
-void roland_wavecard_device::descramble()
+void roland_wavecard_device::descramble(u8 *rom, u32 size, const u8 *address_lines, int lines)
 {
 	static const u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
 
-	const std::vector<u8> scrambled(m_rom.get(), m_rom.get() + m_size);
-	for (u32 i = 0; i < m_size; i++)
+	const std::vector<u8> scrambled(rom, rom + size);
+	for (u32 i = 0; i < size; i++)
 	{
-		u32 address = i & ~((1U << m_lines) - 1);
-		for (int bit = 0; bit < m_lines; bit++)
+		u32 address = i & ~((1U << lines) - 1);
+		for (int bit = 0; bit < lines; bit++)
 			if (BIT(i, bit))
-				address |= 1 << m_address_lines[bit];
+				address |= 1 << address_lines[bit];
 
 		const u8 source = scrambled[address];
 		u8 data = 0;
 		for (int bit = 0; bit < 8; bit++)
 			if (BIT(source, data_lines[bit]))
 				data |= 1 << bit;
-		m_rom[i] = data;
+		rom[i] = data;
 	}
 }
 
@@ -110,7 +110,7 @@ std::pair<std::error_condition, std::string> roland_wavecard_device::call_load()
 		return std::make_pair(image_error::UNSPECIFIED, "Error reading file");
 	}
 
-	descramble();
+	descramble(m_rom.get(), m_size, m_address_lines, m_lines);
 	return std::make_pair(std::error_condition(), std::string());
 }
 
@@ -134,6 +134,11 @@ roland_srjv80_slot_device::roland_srjv80_slot_device(const machine_config &mconf
 roland_srx_slot_device::roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: roland_wavecard_device(mconfig, ROLAND_SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18, "srxboard", "srx")
 {
+}
+
+void roland_srx_slot_device::descramble_rom(u8 *rom, u32 size)
+{
+	descramble(rom, size, srx_lines, 18);
 }
 
 roland_sopcm1_slot_device::roland_sopcm1_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)

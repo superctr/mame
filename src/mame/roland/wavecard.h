@@ -37,8 +37,9 @@ protected:
 	virtual const char *file_extensions() const noexcept override { return "bin"; }
 	virtual bool is_reset_on_load() const noexcept override { return true; }
 
+	static void descramble(u8 *rom, u32 size, const u8 *address_lines, int lines) ATTR_COLD;
+
 private:
-	void descramble() ATTR_COLD;
 
 	const u32 m_min_size, m_max_size;
 	const char *const m_size_error;
@@ -64,6 +65,9 @@ class roland_srx_slot_device : public roland_wavecard_device
 {
 public:
 	roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
+
+	// a host's own wave ROMs wired as an SRX board is, undone in place
+	static void descramble_rom(u8 *rom, u32 size) ATTR_COLD;
 
 protected:
 	virtual const char *image_interface() const noexcept override { return "srx"; }
