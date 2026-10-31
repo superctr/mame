@@ -47,6 +47,7 @@
 #include "emu.h"
 
 #include "sc88_sub.h"
+#include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
@@ -220,32 +221,10 @@ private:
 };
 
 
-// The wave ROMs are stored as dumped; the board wiring permutes address lines
-// within each 256 KB block and the data lines.
+// The wave ROMs are stored as dumped, wired as an SRX board is.
 void roland_sc88_state::init_sc88()
 {
-	memory_region *region = memregion("waverom");
-	u8 *rom = region->base();
-	const u32 size = region->bytes();
-
-	constexpr u8 address_lines[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
-	constexpr u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
-
-	std::vector<u8> scrambled(rom, rom + size);
-	for (u32 i = 0; i < size; i++)
-	{
-		u32 address = i & ~0x3ffff;
-		for (int bit = 0; bit < 18; bit++)
-			if (BIT(i, bit))
-				address |= 1 << address_lines[bit];
-
-		const u8 source = scrambled[address];
-		u8 data = 0;
-		for (int bit = 0; bit < 8; bit++)
-			if (BIT(source, data_lines[bit]))
-				data |= 1 << bit;
-		rom[i] = data;
-	}
+	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
 }
 
 void roland_sc88_state::machine_start()
