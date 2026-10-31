@@ -145,6 +145,8 @@ public:
 
 	void xv3080(machine_config &config) ATTR_COLD;
 
+	void init_waverom() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
+
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
@@ -1148,12 +1150,10 @@ ROM_START(xv3080)
 	ROM_LOAD("xv-3080_v1.11.ic1", 0x000000, 0x200000, CRC(4d5b2473) SHA1(3c94673a837eca602664ab62aaf36140f677039d))
 
 	ROM_REGION(0x2000000, "waverom", ROMREGION_ERASE00)
-	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, NO_DUMP)
-	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, NO_DUMP)
-	// the pair as Roland's JV-1080 and SRX plugins carry it: the 32 MB
-	// wave set descrambled, one header ("XV3080ROM_Ver001", 1999-10-13)
-	// at the front, where the two chips meet not marked
-	ROM_LOAD("xv3080rom_ver001.bin", 0x0000000, 0x2000000, BAD_DUMP CRC(34e32c1a) SHA1(258f124ae67e4da4a0ae332c4bac79bb96acaf29))
+	// not read off the chips: the 32 MB set Roland's plugins carry
+	// descrambled, put back through an SRX board's wiring and split
+	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
+	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 ROM_END
 
 ROM_START(xv5080)
@@ -1170,12 +1170,10 @@ ROM_START(xv5080)
 	ROMX_LOAD("xv-5080_v1.28.ic1", 0x000000, 0x200000, CRC(91da248e) SHA1(cc928f20c7367d1cee789f30af50434381a8e4c7), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
-	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, NO_DUMP)
-	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, NO_DUMP)
-	// the pair as Roland's JV-1080 and SRX plugins carry it: the 32 MB
-	// wave set descrambled, one header ("XV3080ROM_Ver001", 1999-10-13)
-	// at the front, where the two chips meet not marked
-	ROM_LOAD("xv3080rom_ver001.bin", 0x0000000, 0x2000000, BAD_DUMP CRC(34e32c1a) SHA1(258f124ae67e4da4a0ae332c4bac79bb96acaf29))
+	// not read off the chips: the 32 MB set Roland's plugins carry
+	// descrambled, put back through an SRX board's wiring and split
+	ROM_LOAD("upd23c128040lgy-849.ic26", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
+	ROM_LOAD("upd23c128040lgy-850.ic29", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 
 	ROM_REGION(0x8000, "iomcu", 0)
 	ROM_LOAD("m38881m2-069fp.ic107", 0x0000, 0x8000, NO_DUMP)
@@ -1184,6 +1182,6 @@ ROM_END
 } // anonymous namespace
 
 
-//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY   FULLNAME   FLAGS
-SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, empty_init, "Roland", "XV-3080", MACHINE_SUPPORTS_SAVE )
-SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, empty_init, "Roland", "XV-5080", MACHINE_SUPPORTS_SAVE )
+//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT          COMPANY   FULLNAME   FLAGS
+SYST( 2000, xv3080, 0,      0,      xv3080,  xv3080, xv3080_state, init_waverom, "Roland", "XV-3080", MACHINE_SUPPORTS_SAVE )
+SYST( 2000, xv5080, 0,      0,      xv5080,  xv5080, xv5080_state, init_waverom, "Roland", "XV-5080", MACHINE_SUPPORTS_SAVE )
