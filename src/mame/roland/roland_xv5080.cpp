@@ -726,7 +726,7 @@ void xv5080_state::ga_w(offs_t offset, u8 data)
 void xv5080_state::xv_wave_map(address_map &map)
 {
 	map.unmap_value_high();
-	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
+	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
 		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_exp[slot]->present() ? m_exp[slot]->read(offset) : 0xff; }))).umask16(0x00ff);
 	static const offs_t srx_base[4] = { 0x04000000, 0x07000000, 0x08000000, 0x0b000000 };

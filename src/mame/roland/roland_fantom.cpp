@@ -667,7 +667,7 @@ void fantom_state::fantom_io_map(address_map &map)
 void fantom_state::xv_wave_map(address_map &map)
 {
 	map.unmap_value_high();
-	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
+	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
 	map(0x02000000, 0x027fffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_exp->present() ? m_exp->read(offset) : 0xff; })).umask16(0x00ff);
 	map(0x04000000, 0x04ffffff).lr16(NAME([this] (offs_t offset) -> u16 { return m_srx[0]->present() ? m_srx[0]->read16(offset) : 0xffff; }));
 	map(0x07000000, 0x07ffffff).lr16(NAME([this] (offs_t offset) -> u16 { return m_srx[1]->present() ? m_srx[1]->read16(offset) : 0xffff; }));
