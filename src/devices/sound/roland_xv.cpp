@@ -127,7 +127,7 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 	, device_memory_interface(mconfig, *this)
 	, device_sound_interface(mconfig, *this)
 	, m_link(*this, finder_base::DUMMY_TAG)
-	, m_wave_config("wave", ENDIANNESS_LITTLE, 16, 32, -1)
+	, m_wave_config("wave", ENDIANNESS_LITTLE, 16, 28, -1)
 	, m_int_callback(*this)
 	, m_switch_callback(*this, 0)
 	, m_led_callback(*this)
