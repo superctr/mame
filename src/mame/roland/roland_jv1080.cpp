@@ -125,9 +125,9 @@ void roland_jv1080_state::xp_rom_map(address_map &map)
 {
 	map.unmap_value_high();
 	map(0x0000000, 0x07fffff).mirror(0x0800000).rom().region("waverom", 0);
-	map(0x1000000, 0x17fffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_pcmcard->present() ? m_pcmcard->read(offset) : 0xff; }));
+	map(0x1000000, 0x17fffff).r(m_pcmcard, FUNC(roland_sopcm1_slot_device::read));
 	for (int slot = 0; slot < 4; slot++)
-		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_exp[slot]->present() ? m_exp[slot]->read(offset) : 0xff; })));
+		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
 }
 
 
@@ -251,11 +251,11 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	// the PCM card on the XP's chip select 1, and EXP-A to EXP-D, CN501-CN504,
 	// one 8 MB board at the foot of each of its chip selects 2 to 5
-	ROLAND_SOPCM1_SLOT(config, m_pcmcard, 0);
+	ROLAND_SOPCM1_SLOT(config, m_pcmcard, 0).set_open(0xffff);
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
 	for (int slot = 0; slot < 4; slot++)
-		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot));
+		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot)).set_open(0xffff);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);

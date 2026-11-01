@@ -450,8 +450,8 @@ void roland_jd990_state::mem_map(address_map &map)
 void roland_jd990_state::wave_map(address_map &map)
 {
 	map.unmap_value_high();
-	map(0x600000, 0x7fffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_card->present() ? m_card->read(offset) : 0xff; }));
-	map(0x800000, 0xffffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_exp->present() ? m_exp->read(offset) : 0xff; }));
+	map(0x600000, 0x7fffff).r(m_card, FUNC(roland_sopcm1_slot_device::read));
+	map(0x800000, 0xffffff).r(m_exp, FUNC(roland_srjv80_slot_device::read));
 }
 
 void roland_jd990_state::lcdc_map(address_map &map)
@@ -581,11 +581,11 @@ void roland_jd990_state::jd990(machine_config &config)
 	}
 
 	// CN7, one 8 MB board at bank 8 of the EP's wave space
-	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("exp", "exp");
+	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("exp", "exp").set_open(0xffff);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
 	// the PCM card, one or two 1 MB banks from 6 up
-	ROLAND_SOPCM1_SLOT(config, m_card, 0).set_image_names("card", "card");
+	ROLAND_SOPCM1_SLOT(config, m_card, 0).set_image_names("card", "card").set_open(0xffff);
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));

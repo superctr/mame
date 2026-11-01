@@ -55,6 +55,7 @@ roland_wavecard_device::roland_wavecard_device(const machine_config &mconfig, de
 	, m_type_name(type_name)
 	, m_brief_type_name(brief_type_name)
 	, m_size(0)
+	, m_open(0)
 {
 }
 
