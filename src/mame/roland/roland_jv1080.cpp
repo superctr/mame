@@ -123,10 +123,11 @@ void roland_jv1080_state::jv1080_map(address_map &map)
 
 void roland_jv1080_state::xp_rom_map(address_map &map)
 {
-	map(0x0000000, 0x07fffff).rom().region("waverom", 0);
-	map(0x1000000, 0x17fffff).r(m_pcmcard, FUNC(roland_sopcm1_slot_device::read));
+	map.unmap_value_high();
+	map(0x0000000, 0x07fffff).mirror(0x0800000).rom().region("waverom", 0);
+	map(0x1000000, 0x17fffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_pcmcard->present() ? m_pcmcard->read(offset) : 0xff; }));
 	for (int slot = 0; slot < 4; slot++)
-		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
+		map(0x2000000 + slot * 0x1000000, 0x27fffff + slot * 0x1000000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_exp[slot]->present() ? m_exp[slot]->read(offset) : 0xff; })));
 }
 
 

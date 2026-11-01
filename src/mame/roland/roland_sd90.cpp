@@ -543,6 +543,7 @@ void sd90_state::sd90_io_map(address_map &map)
 
 void sd90_state::xv_wave_map(address_map &map)
 {
+	map.unmap_value_high();
 	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
 }
 

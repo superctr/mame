@@ -725,12 +725,13 @@ void xv5080_state::ga_w(offs_t offset, u8 data)
 
 void xv5080_state::xv_wave_map(address_map &map)
 {
+	map.unmap_value_high();
 	map(0x00000000, 0x00ffffff).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read)).umask16(0x00ff);
+		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_exp[slot]->present() ? m_exp[slot]->read(offset) : 0xff; }))).umask16(0x00ff);
 	static const offs_t srx_base[4] = { 0x04000000, 0x07000000, 0x08000000, 0x0b000000 };
 	for (int slot = 0; slot < 4; slot++)
-		map(srx_base[slot], srx_base[slot] + 0xffffff).r(m_srx[slot], FUNC(roland_srx_slot_device::read16));
+		map(srx_base[slot], srx_base[slot] + 0xffffff).lr16(NAME(([this, slot] (offs_t offset) -> u16 { return m_srx[slot]->present() ? m_srx[slot]->read16(offset) : 0xffff; })));
 }
 
 
@@ -795,11 +796,12 @@ void xv5080_state::xv5080_map(address_map &map)
 // a 32 MB SRX board on each pair
 void xv3080_state::xp_rom_map(address_map &map)
 {
+	map.unmap_value_high();
 	map(0x0000000, 0x1ffffff).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x2000000 + slot * 0x800000, 0x27fffff + slot * 0x800000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
+		map(0x2000000 + slot * 0x800000, 0x27fffff + slot * 0x800000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_exp[slot]->present() ? m_exp[slot]->read(offset) : 0xff; })));
 	for (int slot = 0; slot < 2; slot++)
-		map(0x4000000 + slot * 0x2000000, 0x5ffffff + slot * 0x2000000).r(m_srx[slot], FUNC(roland_srx_slot_device::read));
+		map(0x4000000 + slot * 0x2000000, 0x5ffffff + slot * 0x2000000).lr8(NAME(([this, slot] (offs_t offset) -> u8 { return m_srx[slot]->present() ? m_srx[slot]->read(offset) : 0xff; })));
 }
 
 void xv5080_state::lcdc_map(address_map &map)

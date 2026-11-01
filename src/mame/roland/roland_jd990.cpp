@@ -449,8 +449,9 @@ void roland_jd990_state::mem_map(address_map &map)
 // and CN7's eight are the two sockets'
 void roland_jd990_state::wave_map(address_map &map)
 {
-	map(0x600000, 0x7fffff).r(m_card, FUNC(roland_sopcm1_slot_device::read));
-	map(0x800000, 0xffffff).r(m_exp, FUNC(roland_srjv80_slot_device::read));
+	map.unmap_value_high();
+	map(0x600000, 0x7fffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_card->present() ? m_card->read(offset) : 0xff; }));
+	map(0x800000, 0xffffff).lr8(NAME([this] (offs_t offset) -> u8 { return m_exp->present() ? m_exp->read(offset) : 0xff; }));
 }
 
 void roland_jd990_state::lcdc_map(address_map &map)

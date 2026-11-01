@@ -595,26 +595,28 @@ void roland_sc88_state::xpgs_map(address_map &map)
 // the XP's region number: bits 6-4 select the ROM chip, bits 3-0 the 1 MB page in it
 void roland_sc88_state::xp_rom_map(address_map &map)
 {
-	map(0x0000000, 0x01fffff).rom().region("waverom", 0x000000);
-	map(0x1000000, 0x11fffff).rom().region("waverom", 0x200000);
-	map(0x2000000, 0x21fffff).rom().region("waverom", 0x400000);
-	map(0x3000000, 0x31fffff).rom().region("waverom", 0x600000);
+	map.unmap_value_high();
+	map(0x0000000, 0x01fffff).mirror(0x0e00000).rom().region("waverom", 0x000000);
+	map(0x1000000, 0x11fffff).mirror(0x0e00000).rom().region("waverom", 0x200000);
+	map(0x2000000, 0x21fffff).mirror(0x0e00000).rom().region("waverom", 0x400000);
+	map(0x3000000, 0x31fffff).mirror(0x0e00000).rom().region("waverom", 0x600000);
 }
 
 void roland_sc88_state::xpgs_xp_rom_map(address_map &map)
 {
 	xp_rom_map(map);
-	map(0x4000000, 0x41fffff).rom().region("waverom", 0x800000);
+	map(0x4000000, 0x41fffff).mirror(0x0e00000).rom().region("waverom", 0x800000);
 }
 
 // five 32 Mbit ROMs, XWCS0-4 = IC20-IC24 (service notes, main circuit diagram)
 void roland_sc88_state::pro_xp_rom_map(address_map &map)
 {
-	map(0x0000000, 0x03fffff).rom().region("waverom", 0x000000);
-	map(0x1000000, 0x13fffff).rom().region("waverom", 0x400000);
-	map(0x2000000, 0x23fffff).rom().region("waverom", 0x800000);
-	map(0x3000000, 0x33fffff).rom().region("waverom", 0xc00000);
-	map(0x4000000, 0x43fffff).rom().region("waverom", 0x1000000);
+	map.unmap_value_high();
+	map(0x0000000, 0x03fffff).mirror(0x0c00000).rom().region("waverom", 0x000000);
+	map(0x1000000, 0x13fffff).mirror(0x0c00000).rom().region("waverom", 0x400000);
+	map(0x2000000, 0x23fffff).mirror(0x0c00000).rom().region("waverom", 0x800000);
+	map(0x3000000, 0x33fffff).mirror(0x0c00000).rom().region("waverom", 0xc00000);
+	map(0x4000000, 0x43fffff).mirror(0x0c00000).rom().region("waverom", 0x1000000);
 }
 
 

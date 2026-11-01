@@ -12,9 +12,11 @@ class roland_wavecard_device : public device_t, public device_cartrom_image_inte
 {
 public:
 	// the ROM, a byte a cell on a byte-wide bus and a word a cell on a
-	// word-wide one, zero where nothing answers
-	u8 read(offs_t offset) { return (m_rom && offset < m_size) ? m_rom[offset] : 0; }
-	u16 read16(offs_t offset) { return (m_rom && (offset << 1) < m_size) ? (m_rom[offset << 1] | (m_rom[(offset << 1) | 1] << 8)) : 0; }
+	// word-wide one, repeating through the socket's window; what an empty
+	// socket reads is the host's
+	bool present() const { return bool(m_rom); }
+	u8 read(offs_t offset) { return m_rom[offset % m_size]; }
+	u16 read16(offs_t offset) { const u32 at = (offset << 1) % m_size; return m_rom[at] | (m_rom[at | 1] << 8); }
 
 	// address lines permuted within a block of their own size and the data
 	// lines Roland's wave ROMs share, undone in place

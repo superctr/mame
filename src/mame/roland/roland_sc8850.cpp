@@ -576,17 +576,21 @@ void roland_sc8850_state::lcdc_map(address_map &map)
 // SC-8820's.
 void roland_sc8850_state::xp_rom_map(address_map &map)
 {
+	map.unmap_value_high();
 	for (int select = 0; select < 8; select++)
-		map(select << 24, (select << 24) | 0x3fffff).rom().region("waverom", select << 22);
+		map(select << 24, (select << 24) | 0x3fffff).mirror(0xc00000).rom().region("waverom", select << 22);
 }
 
 // the SC-8820 has 16 MB and 8 MB; it cannot boot far enough to say which
 // selects it uses, so it follows its sibling's
 // the SC-8820 numbers its banks straight through instead, 0 to 23 with no
-// chip select at all, so its two ROMs are one window.
+// chip select at all, so its two ROMs are one window, the 8 MB one repeating
+// through the rest of the second 16 MB.
 void roland_sc8850_state::sc8820_xp_rom_map(address_map &map)
 {
-	map(0x0000000, 0x17fffff).rom().region("waverom", 0x0000000);
+	map.unmap_value_high();
+	map(0x0000000, 0x0ffffff).rom().region("waverom", 0x0000000);
+	map(0x1000000, 0x17fffff).mirror(0x0800000).rom().region("waverom", 0x1000000);
 }
 
 
