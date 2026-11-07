@@ -9,7 +9,7 @@
     reads one data word and writes another, multiplies an operand by its
     coefficient and adds one of the last two results or the word read.
     24 voice words come in through their own steps; results leave through
-    latches on three serial ports, exposed here as four words a port in
+    latches on three serial ports, exposed here as eight words a port in
     step order.
 
     Two serial input ports arrive as stream inputs after the voices, left
@@ -31,8 +31,8 @@ DEFINE_DEVICE_TYPE(ROLAND_MEQ, roland_meq_device, "roland_meq", "Roland MEQ")
 namespace {
 
 enum : u16 {
-	LO_SERIAL_LATCH = 0x0600, LO_SMOOTH = 0x0800, LO_DATA_COEF = 0x1000,
-	LO_PREV_READ = 0x0100, LO_SATURATE = 0x0080, LO_SERIAL_IN = 0x0010,
+	LO_SERIAL_LATCH = 0x0600, LO_SMOOTH = 0x0800, LO_DATA_COEF = 0x1000, LO_ABS = 0x2000,
+	LO_R2 = 0x0100, LO_SATURATE = 0x0080, LO_SERIAL_IN = 0x0010,
 	LO_TRANSFER = 0x0008, LO_TRANSFER_R1 = 0x0004, LO_OPERAND2 = 0x0001
 };
 
@@ -50,7 +50,8 @@ roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *
 	m_synchronous(false),
 	m_serial_right_first{ false, false },
 	m_stream(nullptr),
-	m_slot_table(nullptr)
+	m_slot_table(nullptr),
+	m_slots_per_voice(0)
 {
 }
 
@@ -59,9 +60,9 @@ void roland_meq_device::device_start()
 	std::fill(std::begin(m_slot_of_step), std::end(m_slot_of_step), -1);
 	if(m_slot_table)
 		for(int v = 0; v != VOICES; v++)
-			for(int i = 0; i != 2; i++)
-				if(m_slot_table[v][i] < STEPS)
-					m_slot_of_step[m_slot_table[v][i]] = v;
+			for(unsigned i = 0; i != m_slots_per_voice; i++)
+				if(m_slot_table[v * m_slots_per_voice + i] < STEPS)
+					m_slot_of_step[m_slot_table[v * m_slots_per_voice + i]] = v;
 
 	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock(), m_synchronous ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 
@@ -70,8 +71,9 @@ void roland_meq_device::device_start()
 	save_item(NAME(m_data));
 	save_item(NAME(m_latch));
 	save_item(NAME(m_config));
-	save_item(NAME(m_operand));
-	save_item(NAME(m_operand2));
+	save_item(NAME(m_byte_hi));
+	save_item(NAME(m_operand_l));
+	save_item(NAME(m_operand_p));
 	save_item(NAME(m_r1));
 	save_item(NAME(m_r2));
 	save_item(NAME(m_pipe));
@@ -92,7 +94,8 @@ void roland_meq_device::device_reset()
 	std::fill(std::begin(m_data), std::end(m_data), 0);
 	m_latch = 0;
 	m_config[0] = m_config[1] = 0;
-	m_operand = m_operand2 = m_r1 = m_r2 = 0;
+	std::fill(std::begin(m_byte_hi), std::end(m_byte_hi), 0);
+	m_operand_l = m_operand_p = m_r1 = m_r2 = 0;
 	m_pipe[0] = m_pipe[1] = 0;
 	m_prev_read = 0;
 	m_pending_coef = -1;
@@ -151,6 +154,20 @@ void roland_meq_device::write(offs_t offset, u16 data)
 	}
 }
 
+u8 roland_meq_device::read8(offs_t offset)
+{
+	u16 const word = read(offset >> 1);
+	return BIT(offset, 0) ? word : word >> 8;
+}
+
+void roland_meq_device::write8(offs_t offset, u8 data)
+{
+	if(!BIT(offset, 0))
+		m_byte_hi[(offset >> 1) & 7] = data;
+	else
+		write(offset >> 1, (m_byte_hi[(offset >> 1) & 7] << 8) | data);
+}
+
 s32 roland_meq_device::multiply(s32 x, u16 coef) const
 {
 	static constexpr int SHIFTS[4] = { 0, 1, 2, 4 };
@@ -179,9 +196,9 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 		s32 x;
 		if(lo & LO_OPERAND2) {
 			int const v = addend == ADD_READ ? m_slot_of_step[m] : -1;
-			x = v >= 0 ? voices[v] : m_operand2;
+			x = v >= 0 ? voices[v] : m_operand_p;
 		} else
-			x = m_operand;
+			x = m_operand_l;
 
 		s32 a;
 		switch(addend) {
@@ -192,23 +209,25 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 			if(lo & LO_OPERAND2)
 				a = rd;
 			else
-				a = (lo & LO_PREV_READ) ? m_prev_read : m_r1;
+				a = (lo & LO_R2) ? m_prev_read : m_r1;
 			break;
 		}
 
-		if(lo & LO_SMOOTH)
-			x -= rd;
+		if(lo & LO_SMOOTH) {
+			a = x;
+			x = rd - x;
+		}
 
 		u16 coef = m_coef[m];
 		if(m_pending_coef >= 0) {
-			coef = m_pending_coef;
+			coef = (coef & 0x3000) | m_pending_coef;
 			m_pending_coef = -1;
 		}
 		if(lo & LO_DATA_COEF)
 			m_pending_coef = (m_r1 >> 12) & 0xfff;
 
 		s64 const sum = s64(a) + multiply(x, coef);
-		s32 const result = (lo & LO_SATURATE) ? clamp24(sum) : wrap24(sum);
+		s32 const result = ((lo & LO_SATURATE) && !(lo & LO_R2)) ? clamp24(sum) : wrap24(sum);
 
 		if(lo & LO_SERIAL_LATCH) {
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
@@ -223,27 +242,32 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 		if(reads)
 			m_prev_read = rd;
 
-		bool push = true;
+		bool loaded = false;
 		if(lo & LO_SERIAL_IN) {
 			int const port = ((lo >> 2) & 3) - 1;
 			if(port >= 0 && port < SERIAL_INPUTS)
-				m_operand = m_operand2 = serial[port][serial_reads[port]++ & 1];
+				m_operand_l = m_operand_p = serial[port][serial_reads[port]++ & 1];
 			else
-				m_operand = m_operand2 = 0;
+				m_operand_l = m_operand_p = 0;
+			loaded = true;
+		} else if(reads && (addend != ADD_READ || !(lo & LO_OPERAND2))) {
+			m_operand_l = m_operand_p = (lo & LO_ABS) ? std::abs(rd) : rd;
+			loaded = true;
 		}
-		else if(reads && (addend != ADD_READ || !(lo & LO_OPERAND2)))
-			m_operand = m_operand2 = rd;
 		if((lo & LO_TRANSFER) && !(lo & LO_SERIAL_IN)) {
 			if(lo & LO_TRANSFER_R1) {
-				m_operand = m_r1;
-				push = false;
-			} else
-				m_operand2 = m_r2;
+				m_operand_p = m_r1;
+				if(!loaded)
+					m_operand_l = m_r1;
+			} else {
+				m_operand_p = m_r2;
+				if(lo & LO_DATA_COEF)
+					m_operand_l = m_r2;
+			}
 		}
-		if(push) {
+		if(lo & LO_R2)
 			m_r2 = m_r1;
-			m_r1 = result;
-		}
+		m_r1 = result;
 	}
 }
 

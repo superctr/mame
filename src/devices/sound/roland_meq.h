@@ -14,13 +14,16 @@ public:
 	static constexpr int SERIAL_INPUTS = 2;
 	static constexpr int INPUT_SERIAL = VOICES;
 	static constexpr int PORTS = 3;
-	static constexpr int LATCHES = 4;
+	static constexpr int LATCHES = 8;
 	static constexpr int STEPS = 400;
+
+	// the stream output carrying a port's latch, latches counted in step order from the start of the sample
+	static constexpr int output(int port, int latch) { return port * LATCHES + latch; }
 
 	roland_meq_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	// the steps at which each voice input is the multiplicand
-	void set_voice_slots(const u16 (*slots)[2]) { m_slot_table = slots; }
+	template <unsigned N> void set_voice_slots(const u16 (&slots)[VOICES][N]) { m_slot_table = &slots[0][0]; m_slots_per_voice = N; }
 
 	// the third serial port's words as they are latched, the latch's index in the sample as the offset
 	auto port3_callback() { return m_port3_cb.bind(); }
@@ -34,6 +37,10 @@ public:
 	// the register file, a 16-bit word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
+
+	// the register file on an 8-bit bus: each word as two bytes, most significant first
+	u8 read8(offs_t offset);
+	void write8(offs_t offset, u8 data);
 
 protected:
 	virtual void device_start() override ATTR_COLD;
@@ -52,7 +59,8 @@ private:
 	bool m_synchronous;
 	bool m_serial_right_first[SERIAL_INPUTS];
 	sound_stream *m_stream;
-	const u16 (*m_slot_table)[2];
+	const u16 *m_slot_table;
+	unsigned m_slots_per_voice;
 	s8 m_slot_of_step[STEPS];
 
 	u32 m_program[STEPS];
@@ -60,9 +68,10 @@ private:
 	s32 m_data[DATA_WORDS];
 	u32 m_latch;
 	u16 m_config[2];
+	u8 m_byte_hi[8];
 
-	s32 m_operand;
-	s32 m_operand2;
+	s32 m_operand_l;
+	s32 m_operand_p;
 	s32 m_r1;
 	s32 m_r2;
 	s32 m_pipe[2];
