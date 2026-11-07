@@ -162,9 +162,15 @@ void roland_meq_device::write(offs_t offset, u16 data)
 	}
 }
 
+offs_t roland_meq_device::byte_register(offs_t offset)
+{
+	offs_t const word = (offset >> 1) & 7;
+	return BIT(word, 1) ? word : word ^ 1;
+}
+
 u8 roland_meq_device::read8(offs_t offset)
 {
-	u16 const word = read(offset >> 1);
+	u16 const word = read(byte_register(offset));
 	return BIT(offset, 0) ? word : word >> 8;
 }
 
@@ -173,7 +179,7 @@ void roland_meq_device::write8(offs_t offset, u8 data)
 	if(!BIT(offset, 0))
 		m_byte_hi[(offset >> 1) & 7] = data;
 	else
-		write(offset >> 1, (m_byte_hi[(offset >> 1) & 7] << 8) | data);
+		write(byte_register(offset), (m_byte_hi[(offset >> 1) & 7] << 8) | data);
 }
 
 s32 roland_meq_device::multiply(s32 x, u16 coef) const

@@ -56,6 +56,7 @@ protected:
 private:
 	enum : u32 { DATA_WORDS = 128 };
 
+	static offs_t byte_register(offs_t offset);
 	s32 multiply(s32 x, u16 coef) const;
 	void run(const s32 *voices, const s32 (*serial)[2]);
 
