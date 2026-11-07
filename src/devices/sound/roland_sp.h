@@ -39,7 +39,7 @@ private:
 
 	// C2's top bits and the END register's mode byte
 	enum : u32 {
-		C2_IDLE = 1U << 31, C2_NO_END = 1U << 30, C2_BACKWARD = 1U << 27,
+		C2_NO_LOOP_EVENT = 1U << 31, C2_NO_END_EVENT = 1U << 30, C2_BACKWARD = 1U << 27,
 		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30, MODE_ONE_SHOT = 1U << 29
 	};
 

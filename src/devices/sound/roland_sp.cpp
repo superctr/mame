@@ -10,8 +10,9 @@
     the voice's address selects the register, and the value goes through
     the block's port.  A voice plays forward, in reverse, or alternating
     between its loop points; it raises a loop event when it first crosses
-    its loop boundary and an end event at its end address, through a queue
-    the host reads at C002 and acknowledges at C016.
+    its loop boundary and an end event at its end address, unless C2's bit
+    31 or 30 masks them, through a queue the host reads at C002 and
+    acknowledges at C016.
 
     The interpolation is the GP's, XP's and XV's kernel (four taps, as
     the current sample and three differences after it), assumed for this
@@ -335,7 +336,7 @@ s32 roland_sp_device::step(int n, voice &v)
 	s64 const pitch = v.c4[C4_PITCH];
 
 	auto looped = [&]() {
-		if(!v.looped) {
+		if(!v.looped && !(v.flags & C2_NO_LOOP_EVENT)) {
 			v.looped = true;
 			event(n, EVENT_LOOP);
 		}
@@ -368,7 +369,7 @@ s32 roland_sp_device::step(int n, voice &v)
 			} else
 				v.pos -= loop_at - loop_to;
 		}
-		if(!(v.flags & C2_NO_END) && !v.ended && v.pos >= s64(end & 0x00ffffff) << POS_FRACTION) {
+		if(!(v.flags & C2_NO_END_EVENT) && !v.ended && v.pos >= s64(end & 0x00ffffff) << POS_FRACTION) {
 			v.ended = true;
 			event(n, EVENT_END);
 		}
@@ -381,6 +382,6 @@ void roland_sp_device::sound_stream_update(sound_stream &stream)
 	for(int n = 0; n != VOICES; n++) {
 		voice &v = m_voices[n];
 		for(int i = 0; i != stream.samples(); i++)
-			stream.put_int(n, i, v.on && !(v.flags & C2_IDLE) ? step(n, v) : 0, 32768);
+			stream.put_int(n, i, v.on ? step(n, v) : 0, 32768);
 	}
 }
