@@ -92,6 +92,10 @@ void i8x9x_device::device_start()
 	save_item(NAME(ad_done));
 	save_item(NAME(hsi_mode));
 	save_item(NAME(hsi_status));
+	save_item(NAME(hsi_fifo_time));
+	save_item(NAME(hsi_fifo_bits));
+	save_item(NAME(hsi_fifo_count));
+	save_item(NAME(hsi_divider));
 	save_item(NAME(hso_command));
 	save_item(NAME(ad_command));
 	save_item(NAME(hso_active));
@@ -139,6 +143,8 @@ void i8x9x_device::device_reset()
 	port2 = 0xc1 & i8x9x_p2_mask(); // P2.5 is cleared
 	ios0 = ios1 = 0x00;
 	ioc0 &= 0xaa;
+	hsi_fifo_count = 0;
+	std::fill(std::begin(hsi_divider), std::end(hsi_divider), 0);
 	ioc1 = (ioc1 & 0xae) | 0x01;
 	ad_result = 0;
 	ad_done = 0;
@@ -463,9 +469,19 @@ void i8x9x_device::hso_time_w(u16 data)
 
 u16 i8x9x_device::hsi_time_r()
 {
-	if (!machine().side_effects_disabled())
-		logerror("read hsi time (%04x)\n", PPC);
-	return 0x0000;
+	if (!hsi_fifo_count)
+		return 0x0000;
+	u16 const time = hsi_fifo_time[0];
+	if (!machine().side_effects_disabled()) {
+		hsi_fifo_count--;
+		std::copy(std::begin(hsi_fifo_time) + 1, std::end(hsi_fifo_time), std::begin(hsi_fifo_time));
+		std::copy(std::begin(hsi_fifo_bits) + 1, std::end(hsi_fifo_bits), std::begin(hsi_fifo_bits));
+		if (hsi_fifo_count) {
+			pending_irq |= IRQ_HSI;
+			check_irq();
+		}
+	}
+	return time;
 }
 
 void i8x9x_device::hso_command_w(u8 data)
@@ -475,7 +491,24 @@ void i8x9x_device::hso_command_w(u8 data)
 
 u8 i8x9x_device::hsi_status_r()
 {
-	return hsi_status;
+	u8 events = 0;
+	if (hsi_fifo_count)
+		for (int pin = 0; pin != 4; pin++)
+			if (BIT(hsi_fifo_bits[0], pin))
+				events |= 1 << (pin * 2);
+	return (hsi_status & 0xaa) | events;
+}
+
+void i8x9x_device::hsi_event(u8 pins)
+{
+	if (hsi_fifo_count == std::size(hsi_fifo_time))
+		return;
+	hsi_fifo_time[hsi_fifo_count] = timer_value(1, total_cycles());
+	hsi_fifo_bits[hsi_fifo_count] = pins;
+	if (!hsi_fifo_count++) {
+		pending_irq |= IRQ_HSI;
+		check_irq();
+	}
 }
 
 void i8x9x_device::sbuf_w(u8 data)
@@ -630,7 +663,7 @@ void i8x9x_device::ioc1_w(u8 data)
 
 u8 i8x9x_device::ios1_r()
 {
-	u8 res = ios1;
+	u8 res = (ios1 & 0x3f) | (hsi_fifo_count ? 0x80 : 0) | (hsi_fifo_count == std::size(hsi_fifo_time) ? 0x40 : 0);
 	if (!machine().side_effects_disabled())
 		ios1 = ios1 & 0xc0;
 	return res;
@@ -690,6 +723,27 @@ void i8x9x_device::set_hsi_state(int pin, bool state)
 		}
 		if((ioc0 & 0x28) == 0x28)
 			timer2_reset(total_cycles());
+	}
+
+	bool const was = BIT(hsi_status, pin * 2 + 1);
+	if (BIT(ioc0, pin * 2) && state != was) {
+		switch ((hsi_mode >> (pin * 2)) & 3) {
+		case 0:
+			if (state && !(hsi_divider[pin] = (hsi_divider[pin] + 1) & 7))
+				hsi_event(1 << pin);
+			break;
+		case 1:
+			if (state)
+				hsi_event(1 << pin);
+			break;
+		case 2:
+			if (!state)
+				hsi_event(1 << pin);
+			break;
+		case 3:
+			hsi_event(1 << pin);
+			break;
+		}
 	}
 
 	if(state)

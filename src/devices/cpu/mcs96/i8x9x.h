@@ -159,6 +159,10 @@ private:
 
 	u64 base_timer2, ad_done;
 	u8 hsi_mode, hsi_status, hso_command, ad_command, hso_active;
+	u16 hsi_fifo_time[8];
+	u8 hsi_fifo_bits[8];
+	u8 hsi_fifo_count;
+	u8 hsi_divider[4];
 	u16 hso_time, ad_result;
 	u8 pwm_control;
 	u8 port1, port2;
@@ -190,6 +194,7 @@ private:
 	u64 timer_time_until(int timer, u64 current_time, u16 timer_value) const;
 	void timer2_reset(u64 current_time);
 	void set_hsi_state(int pin, bool state);
+	void hsi_event(u8 pins);
 	void commit_hso_cam();
 	void trigger_cam(int id, u64 current_time);
 	void set_hso(u8 mask, bool state);
