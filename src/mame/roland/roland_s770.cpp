@@ -174,6 +174,7 @@ private:
 	u16 m_dma_count;
 	bool m_dma_active;
 	bool m_dma_in_service;
+	bool m_old_ga = false;
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
@@ -441,12 +442,27 @@ void roland_s770_state::dma_service()
 	m_dma_in_service = true;
 	while(m_dma_active) {
 		bool const to_device = !BIT(m_dma_ctrl, 0);
-		bool const wave = (m_dma_ctrl & 0xe0) == 0xa0;
-		bool const fdc = !wave && BIT(m_dma_ctrl, 7);
+		u8 const group = m_dma_ctrl >> 6;
+		bool const wave = group == 2 && BIT(m_dma_ctrl, 5);
+		bool const fdc = group == 3 || (group == 2 && !BIT(m_dma_ctrl, 5) && m_old_ga);
+		bool const scsi_wave = group == 2 && !BIT(m_dma_ctrl, 5) && !m_old_ga;
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			break;
 
-		if(wave) {
+		if(scsi_wave) {
+			bool const high = BIT(m_dma_count, 0);
+			if(to_device) {
+				u8 const data = m_spc->dma_r();
+				if(!high)
+					m_wave_dma_word = data;
+				else
+					m_sp->host_write(m_wave_dma_word | data << 8, 0xffff);
+			} else {
+				if(!high)
+					m_wave_dma_word = m_sp->host_read();
+				m_spc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
+			}
+		} else if(wave) {
 			bool const high = BIT(m_dma_count, 0);
 			if(to_device) {
 				u8 const data = dma_byte_r();
@@ -932,6 +948,7 @@ void roland_s770_state::sp700(machine_config &config)
 	m_meq->add_route(roland_meq_device::output(1, 5), "out_d", 1.0, 1);
 
 	INTEL_28F010(config, m_flash);
+	m_sp->set_wave_size(0x2000000);
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
@@ -949,6 +966,7 @@ void roland_s770_state::sp700(machine_config &config)
 void roland_s770_state::s770(machine_config &config)
 {
 	common_core(config);
+	m_old_ga = true;
 	m_maincpu->set_clock(12_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
 
