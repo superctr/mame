@@ -28,6 +28,9 @@ public:
 	// one sample at a time, for a machine whose CPU waits on the port 3 callback's effects
 	void set_synchronous(bool synchronous) { m_synchronous = synchronous; }
 
+	// a serial input that delivers the right word first
+	void set_serial_right_first(int port, bool right_first) { m_serial_right_first[port] = right_first; }
+
 	// the register file, a 16-bit word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
@@ -35,6 +38,7 @@ public:
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_clock_changed() override;
 
 	virtual void sound_stream_update(sound_stream &stream) override;
 
@@ -46,6 +50,7 @@ private:
 
 	devcb_write32 m_port3_cb;
 	bool m_synchronous;
+	bool m_serial_right_first[SERIAL_INPUTS];
 	sound_stream *m_stream;
 	const u16 (*m_slot_table)[2];
 	s8 m_slot_of_step[STEPS];

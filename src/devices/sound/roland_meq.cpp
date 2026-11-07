@@ -48,6 +48,7 @@ roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *
 	device_sound_interface(mconfig, *this),
 	m_port3_cb(*this),
 	m_synchronous(false),
+	m_serial_right_first{ false, false },
 	m_stream(nullptr),
 	m_slot_table(nullptr)
 {
@@ -77,6 +78,11 @@ void roland_meq_device::device_start()
 	save_item(NAME(m_prev_read));
 	save_item(NAME(m_pending_coef));
 	save_item(NAME(m_port));
+}
+
+void roland_meq_device::device_clock_changed()
+{
+	m_stream->set_sample_rate(clock());
 }
 
 void roland_meq_device::device_reset()
@@ -248,9 +254,13 @@ void roland_meq_device::sound_stream_update(sound_stream &stream)
 	for(int i = 0; i != stream.samples(); i++) {
 		for(int v = 0; v != VOICES; v++)
 			voices[v] = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * 0x7fffff) & ~0x1f;
-		for(int p = 0; p != SERIAL_INPUTS; p++)
+		for(int p = 0; p != SERIAL_INPUTS; p++) {
+			s32 in[2];
 			for(int c = 0; c != 2; c++)
-				serial[p][c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7fffff);
+				in[c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7fffff);
+			serial[p][0] = in[m_serial_right_first[p] ? 1 : 0];
+			serial[p][1] = in[m_serial_right_first[p] ? 0 : 1];
+		}
 		run(voices, serial);
 		for(int p = 0; p != PORTS; p++)
 			for(int l = 0; l != LATCHES; l++)
