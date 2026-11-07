@@ -99,7 +99,7 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_c2_latch(0),
 	m_event_head(0), m_event_count(0), m_int_state(false),
 	m_host_bank(0), m_host_addr(0), m_host_latch(0),
-	m_record_in{ 0, 0 }, m_level_channel(0)
+	m_record_inputs(false), m_record_in{ 0, 0 }, m_level_channel(0)
 {
 	std::fill(std::begin(m_ctrl), std::end(m_ctrl), 0);
 	std::fill(std::begin(m_events), std::end(m_events), 0);
@@ -112,7 +112,7 @@ void roland_sp_device::device_start()
 		m_wave_fitted = m_wave_words;
 	memory_share *share = machine().memory().share_alloc(*this, "wave", 16, m_wave_size, ENDIANNESS_LITTLE);
 	m_wave_ptr = reinterpret_cast<u16 *>(share->ptr());
-	m_stream = stream_alloc(0, VOICES, clock());
+	m_stream = stream_alloc(m_record_inputs ? 2 : 0, VOICES, clock(), m_record_inputs ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 	m_int_timer = timer_alloc(FUNC(roland_sp_device::update_int), this);
 
 	for(int i = 0; i != VOICES; i++) {
@@ -295,9 +295,11 @@ void roland_sp_device::write(offs_t offset, u16 data, u16 mem_mask)
 		break;
 	case 0x06:
 		m_host_addr = (m_host_addr & 0x0000ffff) | (data << 16);
+		m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
 		break;
 	case 0x07:
 		m_host_addr = (m_host_addr & 0xffff0000) | data;
+		m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
 		break;
 	case 0x08:
 		m_c2_latch = (m_c2_latch & 0xffff0000) | data;
@@ -384,7 +386,7 @@ void roland_sp_device::advance(int n, voice &v)
 		}
 	} else {
 		v.pos += pitch;
-		if(v.pos >= loop_at) {
+		if(v.pos > loop_at) {
 			looped();
 			if(end & MODE_ONE_SHOT)
 				v.on = false;
@@ -403,10 +405,7 @@ void roland_sp_device::advance(int n, voice &v)
 
 bool roland_sp_device::recording(int n) const
 {
-	for(int c = 0; c != 2; c++)
-		if(n == RECORD_VOICES[c])
-			return BIT(m_ctrl[2], c);
-	return false;
+	return BIT(m_ctrl[2], 0) && (n == RECORD_VOICES[0] || n == RECORD_VOICES[1]);
 }
 
 void roland_sp_device::record_w(offs_t offset, u32 data)
@@ -414,8 +413,12 @@ void roland_sp_device::record_w(offs_t offset, u32 data)
 	if(offset > 1)
 		return;
 	m_record_in[offset] = util::sext(data, 24);
-	if(offset != 1)
-		return;
+	if(offset == 1)
+		record();
+}
+
+void roland_sp_device::record()
+{
 	for(int c = 0; c != 2; c++) {
 		int const n = RECORD_VOICES[c];
 		voice &v = m_voices[n];
@@ -428,6 +431,12 @@ void roland_sp_device::record_w(offs_t offset, u32 data)
 
 void roland_sp_device::sound_stream_update(sound_stream &stream)
 {
+	if(m_record_inputs)
+		for(int i = 0; i != stream.samples(); i++) {
+			for(int c = 0; c != 2; c++)
+				m_record_in[c] = std::clamp(s32(stream.get(c, i) * 0x800000), -0x800000, 0x7fffff);
+			record();
+		}
 	for(int n = 0; n != VOICES; n++) {
 		voice &v = m_voices[n];
 		for(int i = 0; i != stream.samples(); i++)

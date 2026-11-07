@@ -37,6 +37,9 @@ public:
 	// the recording input, a 24-bit word per channel, left (offset 0) then right
 	void record_w(offs_t offset, u32 data);
 
+	// the recording input as two stream inputs instead, left and right, run one sample at a time
+	void set_record_inputs() { m_record_inputs = true; }
+
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -79,6 +82,7 @@ private:
 	s32 step(int n, voice &v);
 	void advance(int n, voice &v);
 	bool recording(int n) const;
+	void record();
 	TIMER_CALLBACK_MEMBER(update_int);
 
 	devcb_write_line m_int_cb;
@@ -108,6 +112,7 @@ private:
 	u32 m_host_addr;
 	u16 m_host_latch;
 
+	bool m_record_inputs;
 	s32 m_record_in[2];
 	u8 m_level_channel;
 };
