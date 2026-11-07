@@ -42,6 +42,7 @@ t6963c_device::t6963c_device(const machine_config &mconfig, const char *tag, dev
 	: device_t(mconfig, T6963C, tag, owner, clock)
 	, device_memory_interface(mconfig, *this)
 	, m_display_config("display", ENDIANNESS_LITTLE, 8, 16, 0)
+	, m_internal_cgrom(true)
 	, m_cgrom(*this, "cgrom")
 	, m_display_ram(nullptr)
 	, m_data(0)
@@ -450,6 +451,7 @@ void lm24014h_device::lcd_palette(palette_device &palette) const
 void lm24014h_device::device_add_mconfig(machine_config &config)
 {
 	T6963C(config, m_lcdc, 0); // XTAL is unknown
+	m_lcdc->set_external_cgrom();
 	m_lcdc->set_addrmap(0, &lm24014h_device::ram_map);
 
 	screen_device &screen(SCREEN(config, "screen").set_lcd());
@@ -461,6 +463,22 @@ void lm24014h_device::device_add_mconfig(machine_config &config)
 	screen.set_palette("palette");
 
 	PALETTE(config, "palette", FUNC(lm24014h_device::lcd_palette), 2);
+}
+
+
+//-------------------------------------------------
+//  t6963c - ROM definition: the internal
+//  character generator, mask code 0101
+//-------------------------------------------------
+
+ROM_START(t6963c)
+	ROM_REGION(0x400, "cgrom", 0)
+	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, CRC(547d118b) SHA1(0dd3e3acd3d47e6ece644c98c390fc86587373e9))
+ROM_END
+
+const tiny_rom_entry *t6963c_device::device_rom_region() const
+{
+	return m_internal_cgrom ? ROM_NAME(t6963c) : nullptr;
 }
 
 

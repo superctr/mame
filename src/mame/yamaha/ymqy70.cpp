@@ -198,10 +198,6 @@ void qy70_state::qy70(machine_config &config)
 ROM_START(qy70)
 	ROM_REGION16_BE(0x200000, "mainprog", 0)
 	ROM_LOAD("qy70main.bin", 0x000000, 0x200000, CRC(c581164b) SHA1(6f804cb6956dff50c5b64fb2f695bb36e3f278ec))
-
-	ROM_REGION(0x400, "lcdc:cgrom", 0)
-	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, CRC(547d118b) SHA1(0dd3e3acd3d47e6ece644c98c390fc86587373e9))
-	// This t6963c_0101 internal CG ROM is similar to lm24014w_0101.bin which may be used as a replacement
 ROM_END
 
 } // anonymous namespace

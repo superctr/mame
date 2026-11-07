@@ -43,6 +43,9 @@ public:
 	void set_md(u8 data);   // MD0, MD1, MD2, MD3, MDS
 	void set_fs(u8 data);   // FS0, FS1
 
+	// a module that supplies its own character ROM as region "cgrom" of this device
+	void set_external_cgrom() { m_internal_cgrom = false; }
+
 	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 	static constexpr feature_type imperfect_features() { return feature::GRAPHICS; }
@@ -51,6 +54,7 @@ protected:
 	// device-specific overrides
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual const tiny_rom_entry *device_rom_region() const override ATTR_COLD;
 
 	// device_memory_interface overrides
 	virtual space_config_vector memory_space_config() const override;
@@ -61,6 +65,7 @@ private:
 
 	// configuration and object finders
 	address_space_config m_display_config;
+	bool m_internal_cgrom;
 	required_region_ptr<u8> m_cgrom;
 	address_space *m_display_ram;
 

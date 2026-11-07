@@ -608,11 +608,6 @@ ROM_START(d70)
 	ROM_LOAD("roland_d70_waverom-c.bin", 0x200000, 0x80000, CRC(733c4054) SHA1(9b6b59ab74e5bf838702abb087c408aaa85b7b1f))
 	ROM_LOAD("roland_d70_waverom-d.bin", 0x300000, 0x80000, CRC(b6c662d2) SHA1(3fcbcfd0d8d0fa419c710304c12482e2f79a907f))
 	ROM_REGION(0x600000, "pcm", ROMREGION_ERASEFF) // ROMs after descrambling
-
-	ROM_REGION(0x400, "lcd:cgrom", 0)
-	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, CRC(547d118b) SHA1(0dd3e3acd3d47e6ece644c98c390fc86587373e9))
-	// This t6963c_0101 internal CG ROM is similar to lm24014w_0101.bin which may be
-	// used as a replacement
 ROM_END
 
 } // anonymous namespace

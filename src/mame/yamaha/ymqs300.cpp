@@ -352,10 +352,6 @@ ROM_START( qs300 )
 	// Identical to the mu50 roms
 	ROM_LOAD( "xq057c0.ic10", 0x000000, 0x200000, CRC(d4adbc7e) SHA1(32f653c7644d060f5a6d63a435ae3a7412386d92) )
 	ROM_LOAD( "xq058c0.ic11", 0x200000, 0x200000, CRC(7b68f475) SHA1(adf68689b4842ec5bc9b0ea1bb99cf66d2dec4de) )
-
-	ROM_REGION(0x400, "vs254300:cgrom", 0)
-	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, CRC(547d118b) SHA1(0dd3e3acd3d47e6ece644c98c390fc86587373e9))
-	// This t6963c_0101 internal CG ROM is similar to lm24014w_0101.bin which may be used as a replacement
 ROM_END
 
 ROM_START( eosb900 )
@@ -371,10 +367,6 @@ ROM_START( eosb900 )
 	// Identical to the mu50 roms
 	ROM_LOAD( "xq057c0.ic10", 0x000000, 0x200000, CRC(d4adbc7e) SHA1(32f653c7644d060f5a6d63a435ae3a7412386d92) )
 	ROM_LOAD( "xq058c0.ic11", 0x200000, 0x200000, CRC(7b68f475) SHA1(adf68689b4842ec5bc9b0ea1bb99cf66d2dec4de) )
-
-	ROM_REGION(0x400, "vs254300:cgrom", 0)
-	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, CRC(547d118b) SHA1(0dd3e3acd3d47e6ece644c98c390fc86587373e9))
-	// This t6963c_0101 internal CG ROM is similar to lm24014w_0101.bin which may be used as a replacement
 ROM_END
 
 } // anonymous namespace

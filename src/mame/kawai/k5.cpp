@@ -66,16 +66,12 @@ ROM_START(k5)
 	ROM_REGION(0x10000, "coderom", 0)
 	//ROM_SYSTEM_BIOS(0, "v1.3", "Version 1.3")
 	ROM_LOAD("k5_1.3.bin", 0x00000, 0x10000, CRC(cbefe520) SHA1(8c53867ebc403d24320a57a5ff2d37ab6c1fc994))
-
-	ROM_REGION(0x400, "lcdc:cgrom", ROMREGION_ERASE00)
 ROM_END
 
 ROM_START(k5m)
 	ROM_REGION(0x10000, "coderom", 0)
 	//ROM_SYSTEM_BIOS(0, "v1.2", "Version 1.2")
 	ROM_LOAD("k5m_1.2.bin", 0x00000, 0x10000, CRC(d2ab0fac) SHA1(34f0c2685b39e459a915ed5effa5b7a4cd2a1f8a))
-
-	ROM_REGION(0x400, "lcdc:cgrom", ROMREGION_ERASE00)
 ROM_END
 
 } // anonymous namespace
