@@ -79,6 +79,7 @@ public:
 		, m_digital_in(*this, "DIGITAL_IN")
 		, m_columns(*this, "COL%u", 0U)
 		, m_wave_mem(*this, "WAVE_MEM")
+		, m_simms(*this, "SIMM%u", 1U)
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
 	{
@@ -93,6 +94,7 @@ public:
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
+	void wave_map();
 
 private:
 	enum : u8 {
@@ -170,6 +172,7 @@ private:
 	optional_ioport m_digital_in;
 	optional_ioport_array<4> m_columns;
 	optional_ioport m_wave_mem;
+	optional_ioport_array<2> m_simms;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
 
@@ -191,6 +194,10 @@ private:
 	emu_timer *m_hsi_clock;
 	bool m_hsi_level;
 	u16 m_wave_dma_word;
+	u32 m_wave_bytes = 0x2000000;
+	u32 m_wave_base_block = 0;
+	u16 *m_wave;
+	u8 m_wave_bank;
 	u16 m_aes[0x10];
 	u8 m_midi_rx;
 	bool m_midi_rx_full;
@@ -222,9 +229,50 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_dial_idle));
 	save_item(NAME(m_dial_steps));
 
+	m_wave = reinterpret_cast<u16 *>(machine().memory().share_alloc(*this, "wave", 16, m_wave_bytes, ENDIANNESS_LITTLE)->ptr());
+	m_wave_bank = 0;
+	save_item(NAME(m_wave_bank));
+	machine().save().register_postload(save_prepost_delegate(FUNC(roland_s770_state::wave_map), this));
+
 	set_data_frame(1, 8, PARITY_NONE, STOP_BITS_1);
 	set_rcv_rate(31250);
 	set_tra_rate(31250);
+}
+
+void roland_s770_state::wave_map()
+{
+	unsigned const blocks = roland_sp_device::WAVE_BLOCKS, words = roland_sp_device::BLOCK_WORDS;
+	for(unsigned b = 0; b != blocks; b++)
+		m_sp->set_wave_block(b, nullptr);
+	auto map = [&](unsigned &at, u16 *mem, unsigned count) {
+		for(unsigned b = 0; b != count && at != blocks; b++)
+			m_sp->set_wave_block(at++, mem + b * words);
+	};
+
+	if(m_simms[0]) {
+		// on-board 2 MB first in the RAM, then socket 1, then socket 2
+		u16 *const internal = m_wave;
+		u16 *const socket1 = m_wave + 0x100000;
+		u16 *const socket2 = m_wave + 0x900000;
+		unsigned const size1 = m_simms[0]->read() * 8, size2 = m_simms[1]->read() * 8;
+		unsigned at = 0;
+		switch(m_wave_bank) {
+		case 1:
+			map(at, internal, 0x10);
+			break;
+		case 2:
+			map(at, socket1, size1);
+			map(at, internal, 0x10);
+			break;
+		case 0:
+			map(at, socket1, size1);
+			map(at, socket2, size2);
+			break;
+		}
+	} else {
+		unsigned at = m_wave_base_block;
+		map(at, m_wave, m_wave_mem->read() * 8);
+	}
 }
 
 void roland_s770_state::machine_reset()
@@ -252,13 +300,8 @@ void roland_s770_state::machine_reset()
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
 
-	// only the S-760 banks its wave memory through F000; the S-770's and the SP-700's on-board
-	// memory is always the host port's
-	if(!m_option)
-		m_sp->host_bank_w(1);
-
-	if(m_wave_mem)
-		m_sp->set_wave_fitted(m_wave_mem->read() << 20);
+	m_wave_bank = 0;
+	wave_map();
 
 	// stands in for the CPU's PWM output, which the core does not drive
 	if(m_flash)
@@ -646,8 +689,10 @@ u8 roland_s770_state::panel_r(offs_t offset)
 
 void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
-	if(offset == 0 && m_option)
-		m_sp->host_bank_w((data >> 4) & 3);
+	if(offset == 0 && m_simms[0] && ((data >> 4) & 3) != m_wave_bank) {
+		m_wave_bank = (data >> 4) & 3;
+		wave_map();
+	}
 	if(offset == 4) {
 		if(m_ext_port)
 			m_ext_port->write(data);
@@ -760,6 +805,18 @@ static INPUT_PORTS_START(s760)
 	PORT_CONFSETTING(0xc0, DEF_STR(None))
 	PORT_CONFSETTING(0x00, "OP-760-1")
 	PORT_CONFSETTING(0x40, "Option ID 01")
+
+	PORT_START("SIMM1")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket 1")
+	PORT_CONFSETTING(0, DEF_STR(None))
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(16, "16 MB")
+
+	PORT_START("SIMM2")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket 2")
+	PORT_CONFSETTING(0, DEF_STR(None))
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(16, "16 MB")
 
 	PORT_START("DIGITAL_IN")
 	PORT_CONFNAME(0x03, 0x00, "OP-760-1 digital input")
@@ -968,6 +1025,7 @@ static const u16 s760_meq_slots[24][2] = {
 void roland_s770_state::s760(machine_config &config)
 {
 	common(config);
+	m_wave_bytes = 34 << 20;
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::data_map);
 
 	// SDO1's latches in step order: DIGITAL OUT 1 L, STEREO OUT 1 R, DIGITAL OUT 1 R, STEREO OUT 1 L;
@@ -1059,8 +1117,6 @@ void roland_s770_state::sp700(machine_config &config)
 	m_meq->add_route(roland_meq_device::output(1, 5), "out_d", 1.0, 1);
 
 	INTEL_28F010(config, m_flash);
-	m_sp->set_wave_size(0x2000000);
-	m_sp->set_wave_base(0);
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
@@ -1093,8 +1149,8 @@ void roland_s770_state::s770(machine_config &config)
 	m_old_ga = true;
 	m_maincpu->set_clock(12_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
-	m_sp->set_wave_size(0x2000000);
-	m_sp->set_wave_base(0x700000);
+	m_wave_bytes = 18 << 20;
+	m_wave_base_block = 0x70;
 	m_eeprom->default_data(s770_eeprom, sizeof(s770_eeprom));
 
 	ROLAND_MIX(config, m_mix, 44100);
