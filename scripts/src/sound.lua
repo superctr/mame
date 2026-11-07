@@ -1988,6 +1988,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/sound/roland_mix.h,SOUNDS["ROLANDMIX"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDMIX"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_mix.cpp",
+		MAME_DIR .. "src/devices/sound/roland_mix.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/sound/vgm_visualizer.h,SOUNDS["VGMVIZ"] = true
 ---------------------------------------------------
 
