@@ -75,6 +75,7 @@ public:
 		, m_option(*this, "OPTION")
 		, m_dial(*this, "DIAL")
 		, m_digital_in(*this, "DIGITAL_IN")
+		, m_columns(*this, "COL%u", 0U)
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
 	{
@@ -111,6 +112,8 @@ private:
 	u16 ga_r(offs_t offset, u16 mem_mask);
 	void ga_w(offs_t offset, u16 data, u16 mem_mask);
 	void p1_w(u8 data);
+	void sp700_p1_w(u8 data);
+	u8 sp700_p0_r();
 	u8 digital_in_status() const;
 	u8 dial_r();
 	u8 p2_r();
@@ -149,13 +152,14 @@ private:
 	required_device<roland_sp_device> m_sp;
 	required_device<roland_tvf_device> m_tvf;
 	optional_device<roland_meq_device> m_meq;
-	required_ioport_array<4> m_keys;
-	required_ioport m_option;
-	required_ioport m_dial;
+	optional_ioport_array<4> m_keys;
+	optional_ioport m_option;
+	optional_ioport m_dial;
 	u8 m_dial_last;
 	u8 m_dial_idle;
 	s8 m_dial_steps;
 	optional_ioport m_digital_in;
+	optional_ioport_array<4> m_columns;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
 
@@ -170,6 +174,7 @@ private:
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
 	u8 m_key_row;
+	u8 m_p1;
 	emu_timer *m_fdc_tc;
 	u16 m_wave_dma_word;
 	u8 m_midi_rx;
@@ -190,6 +195,7 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_spc_dreq));
 	save_item(NAME(m_panel));
 	save_item(NAME(m_key_row));
+	save_item(NAME(m_p1));
 	save_item(NAME(m_wave_dma_word));
 	save_item(NAME(m_midi_rx));
 	save_item(NAME(m_midi_rx_full));
@@ -217,7 +223,8 @@ void roland_s770_state::machine_reset()
 	m_fdc_drq = false;
 	m_spc_dreq = false;
 	m_key_row = 0;
-	m_dial_last = m_dial->read();
+	m_dial_last = m_dial ? m_dial->read() : 0;
+	m_p1 = 0xff;
 	m_dial_idle = 0;
 	m_dial_steps = 0;
 	m_wave_dma_word = 0;
@@ -322,7 +329,7 @@ void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 
 u8 roland_s770_state::dial_r()
 {
-	if(machine().side_effects_disabled())
+	if(!m_dial || machine().side_effects_disabled())
 		return 0;
 	u8 const keys = m_dial->read();
 	u8 const pressed = keys & ~m_dial_last;
@@ -367,6 +374,20 @@ void roland_s770_state::p1_w(u8 data)
 	m_eeprom->cs_write(BIT(data, 0));
 	m_eeprom->di_write(BIT(data, 2));
 	m_eeprom->clk_write(BIT(data, 1));
+}
+
+void roland_s770_state::sp700_p1_w(u8 data)
+{
+	m_p1 = data;
+}
+
+u8 roland_s770_state::sp700_p0_r()
+{
+	u8 data = 0;
+	for(int i = 0; i != 4; i++)
+		if(!BIT(m_p1, i))
+			data |= m_columns[i]->read();
+	return data;
 }
 
 u8 roland_s770_state::p2_r()
@@ -525,7 +546,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02) | digital_in_status();
 	}
 	case 5: {
-		u8 const data = (m_keys[m_key_row & 3]->read() & 0x3f) | m_option->read();
+		u8 const data = m_keys[0] ? (m_keys[m_key_row & 3]->read() & 0x3f) | m_option->read() : 0xff;
 		if(!machine().side_effects_disabled())
 			m_key_row++;
 		return data;
@@ -666,6 +687,45 @@ static INPUT_PORTS_START(s760)
 	PORT_CONFSETTING(0x04, DEF_STR(On))
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(sp700)
+	PORT_START("COL0")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Perform") PORT_CODE(KEYCODE_Q)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch") PORT_CODE(KEYCODE_W)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Partial") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Disk") PORT_CODE(KEYCODE_R)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System") PORT_CODE(KEYCODE_T)
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Jump") PORT_CODE(KEYCODE_J)
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F1") PORT_CODE(KEYCODE_F1)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F2") PORT_CODE(KEYCODE_F2)
+
+	PORT_START("COL1")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("List") PORT_CODE(KEYCODE_L)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Next") PORT_CODE(KEYCODE_PGDN)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("S2/Inc") PORT_CODE(KEYCODE_EQUALS)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0xe0, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("COL2")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Name") PORT_CODE(KEYCODE_N)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Home") PORT_CODE(KEYCODE_HOME)
+	PORT_BIT(0x60, IP_ACTIVE_HIGH, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F3") PORT_CODE(KEYCODE_F3)
+
+	PORT_START("COL3")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Command") PORT_CODE(KEYCODE_C)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Previous") PORT_CODE(KEYCODE_PGUP)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("S1/Dec") PORT_CODE(KEYCODE_MINUS)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Mark") PORT_CODE(KEYCODE_M)
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F5") PORT_CODE(KEYCODE_F5)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F4") PORT_CODE(KEYCODE_F4)
+INPUT_PORTS_END
+
 void roland_s770_state::floppy_formats(format_registration &fr)
 {
 	fr.add_pc_formats();
@@ -751,16 +811,16 @@ void roland_s770_state::s760(machine_config &config)
 	m_meq->port3_callback().set(m_sp, FUNC(roland_sp_device::record_w));
 	m_meq->set_synchronous(true);
 	SPEAKER(config, "out2", 2).front();
-	m_meq->add_route(3, "speaker", 1.0, 0);
-	m_meq->add_route(1, "speaker", 1.0, 1);
-	m_meq->add_route(7, "out2", 1.0, 0);
-	m_meq->add_route(5, "out2", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(0, 3), "speaker", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(0, 1), "speaker", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(1, 3), "out2", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 1), "out2", 1.0, 1);
 	SPEAKER(config, "dout1", 2).front();
 	SPEAKER(config, "dout2", 2).front();
-	m_meq->add_route(0, "dout1", 1.0, 0);
-	m_meq->add_route(2, "dout1", 1.0, 1);
-	m_meq->add_route(4, "dout2", 1.0, 0);
-	m_meq->add_route(6, "dout2", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(0, 0), "dout1", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(0, 2), "dout1", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(1, 0), "dout2", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 2), "dout2", 1.0, 1);
 
 	auto &adc(MICROPHONE(config, "adc", 2).front());
 	adc.add_route(0, m_meq, 1.0, roland_meq_device::INPUT_SERIAL);
@@ -801,10 +861,35 @@ void roland_s770_state::s760(machine_config &config)
 
 }
 
+// the MEQ steps at which the SP-700's program takes each TVF voice, left and right
+static const u16 sp700_meq_slots[24][2] = {
+	{ 0x036, 0x039 }, { 0x03e, 0x041 }, { 0x044, 0x047 }, { 0x057, 0x05a }, { 0x05f, 0x062 }, { 0x06f, 0x072 },
+	{ 0x075, 0x078 }, { 0x07e, 0x081 }, { 0x08e, 0x091 }, { 0x094, 0x097 }, { 0x0a1, 0x0a4 }, { 0x0a7, 0x0aa },
+	{ 0x0b7, 0x0ba }, { 0x0be, 0x0c1 }, { 0x0cd, 0x0d0 }, { 0x0d3, 0x0d6 }, { 0x0e0, 0x0e3 }, { 0x0ef, 0x0f2 },
+	{ 0x0f5, 0x0f8 }, { 0x000, 0x003 }, { 0x006, 0x009 }, { 0x017, 0x01a }, { 0x01e, 0x021 }, { 0x025, 0x028 }
+};
+
 void roland_s770_state::sp700(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::sp700_data_map);
+
+	// one D/A, demultiplexed into the eight outputs; SDO2's latches in step order
+	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::sp700_p1_w));
+	m_maincpu->in_p0_cb().set(FUNC(roland_s770_state::sp700_p0_r));
+
+	m_meq->set_voice_slots(sp700_meq_slots);
+	SPEAKER(config, "out_b", 2).front();
+	SPEAKER(config, "out_c", 2).front();
+	SPEAKER(config, "out_d", 2).front();
+	m_meq->add_route(roland_meq_device::output(1, 6), "speaker", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 7), "speaker", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(1, 0), "out_b", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 1), "out_b", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(1, 2), "out_c", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 3), "out_c", 1.0, 1);
+	m_meq->add_route(roland_meq_device::output(1, 4), "out_d", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(1, 5), "out_d", 1.0, 1);
 
 	INTEL_28F010(config, m_flash);
 
@@ -884,4 +969,4 @@ ROM_END
 SYST(1990, s770, 0, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(1991, s750, s770, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
-SYST(1996, sp700, 0, 0, sp700, s760, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1996, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
