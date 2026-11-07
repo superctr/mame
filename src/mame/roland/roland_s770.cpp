@@ -1118,4 +1118,4 @@ ROM_END
 SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1991, s750, s770, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
-SYST(1996, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING)
