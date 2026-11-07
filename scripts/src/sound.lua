@@ -1976,6 +1976,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/sound/roland_meq.h,SOUNDS["ROLANDMEQ"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDMEQ"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_meq.cpp",
+		MAME_DIR .. "src/devices/sound/roland_meq.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/sound/vgm_visualizer.h,SOUNDS["VGMVIZ"] = true
 ---------------------------------------------------
 
