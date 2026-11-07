@@ -173,6 +173,7 @@ private:
 	u32 m_dma_addr;
 	u16 m_dma_count;
 	bool m_dma_active;
+	bool m_dma_in_service;
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
@@ -228,6 +229,7 @@ void roland_s770_state::machine_reset()
 	m_dma_addr = 0;
 	m_dma_count = 0;
 	m_dma_active = false;
+	m_dma_in_service = false;
 	m_fdc_drq = false;
 	m_spc_dreq = false;
 	m_key_row = 0;
@@ -434,12 +436,15 @@ void roland_s770_state::spc_dreq_w(int state)
 
 void roland_s770_state::dma_service()
 {
+	if(m_dma_in_service)
+		return;
+	m_dma_in_service = true;
 	while(m_dma_active) {
 		bool const to_device = !BIT(m_dma_ctrl, 0);
 		bool const wave = (m_dma_ctrl & 0xe0) == 0xa0;
 		bool const fdc = !wave && BIT(m_dma_ctrl, 7);
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
-			return;
+			break;
 
 		if(wave) {
 			bool const high = BIT(m_dma_count, 0);
@@ -477,6 +482,7 @@ void roland_s770_state::dma_service()
 			irq_w(IRQ_DMA, 1);
 		}
 	}
+	m_dma_in_service = false;
 }
 
 INPUT_CHANGED_MEMBER(roland_s770_state::encoder_step)
