@@ -22,6 +22,12 @@ public:
 	// the steps at which each voice input is the multiplicand
 	void set_voice_slots(const u16 (*slots)[2]) { m_slot_table = slots; }
 
+	// the third serial port's words as they are latched, the latch's index in the sample as the offset
+	auto port3_callback() { return m_port3_cb.bind(); }
+
+	// one sample at a time, for a machine whose CPU waits on the port 3 callback's effects
+	void set_synchronous(bool synchronous) { m_synchronous = synchronous; }
+
 	// the register file, a 16-bit word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
@@ -38,6 +44,8 @@ private:
 	s32 multiply(s32 x, u16 coef) const;
 	void run(const s32 *voices, const s32 (*serial)[2]);
 
+	devcb_write32 m_port3_cb;
+	bool m_synchronous;
 	sound_stream *m_stream;
 	const u16 (*m_slot_table)[2];
 	s8 m_slot_of_step[STEPS];

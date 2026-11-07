@@ -46,6 +46,8 @@ constexpr s32 clamp24(s64 v) { return s32(std::clamp<s64>(v, -0x800000, 0x7fffff
 roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	device_t(mconfig, ROLAND_MEQ, tag, owner, clock),
 	device_sound_interface(mconfig, *this),
+	m_port3_cb(*this),
+	m_synchronous(false),
 	m_stream(nullptr),
 	m_slot_table(nullptr)
 {
@@ -60,7 +62,7 @@ void roland_meq_device::device_start()
 				if(m_slot_table[v][i] < STEPS)
 					m_slot_of_step[m_slot_table[v][i]] = v;
 
-	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock());
+	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock(), m_synchronous ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 
 	save_item(NAME(m_program));
 	save_item(NAME(m_coef));
@@ -204,6 +206,8 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 
 		if(lo & LO_SERIAL_LATCH) {
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
+			if(port == 2)
+				m_port3_cb(latched[port], u32(written) & 0xffffff);
 			if(latched[port] < LATCHES)
 				m_port[port][latched[port]++] = written;
 		}
