@@ -78,6 +78,7 @@ public:
 		, m_dial(*this, "DIAL")
 		, m_digital_in(*this, "DIGITAL_IN")
 		, m_columns(*this, "COL%u", 0U)
+		, m_wave_mem(*this, "WAVE_MEM")
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
 	{
@@ -168,6 +169,7 @@ private:
 	s8 m_dial_steps;
 	optional_ioport m_digital_in;
 	optional_ioport_array<4> m_columns;
+	optional_ioport m_wave_mem;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
 
@@ -250,14 +252,17 @@ void roland_s770_state::machine_reset()
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
 
-	// only the S-760 banks its wave memory through F000; the S-770's and the SP-700's (F400-F406,
-	// not yet read) on-board memory is always the host port's
+	// only the S-760 banks its wave memory through F000; the S-770's and the SP-700's on-board
+	// memory is always the host port's
 	if(!m_option)
 		m_sp->host_bank_w(1);
 
-	// the SP-700's HSI.0 clocks its panel scan; its source is not traced, the word clock is a guess
+	if(m_wave_mem)
+		m_sp->set_wave_fitted((m_wave_mem->read() + 1) << 23);
+
+	// stands in for the CPU's PWM output, which the core does not drive
 	if(m_flash)
-		m_hsi_clock->adjust(attotime::from_hz(44100 * 2), 0, attotime::from_hz(44100 * 2));
+		m_hsi_clock->adjust(attotime::from_hz(16_MHz_XTAL / 256), 0, attotime::from_hz(16_MHz_XTAL / 256));
 	receive_register_reset();
 	transmit_register_reset();
 }
@@ -702,6 +707,7 @@ void roland_s770_state::sp700_data_map(address_map &map)
 	map(0xd800, 0xd81f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
 	map(0xdc00, 0xdc03).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
 	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
+	map(0xf400, 0xf41f).w(FUNC(roland_s770_state::s770_aes_w));
 }
 
 void roland_s770_state::lcdc_map(address_map &map)
@@ -843,6 +849,13 @@ static INPUT_PORTS_START(sp700)
 	PORT_START("ENCODER")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value -") PORT_CODE(KEYCODE_COMMA) PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(roland_s770_state::encoder_step), 1)
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP) PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(roland_s770_state::encoder_step), 0)
+
+	PORT_START("WAVE_MEM")
+	PORT_CONFNAME(0x03, 0x00, "Wave memory")
+	PORT_CONFSETTING(0x00, "8 MB")
+	PORT_CONFSETTING(0x01, "16 MB")
+	PORT_CONFSETTING(0x02, "24 MB")
+	PORT_CONFSETTING(0x03, "32 MB")
 INPUT_PORTS_END
 
 void roland_s770_state::floppy_formats(format_registration &fr)
@@ -990,16 +1003,18 @@ static const u16 sp700_meq_slots[24][2] = {
 	{ 0x0f5, 0x0f8 }, { 0x000, 0x003 }, { 0x006, 0x009 }, { 0x017, 0x01a }, { 0x01e, 0x021 }, { 0x025, 0x028 }
 };
 
+static const u16 sp700_meq_latches[roland_meq_device::LATCHES] = { 0x01d, 0x03d, 0x05d, 0x07d, 0x09d, 0x0bd, 0x0dd, 0x0ff };
+
 void roland_s770_state::sp700(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::sp700_data_map);
 
-	// one D/A, demultiplexed into the eight outputs; SDO2's latches in step order
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::sp700_p1_w));
 	m_maincpu->in_p0_cb().set(FUNC(roland_s770_state::sp700_p0_r));
 
 	m_meq->set_voice_slots(sp700_meq_slots);
+	m_meq->set_latch_steps(1, sp700_meq_latches);
 	SPEAKER(config, "out_b", 2).front();
 	SPEAKER(config, "out_c", 2).front();
 	SPEAKER(config, "out_d", 2).front();
@@ -1014,6 +1029,7 @@ void roland_s770_state::sp700(machine_config &config)
 
 	INTEL_28F010(config, m_flash);
 	m_sp->set_wave_size(0x2000000);
+	m_sp->set_wave_base(0);
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
