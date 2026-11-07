@@ -40543,6 +40543,9 @@ s50
 s550
 w30
 
+@source:roland/roland_s770.cpp
+s760
+
 @source:roland/roland_sb55.cpp
 sb55
 
