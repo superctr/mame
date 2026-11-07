@@ -18,6 +18,9 @@ public:
 
 	void set_wave_size(u32 bytes) { m_wave_size = bytes; }
 
+	// the word address of the first populated word; the host port reads open bus outside the memory
+	void set_wave_base(u32 word) { m_wave_base = word; m_wave_decoded = true; }
+
 	u16 read(offs_t offset, u16 mem_mask);
 	void write(offs_t offset, u16 data, u16 mem_mask);
 
@@ -63,6 +66,7 @@ private:
 		bool ended = false;
 	};
 
+	bool host_hit() const { return m_host_bank == 1 && (!m_wave_decoded || ((m_host_addr - m_wave_base) & 0xffffff) < m_wave_words); }
 	u16 wave_word(s64 adr) const { return m_wave_ptr[adr & (m_wave_words - 1)]; }
 	u32 c4_long(const voice &v, int word) const { return u32(v.c4[word + 1]) << 16 | v.c4[word]; }
 	u32 c2_read(const voice &v) const;
@@ -78,6 +82,8 @@ private:
 	sound_stream *m_stream;
 	emu_timer *m_int_timer;
 	u32 m_wave_size;
+	u32 m_wave_base;
+	bool m_wave_decoded;
 	u32 m_wave_words;
 	u16 *m_wave_ptr;
 

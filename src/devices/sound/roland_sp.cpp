@@ -89,6 +89,8 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_stream(nullptr),
 	m_int_timer(nullptr),
 	m_wave_size(0x200000),
+	m_wave_base(0),
+	m_wave_decoded(false),
 	m_wave_words(0),
 	m_wave_ptr(nullptr),
 	m_key{ 0, 0 },
@@ -156,14 +158,14 @@ u16 roland_sp_device::host_read()
 {
 	u16 const data = m_host_latch;
 	m_host_addr++;
-	m_host_latch = m_host_bank == 1 ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
+	m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
 	return data;
 }
 
 void roland_sp_device::host_write(u16 data, u16 mem_mask)
 {
 	m_stream->update();
-	if(m_host_bank == 1)
+	if(host_hit())
 		COMBINE_DATA(&m_wave_ptr[m_host_addr & (m_wave_words - 1)]);
 	m_host_addr++;
 }
