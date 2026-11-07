@@ -34,6 +34,7 @@ public:
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_clock_changed() override;
 
 	virtual void sound_stream_update(sound_stream &stream) override;
 

@@ -136,6 +136,11 @@ void roland_sp_device::device_start()
 	save_item(NAME(m_level_channel));
 }
 
+void roland_sp_device::device_clock_changed()
+{
+	m_stream->set_sample_rate(clock());
+}
+
 void roland_sp_device::device_reset()
 {
 	for(voice &v : m_voices)
