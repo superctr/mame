@@ -427,6 +427,6 @@ void roland_sp_device::sound_stream_update(sound_stream &stream)
 	for(int n = 0; n != VOICES; n++) {
 		voice &v = m_voices[n];
 		for(int i = 0; i != stream.samples(); i++)
-			stream.put_int(n, i, v.on && !recording(n) ? step(n, v) : 0, 32768);
+			stream.put_int(n, i, v.on && !recording(n) ? step(n, v) : 0, 65536);
 	}
 }
