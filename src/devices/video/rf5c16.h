@@ -45,6 +45,7 @@ private:
 	u16 m_cursor_x;
 	u8 m_cursor_y;
 	u8 m_bcg;
+	u8 m_bcg_cursor;
 	u8 m_bfg;
 	u16 m_bbg;
 	u8 m_fgcol;

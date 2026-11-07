@@ -46,7 +46,7 @@ rf5c16_device::rf5c16_device(const machine_config &mconfig, const char *tag, dev
 	m_int_cb(*this),
 	m_vblank_timer(nullptr),
 	m_tr(0), m_addr(0), m_imask(0), m_iflag(0), m_mode(0),
-	m_cursor_x(0), m_cursor_y(0), m_bcg(0), m_bfg(0), m_bbg(0),
+	m_cursor_x(0), m_cursor_y(0), m_bcg(0), m_bcg_cursor(0), m_bfg(0), m_bbg(0),
 	m_fgcol(0), m_bgcol(0), m_bdcol(0), m_scroll(0)
 {
 }
@@ -67,6 +67,7 @@ void rf5c16_device::device_start()
 	save_item(NAME(m_cursor_x));
 	save_item(NAME(m_cursor_y));
 	save_item(NAME(m_bcg));
+	save_item(NAME(m_bcg_cursor));
 	save_item(NAME(m_bfg));
 	save_item(NAME(m_bbg));
 	save_item(NAME(m_fgcol));
@@ -182,14 +183,14 @@ void rf5c16_device::write(offs_t offset, u8 data)
 		m_mode = data;
 		break;
 	case 6:
-		m_cursor_x = (m_cursor_x & 0x300) | data;
+		m_cursor_x = (m_bcg_cursor & 3) << 8 | data;
 		break;
 	case 7:
 		m_cursor_y = data;
 		break;
 	case 8:
 		m_bcg = data >> 3;
-		m_cursor_x = (m_cursor_x & 0x0ff) | ((data & 3) << 8);
+		m_bcg_cursor = data;
 		break;
 	case 9:
 		m_bfg = data >> 2;
@@ -292,14 +293,16 @@ u32 rf5c16_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, co
 		}
 	}
 
-	int const cx = m_cursor_x;
+	int const scale = narrow ? 2 : 1;
+	int const cx = m_cursor_x * scale;
 	int const cy = m_cursor_y;
-	for(int i = -4; i <= 4; i++) {
+	for(int i = -4 * scale; i < 5 * scale; i++)
 		if(cliprect.contains(cx + i, cy))
 			bitmap.pix(cy, cx + i) = 0xffffff;
-		if(cliprect.contains(cx, cy + i))
-			bitmap.pix(cy + i, cx) = 0xffffff;
-	}
+	for(int i = -4; i <= 4; i++)
+		for(int j = 0; j < scale; j++)
+			if(cliprect.contains(cx + j, cy + i))
+				bitmap.pix(cy + i, cx + j) = 0xffffff;
 
 	return 0;
 }
