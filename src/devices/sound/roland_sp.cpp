@@ -16,7 +16,10 @@
 
     The interpolation is the GP's, XP's and XV's kernel (four taps, as
     the current sample and three differences after it), assumed for this
-    family too.  Not emulated: sampling, the C6 registers.
+    family too.  Voices 4 and 20 record the left and right input words
+    into the wave memory instead of playing while C004 bits 0 and 1 are
+    set; C01C reads the input words in turn, C000 bits 7 and 6 marking
+    left and right.  Not emulated: the C6 registers.
 
 ***************************************************************************/
 
@@ -92,7 +95,8 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_sel_block(BLOCK_NONE), m_sel_voice(0), m_sel_word(0),
 	m_c2_latch(0),
 	m_event_head(0), m_event_count(0), m_int_state(false),
-	m_host_bank(0), m_host_addr(0), m_host_latch(0)
+	m_host_bank(0), m_host_addr(0), m_host_latch(0),
+	m_record_in{ 0, 0 }, m_level_channel(0)
 {
 	std::fill(std::begin(m_ctrl), std::end(m_ctrl), 0);
 	std::fill(std::begin(m_events), std::end(m_events), 0);
@@ -128,6 +132,8 @@ void roland_sp_device::device_start()
 	save_item(NAME(m_host_bank));
 	save_item(NAME(m_host_addr));
 	save_item(NAME(m_host_latch));
+	save_item(NAME(m_record_in));
+	save_item(NAME(m_level_channel));
 }
 
 void roland_sp_device::device_reset()
@@ -219,7 +225,9 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 
 	switch(offset) {
 	case 0x00:
-		return 0x0002;
+		if(!machine().side_effects_disabled())
+			m_level_channel ^= 1;
+		return m_level_channel ? 0x0082 : 0x0042;
 	case 0x01:
 		if(!machine().side_effects_disabled())
 			m_stream->update();
@@ -245,6 +253,8 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 		return 0;
 	case 0x0d:
 		return m_sel_block == BLOCK_C6 ? m_voices[m_sel_voice].c6[m_sel_word] : 0;
+	case 0x0e:
+		return u16(m_record_in[m_level_channel] >> 11);
 	default:
 		if(!machine().side_effects_disabled())
 			LOG("read %04x\n", 0xc000 + offset * 2);
@@ -328,8 +338,12 @@ s32 roland_sp_device::step(int n, voice &v)
 		sum += ((interp_weights[i][phase] * (next - prev)) & ~3) >> 10;
 		prev = next;
 	}
-	s32 const out = sum >> 2;
+	advance(n, v);
+	return sum >> 2;
+}
 
+void roland_sp_device::advance(int n, voice &v)
+{
 	u32 const end = c4_long(v, C4_END);
 	s64 const loop_to = s64(c4_long(v, C4_LOOP_TO)) << (POS_FRACTION - 8);
 	s64 const loop_at = s64(c4_long(v, C4_LOOP_AT)) << (POS_FRACTION - 8);
@@ -374,7 +388,31 @@ s32 roland_sp_device::step(int n, voice &v)
 			event(n, EVENT_END);
 		}
 	}
-	return out;
+}
+
+bool roland_sp_device::recording(int n) const
+{
+	for(int c = 0; c != 2; c++)
+		if(n == RECORD_VOICES[c])
+			return BIT(m_ctrl[2], c);
+	return false;
+}
+
+void roland_sp_device::record_w(offs_t offset, u32 data)
+{
+	if(offset > 1)
+		return;
+	m_record_in[offset] = util::sext(data, 24);
+	if(offset != 1)
+		return;
+	for(int c = 0; c != 2; c++) {
+		int const n = RECORD_VOICES[c];
+		voice &v = m_voices[n];
+		if(!v.on || !recording(n))
+			continue;
+		m_wave_ptr[(v.pos >> POS_FRACTION) & (m_wave_words - 1)] = u16(m_record_in[c] >> 8);
+		advance(n, v);
+	}
 }
 
 void roland_sp_device::sound_stream_update(sound_stream &stream)
@@ -382,6 +420,6 @@ void roland_sp_device::sound_stream_update(sound_stream &stream)
 	for(int n = 0; n != VOICES; n++) {
 		voice &v = m_voices[n];
 		for(int i = 0; i != stream.samples(); i++)
-			stream.put_int(n, i, v.on ? step(n, v) : 0, 32768);
+			stream.put_int(n, i, v.on && !recording(n) ? step(n, v) : 0, 32768);
 	}
 }

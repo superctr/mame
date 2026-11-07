@@ -28,6 +28,9 @@ public:
 	u16 host_read();
 	void host_write(u16 data, u16 mem_mask);
 
+	// the recording input, a 24-bit word per channel, left (offset 0) then right
+	void record_w(offs_t offset, u32 data);
+
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -36,6 +39,8 @@ protected:
 
 private:
 	enum : int { POS_FRACTION = 14, EVENTS = 64 };
+
+	static constexpr int RECORD_VOICES[2] = { 4, 20 };
 
 	// C2's top bits and the END register's mode byte
 	enum : u32 {
@@ -64,6 +69,8 @@ private:
 	void key_w(int base, u16 data);
 	void event(int voice, u8 kind);
 	s32 step(int n, voice &v);
+	void advance(int n, voice &v);
+	bool recording(int n) const;
 	TIMER_CALLBACK_MEMBER(update_int);
 
 	devcb_write_line m_int_cb;
@@ -89,6 +96,9 @@ private:
 	u8 m_host_bank;
 	u32 m_host_addr;
 	u16 m_host_latch;
+
+	s32 m_record_in[2];
+	u8 m_level_channel;
 };
 
 DECLARE_DEVICE_TYPE(ROLAND_SP, roland_sp_device)
