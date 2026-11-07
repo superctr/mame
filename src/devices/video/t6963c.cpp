@@ -354,7 +354,7 @@ uint32_t t6963c_device::screen_update(screen_device &screen, bitmap_ind16 &bitma
 						if (c < 0x80)
 							data = m_cgrom[c * 8 + cy];
 						else
-							data = m_display_ram->read_byte(m_cgram_offset + (c & 0x7f) * 8 + cy);
+							data = m_display_ram->read_byte(m_cgram_offset + c * 8 + cy);
 					}
 					else
 						data = m_display_ram->read_byte(m_cgram_offset + c * 8 + cy);
