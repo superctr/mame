@@ -10,7 +10,8 @@
     from floppy or SCSI into DRAM.
 
     Skeleton: the S-760 loads its system from floppy and shows Perform Play on
-    the LCD and, with the OP-760-1, on the CRT.  No mouse, no sound yet.
+    the LCD and, with the OP-760-1, on the CRT.  The MU-1 mouse works; no RC-100,
+    no MIDI, no sound yet.
 
 ****************************************************************************/
 
@@ -24,6 +25,7 @@
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
 #include "bus/nscsi/devices.h"
+#include "bus/roland/extport.h"
 #include "video/rf5c16.h"
 #include "video/sed1330.h"
 
@@ -49,6 +51,7 @@ public:
 		, m_fdc(*this, "fdc")
 		, m_floppy(*this, "fdc:0")
 		, m_spc(*this, "spc")
+		, m_ext_port(*this, "extport")
 		, m_lcdc(*this, "lcdc")
 		, m_vdp(*this, "vdp")
 		, m_keys(*this, "ROW%u", 0U)
@@ -106,6 +109,7 @@ private:
 	required_device<upd72069_device> m_fdc;
 	required_device<floppy_connector> m_floppy;
 	required_device<mb89352_device> m_spc;
+	required_device<roland_ext_port_device> m_ext_port;
 	required_device<sed1330_device> m_lcdc;
 	required_device<rf5c16_device> m_vdp;
 	required_ioport_array<4> m_keys;
@@ -400,6 +404,8 @@ u8 roland_s770_state::panel_r(offs_t offset)
 			m_key_row++;
 		return data;
 	}
+	case 4:
+		return m_ext_port->read();
 	case 9:
 		return 0;
 	default:
@@ -411,7 +417,9 @@ u8 roland_s770_state::panel_r(offs_t offset)
 
 void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
-	if(offset == 5)
+	if(offset == 4)
+		m_ext_port->write(data);
+	else if(offset == 5)
 		m_key_row = 0;
 	else if(offset != 6 && offset != 7 && offset != 8)
 		LOGMASKED(LOG_IO, "panel_w %04x = %02x (%04x)\n", 0xf000 + offset*2, data, m_maincpu->pc());
@@ -515,6 +523,8 @@ void roland_s770_state::s760(machine_config &config)
 	MB89352(config, m_spc, 8_MHz_XTAL);
 	m_spc->out_dreq_callback().set(FUNC(roland_s770_state::spc_dreq_w));
 	scsi.set_external_device(7, m_spc);
+
+	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
