@@ -1146,6 +1146,9 @@ void roland_s770_state::s770(machine_config &config)
 	// the A/D's left word reaches the recorder of voice 20, the right voice 4's
 	adc.add_route(0, m_sp, 1.0, 1);
 	adc.add_route(1, m_sp, 1.0, 0);
+	auto &digital_in(MICROPHONE(config, "digital_in", 2).front());
+	digital_in.add_route(0, m_sp, 1.0, 2);
+	digital_in.add_route(1, m_sp, 1.0, 3);
 
 	SPEAKER(config, "indiv12", 2).front();
 	SPEAKER(config, "indiv34", 2).front();
