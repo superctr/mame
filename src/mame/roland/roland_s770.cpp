@@ -467,7 +467,7 @@ void roland_s770_state::dma_service()
 		u8 const group = m_dma_ctrl >> 6;
 		bool const wave = m_old_ga ? (m_dma_ctrl & 0xe4) == 0x64 : group == 2 && BIT(m_dma_ctrl, 5);
 		bool const fdc = group == 3 || (group == 2 && !BIT(m_dma_ctrl, 5) && m_old_ga);
-		bool const scsi_wave = group == 2 && !BIT(m_dma_ctrl, 5) && !m_old_ga;
+		bool const scsi_wave = m_old_ga ? (m_dma_ctrl & 0xe3) == 0x40 : group == 2 && !BIT(m_dma_ctrl, 5);
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			break;
 
