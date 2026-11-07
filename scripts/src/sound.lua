@@ -1964,6 +1964,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/sound/roland_sp.h,SOUNDS["ROLANDSP"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDSP"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_sp.cpp",
+		MAME_DIR .. "src/devices/sound/roland_sp.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/sound/vgm_visualizer.h,SOUNDS["VGMVIZ"] = true
 ---------------------------------------------------
 
