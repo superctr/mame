@@ -29,7 +29,7 @@ i8x9x_device::i8x9x_device(const machine_config &mconfig, device_type type, cons
 	m_out_p1_cb(*this), m_in_p1_cb(*this, 0xff),
 	m_out_p2_cb(*this), m_in_p2_cb(*this, 0xc2),
 	m_p1_driven_mask(0),
-	base_timer2(0), ad_done(0), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0),
+	base_timer2(0), ad_done(0), m_t2_external(false), timer2_count(0), t2clk_level(false), t2updn_level(false), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0),
 	port1(0), port2(0),
 	ios0(0), ios1(0), ioc0(0), ioc1(0), extint(false),
 	sbuf(0), sp_con(0), sp_stat(0), serial_send_buf(0), baud_reg(0), brh(false),
@@ -89,6 +89,9 @@ void i8x9x_device::device_start()
 	save_item(NAME(hso_cam_hold.fire_at));
 
 	save_item(NAME(base_timer2));
+	save_item(NAME(timer2_count));
+	save_item(NAME(t2clk_level));
+	save_item(NAME(t2updn_level));
 	save_item(NAME(ad_done));
 	save_item(NAME(hsi_mode));
 	save_item(NAME(hsi_status));
@@ -689,6 +692,8 @@ void i8x9x_device::serial_w(u8 val)
 
 u16 i8x9x_device::timer_value(int timer, u64 current_time) const
 {
+	if(timer == 2 && m_t2_external)
+		return timer2_count;
 	if(timer == 2)
 		current_time -= base_timer2;
 	return u16(current_time / (8 * cycles_scaling));
@@ -696,6 +701,8 @@ u16 i8x9x_device::timer_value(int timer, u64 current_time) const
 
 u64 i8x9x_device::timer_time_until(int timer, u64 current_time, u16 timer_value) const
 {
+	if(timer == 2 && m_t2_external)
+		return ~u64(0);
 	u64 timer_base = timer == 2 ? base_timer2 : 0;
 	u64 delta = (current_time - timer_base) / (8 * cycles_scaling);
 	u32 tdelta = u16(timer_value - delta);
@@ -707,6 +714,7 @@ u64 i8x9x_device::timer_time_until(int timer, u64 current_time, u16 timer_value)
 void i8x9x_device::timer2_reset(u64 current_time)
 {
 	base_timer2 = current_time;
+	timer2_count = 0;
 	// hso_info[].time holds a timer value, not a deadline, so timer2-relative
 	// entries need fire_at recomputed against the new base.
 	for(int i=0; i<8; i++)
@@ -714,8 +722,32 @@ void i8x9x_device::timer2_reset(u64 current_time)
 			hso_info[i].fire_at = timer_time_until(2, current_time, hso_info[i].time);
 }
 
+void i8x9x_device::timer2_w(u16 data)
+{
+	if(m_t2_external)
+		timer2_count = data;
+	else
+		base_timer2 = total_cycles() - u64(data) * 8 * cycles_scaling;
+}
+
+void i8x9x_device::timer2_clock()
+{
+	timer2_count += timer2_counts_down() ? -1 : 1;
+	bool fired = false;
+	for(int i=0; i<8; i++)
+		if(BIT(hso_active, i) && BIT(hso_info[i].command, 6) && hso_info[i].time == timer2_count) {
+			hso_info[i].fire_at = total_cycles();
+			fired = true;
+		}
+	if(fired)
+		internal_update(total_cycles());
+}
+
 void i8x9x_device::set_hsi_state(int pin, bool state)
 {
+	if(pin == 1 && m_t2_external && BIT(ioc0, 7) && state != BIT(hsi_status, 3))
+		timer2_clock();
+
 	if(pin == 0 && !BIT(hsi_status, 1) && state) {
 		if(BIT(ioc1, 1)) {
 			pending_irq |= IRQ_HSI0;
@@ -888,6 +920,16 @@ void i8x9x_device::execute_set_input(int linenum, int state)
 
 	case HSI3_LINE:
 		set_hsi_state(3, state);
+		break;
+
+	case T2CLK_LINE:
+		if(m_t2_external && !BIT(ioc0, 7) && bool(state) != t2clk_level)
+			timer2_clock();
+		t2clk_level = state;
+		break;
+
+	case T2UPDN_LINE:
+		t2updn_level = state;
 		break;
 	}
 }

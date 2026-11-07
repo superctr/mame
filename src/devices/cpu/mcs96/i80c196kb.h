@@ -30,6 +30,7 @@ protected:
 
 	void kb_regs(address_map &map) ATTR_COLD;
 	void ioc2_w(u8 data);
+	virtual bool timer2_counts_down() const override;
 	u8 wsr_r();
 	void wsr_w(u8 data);
 

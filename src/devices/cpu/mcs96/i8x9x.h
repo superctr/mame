@@ -20,7 +20,9 @@ public:
 		HSI0_LINE,
 		HSI1_LINE,
 		HSI2_LINE,
-		HSI3_LINE
+		HSI3_LINE,
+		T2CLK_LINE,
+		T2UPDN_LINE
 	};
 
 	enum {
@@ -66,6 +68,9 @@ public:
 	// pulldown; these read the pin even with the latch at 0
 	void set_p1_driven_mask(u8 mask) { m_p1_driven_mask = mask; }
 
+	// Timer2 counts T2CLK (or HSI.1) edges, as on the real chip, instead of the internal clock
+	void set_timer2_external(bool external) { m_t2_external = external; }
+
 	// Byte-level receive, bypassing RXD framing and baud rate timing
 	void serial_w(u8 val);
 	// RXD (P2.1) pin, for the asynchronous serial modes 1-3
@@ -76,6 +81,10 @@ public:
 	virtual u8 i8x9x_p2_mask() const noexcept { return 0xff; }
 
 protected:
+	bool t2updn_level;
+	virtual bool timer2_counts_down() const { return false; }
+	void timer2_w(u16 data);
+
 	i8x9x_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int data_width);
 	i8x9x_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int data_width, address_map_constructor regs_map);
 
@@ -158,6 +167,9 @@ private:
 	hso_cam_entry hso_cam_hold;
 
 	u64 base_timer2, ad_done;
+	bool m_t2_external;
+	u16 timer2_count;
+	bool t2clk_level;
 	u8 hsi_mode, hsi_status, hso_command, ad_command, hso_active;
 	u16 hsi_fifo_time[8];
 	u8 hsi_fifo_bits[8];
@@ -194,6 +206,7 @@ private:
 	u64 timer_time_until(int timer, u64 current_time, u16 timer_value) const;
 	void timer2_reset(u64 current_time);
 	void set_hsi_state(int pin, bool state);
+	void timer2_clock();
 	void hsi_event(u8 pins);
 	void commit_hso_cam();
 	void trigger_cam(int id, u64 current_time);

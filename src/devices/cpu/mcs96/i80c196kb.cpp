@@ -49,6 +49,7 @@ void i80c196kb_device::kb_regs(address_map &map)
 {
 	internal_regs(map);
 	map(0x0b, 0x0b).w(FUNC(i80c196kb_device::ioc2_w));
+	map(0x0c, 0x0d).w(FUNC(i80c196kb_device::timer2_w));
 	map(0x12, 0x12).rw(FUNC(i80c196kb_device::int_pending1_r), FUNC(i80c196kb_device::int_pending1_w));
 	map(0x13, 0x13).rw(FUNC(i80c196kb_device::int_mask1_r), FUNC(i80c196kb_device::int_mask1_w));
 	map(0x14, 0x14).rw(FUNC(i80c196kb_device::wsr_r), FUNC(i80c196kb_device::wsr_w));
@@ -57,6 +58,11 @@ void i80c196kb_device::kb_regs(address_map &map)
 void i80c196kb_device::ioc2_w(u8 data)
 {
 	m_ioc2 = data;
+}
+
+bool i80c196kb_device::timer2_counts_down() const
+{
+	return BIT(m_ioc2, 1) && t2updn_level;
 }
 
 u8 i80c196kb_device::wsr_r()
