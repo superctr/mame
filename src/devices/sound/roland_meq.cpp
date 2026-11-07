@@ -51,7 +51,8 @@ roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *
 	m_serial_right_first{ false, false },
 	m_stream(nullptr),
 	m_slot_table(nullptr),
-	m_slots_per_voice(0)
+	m_slots_per_voice(0),
+	m_latch_steps{ nullptr, nullptr, nullptr }
 {
 }
 
@@ -63,6 +64,13 @@ void roland_meq_device::device_start()
 			for(unsigned i = 0; i != m_slots_per_voice; i++)
 				if(m_slot_table[v * m_slots_per_voice + i] < STEPS)
 					m_slot_of_step[m_slot_table[v * m_slots_per_voice + i]] = v;
+	for(int port = 0; port != PORTS; port++) {
+		std::fill(std::begin(m_latch_of_step[port]), std::end(m_latch_of_step[port]), -1);
+		if(m_latch_steps[port])
+			for(int n = 0; n != LATCHES; n++)
+				if(m_latch_steps[port][n] < STEPS)
+					m_latch_of_step[port][m_latch_steps[port][n]] = n;
+	}
 
 	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock(), m_synchronous ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 
@@ -180,6 +188,9 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 	int const length = std::min((m_config[0] & 0x1ff) + 3, int(STEPS));
 	int latched[PORTS] = { 0, 0, 0 };
 	int serial_reads[SERIAL_INPUTS] = { 0, 0 };
+	for(int port = 0; port != PORTS; port++)
+		if(m_latch_steps[port])
+			std::fill(std::begin(m_port[port]), std::end(m_port[port]), 0);
 
 	for(int m = 0; m != length; m++) {
 		u16 const hi = m_program[m] >> 16;
@@ -233,7 +244,11 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
 			if(port == 2)
 				m_port3_cb(latched[port], u32(written) & 0xffffff);
-			if(latched[port] < LATCHES)
+			if(m_latch_steps[port]) {
+				if(m_latch_of_step[port][m] >= 0)
+					m_port[port][m_latch_of_step[port][m]] = written;
+				latched[port]++;
+			} else if(latched[port] < LATCHES)
 				m_port[port][latched[port]++] = written;
 		}
 

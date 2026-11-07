@@ -25,6 +25,10 @@ public:
 	// the steps at which each voice input is the multiplicand
 	template <unsigned N> void set_voice_slots(const u16 (&slots)[VOICES][N]) { m_slot_table = &slots[0][0]; m_slots_per_voice = N; }
 
+	// a port whose latches are told apart by their steps, as a demultiplexer timed to the program
+	// takes them: output(port, n) carries the word latched at steps[n], zero in a sample without it
+	void set_latch_steps(int port, const u16 (&steps)[LATCHES]) { m_latch_steps[port] = steps; }
+
 	// the third serial port's words as they are latched, the latch's index in the sample as the offset
 	auto port3_callback() { return m_port3_cb.bind(); }
 
@@ -62,6 +66,8 @@ private:
 	const u16 *m_slot_table;
 	unsigned m_slots_per_voice;
 	s8 m_slot_of_step[STEPS];
+	const u16 *m_latch_steps[PORTS];
+	s8 m_latch_of_step[PORTS][STEPS];
 
 	u32 m_program[STEPS];
 	u16 m_coef[STEPS];
