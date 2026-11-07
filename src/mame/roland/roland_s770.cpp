@@ -22,6 +22,7 @@
 #include "imagedev/floppy.h"
 #include "formats/flopimg.h"
 #include "machine/eepromser.h"
+#include "machine/i28f010.h"
 #include "machine/mb87030.h"
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
@@ -32,6 +33,7 @@
 #include "bus/roland/extport.h"
 #include "video/rf5c16.h"
 #include "video/sed1330.h"
+#include "video/t6963c.h"
 
 #include "diserial.h"
 #include "emupal.h"
@@ -62,6 +64,8 @@ public:
 		, m_ext_port(*this, "extport")
 		, m_lcdc(*this, "lcdc")
 		, m_vdp(*this, "vdp")
+		, m_t6963c(*this, "t6963c")
+		, m_flash(*this, "flash")
 		, m_sp(*this, "sp")
 		, m_tvf(*this, "tvf")
 		, m_keys(*this, "ROW%u", 0U)
@@ -71,6 +75,7 @@ public:
 	}
 
 	void s760(machine_config &config) ATTR_COLD;
+	void sp700(machine_config &config) ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -88,7 +93,10 @@ private:
 
 	void code_map(address_map &map) ATTR_COLD;
 	void data_map(address_map &map) ATTR_COLD;
+	void sp700_data_map(address_map &map) ATTR_COLD;
+	void common(machine_config &config) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
+	void t6963c_map(address_map &map) ATTR_COLD;
 
 	u16 ga_r(offs_t offset, u16 mem_mask);
 	void ga_w(offs_t offset, u16 data, u16 mem_mask);
@@ -118,12 +126,14 @@ private:
 	required_device<i80c196kb_device> m_maincpu;
 	required_device<midi_port_device> m_midiout;
 	required_device<eeprom_serial_93cxx_device> m_eeprom;
-	required_device<upd72069_device> m_fdc;
-	required_device<floppy_connector> m_floppy;
+	optional_device<upd72069_device> m_fdc;
+	optional_device<floppy_connector> m_floppy;
 	required_device<mb89352_device> m_spc;
-	required_device<roland_ext_port_device> m_ext_port;
-	required_device<sed1330_device> m_lcdc;
-	required_device<rf5c16_device> m_vdp;
+	optional_device<roland_ext_port_device> m_ext_port;
+	optional_device<sed1330_device> m_lcdc;
+	optional_device<rf5c16_device> m_vdp;
+	optional_device<t6963c_device> m_t6963c;
+	optional_device<intel_28f010_device> m_flash;
 	required_device<roland_sp_device> m_sp;
 	required_device<roland_tvf_device> m_tvf;
 	required_ioport_array<4> m_keys;
@@ -174,7 +184,7 @@ void roland_s770_state::machine_reset()
 {
 	std::fill(std::begin(m_ga), std::end(m_ga), 0);
 	for(int i = 0; i != 8; i++)
-		m_ga[i] = 0x0400 | (i & 3) << 4;
+		m_ga[i] = 0x0780 | (i & 3) << 4;
 	std::fill(std::begin(m_panel), std::end(m_panel), 0);
 	m_irq_pending = 0;
 	m_irq_line = false;
@@ -188,6 +198,11 @@ void roland_s770_state::machine_reset()
 	m_wave_dma_word = 0;
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
+
+	// the SP-700 configures its wave memory through F400-F406, not yet read; until then its
+	// on-board memory is always the host port's
+	if(m_flash)
+		m_sp->host_bank_w(1);
 	receive_register_reset();
 	transmit_register_reset();
 }
@@ -271,7 +286,8 @@ void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 			m_dma_addr = m_ga[0xd] | (m_ga[0xe] & 0x000f) << 16;
 			m_dma_count = m_ga[0xc];
 			m_dma_active = true;
-			m_fdc->tc_w(false);
+			if(m_fdc)
+				m_fdc->tc_w(false);
 			LOGMASKED(LOG_DMA, "dma start ctrl %02x addr %05x count %04x (%04x)\n", m_dma_ctrl, m_dma_addr, m_dma_count, m_maincpu->pc());
 			dma_service();
 		}
@@ -365,21 +381,36 @@ void roland_s770_state::dma_service()
 
 TIMER_CALLBACK_MEMBER(roland_s770_state::fdc_tc)
 {
-	m_fdc->tc_w(true);
+	if(m_fdc)
+		m_fdc->tc_w(true);
 }
 
 u16 roland_s770_state::bus_r(u16 bank, offs_t offset, u16 mem_mask)
 {
 	u32 const adr = ((bank & 0x3ff) << 10) + (offset << 1);
-	if(BIT(bank, 10))
-		return m_boot[(adr & 0x7fff) >> 1];
+	if(BIT(bank, 10)) {
+		if(m_flash && (adr & 0xe0000) == 0x40000) {
+			u16 data = 0;
+			if(ACCESSING_BITS_0_7)
+				data |= m_flash->read(adr);
+			if(ACCESSING_BITS_8_15)
+				data |= m_flash->read(adr + 1) << 8;
+			return data;
+		}
+		return m_boot[(adr & (m_boot.bytes() - 1)) >> 1];
+	}
 	return m_dram[(adr & 0xfffff) >> 1];
 }
 
 void roland_s770_state::bus_w(u16 bank, offs_t offset, u16 data, u16 mem_mask)
 {
 	u32 const adr = ((bank & 0x3ff) << 10) + (offset << 1);
-	if(BIT(bank, 10))
+	if(BIT(bank, 10) && m_flash && (adr & 0xe0000) == 0x40000) {
+		if(ACCESSING_BITS_0_7)
+			m_flash->write(adr, data);
+		if(ACCESSING_BITS_8_15)
+			m_flash->write(adr + 1, data >> 8);
+	} else if(BIT(bank, 10))
 		LOGMASKED(LOG_GA, "write to boot ROM %05x = %04x (%04x)\n", adr, data, m_maincpu->pc());
 	else
 		COMBINE_DATA(&m_dram[(adr & 0xfffff) >> 1]);
@@ -421,7 +452,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 {
 	switch(offset) {
 	case 1: {
-		floppy_image_device *floppy = m_floppy->get_device();
+		floppy_image_device *floppy = m_floppy ? m_floppy->get_device() : nullptr;
 		bool const disk = floppy && floppy->exists();
 		bool const hd = disk && floppy->get_variant() == floppy_image::DSHD;
 		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02);
@@ -433,7 +464,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		return data;
 	}
 	case 4:
-		return m_ext_port->read();
+		return m_ext_port ? m_ext_port->read() : 0xff;
 	case 9:
 		return 0;
 	default:
@@ -447,8 +478,10 @@ void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
 	if(offset == 0)
 		m_sp->host_bank_w((data >> 4) & 3);
-	if(offset == 4)
-		m_ext_port->write(data);
+	if(offset == 4) {
+		if(m_ext_port)
+			m_ext_port->write(data);
+	}
 	else if(offset == 5)
 		m_key_row = 0;
 	else if(offset != 6 && offset != 7 && offset != 8)
@@ -476,9 +509,26 @@ void roland_s770_state::data_map(address_map &map)
 	map(0xf802, 0xf802).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::command_w));
 }
 
+void roland_s770_state::sp700_data_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
+	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
+	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
+	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xd800, 0xd81f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
+	map(0xdc00, 0xdc03).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
+	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
+}
+
 void roland_s770_state::lcdc_map(address_map &map)
 {
 	map(0x0000, 0x1fff).mirror(0xe000).ram();
+}
+
+void roland_s770_state::t6963c_map(address_map &map)
+{
+	map(0x0000, 0x1fff).mirror(0x6000).ram();
 }
 
 static INPUT_PORTS_START(s760)
@@ -538,21 +588,14 @@ static const u16 s760_eeprom[0x40] = {
 	0x1110, 0x1312, 0x1514, 0x1716, 0x4746, 0x4948, 0x4b4a, 0x4d4c,
 };
 
-void roland_s770_state::s760(machine_config &config)
+void roland_s770_state::common(machine_config &config)
 {
 	I80C196KB(config, m_maincpu, 16_MHz_XTAL);
-	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::data_map);
 	m_maincpu->set_addrmap(AS_OPCODES, &roland_s770_state::code_map);
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::p1_w));
 	m_maincpu->in_p2_cb().set(FUNC(roland_s770_state::p2_r));
 
 	EEPROM_93C46_16BIT(config, m_eeprom).default_data(s760_eeprom, sizeof(s760_eeprom));
-
-	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
-	m_fdc->set_ready_line_connected(false);
-	m_fdc->intrq_wr_callback().set([this](int state) { irq_w(IRQ_FDC, state); });
-	m_fdc->drq_wr_callback().set(FUNC(roland_s770_state::fdc_drq_w));
-	FLOPPY_CONNECTOR(config, m_floppy, s770_floppies, "35hd", roland_s770_state::floppy_formats).enable_sound(true);
 
 	auto &scsi(NSCSI_BUS(config, "scsi"));
 	NSCSI_CONNECTOR(config, "scsi:0", default_scsi_devices, nullptr);
@@ -567,10 +610,34 @@ void roland_s770_state::s760(machine_config &config)
 	m_spc->out_dreq_callback().set(FUNC(roland_s770_state::spc_dreq_w));
 	scsi.set_external_device(7, m_spc);
 
-	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
-
 	MIDI_PORT(config, "mdin", midiin_slot, "midiin").rxd_handler().set(FUNC(roland_s770_state::rx_w));
 	MIDI_PORT(config, m_midiout, midiout_slot, "midiout");
+
+	SPEAKER(config, "speaker", 2).front();
+
+	ROLAND_SP(config, m_sp, 44100);
+	ROLAND_TVF(config, m_tvf, 44100);
+	// sampler voices 4-15 and 20-31 play, into TVF voices 0-23; 0-3 and 16-19 are never keyed
+	for(int n = 0; n != roland_sp_device::VOICES; n++)
+		m_sp->add_route(n, m_tvf, 1.0, n < 16 ? (n + 28) & 31 : n - 8);
+	for(int n = 0; n != 24; n++) {
+		m_tvf->add_route(n, "speaker", 0.25, 0);
+		m_tvf->add_route(n, "speaker", 0.25, 1);
+	}
+}
+
+void roland_s770_state::s760(machine_config &config)
+{
+	common(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::data_map);
+
+	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
+	m_fdc->set_ready_line_connected(false);
+	m_fdc->intrq_wr_callback().set([this](int state) { irq_w(IRQ_FDC, state); });
+	m_fdc->drq_wr_callback().set(FUNC(roland_s770_state::fdc_drq_w));
+	FLOPPY_CONNECTOR(config, m_floppy, s770_floppies, "35hd", roland_s770_state::floppy_formats).enable_sound(true);
+
+	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
@@ -592,16 +659,26 @@ void roland_s770_state::s760(machine_config &config)
 	RF5C16(config, m_vdp, 14.318181_MHz_XTAL);
 	m_vdp->set_screen("crt");
 
-	SPEAKER(config, "speaker", 2).front();
+}
 
-	ROLAND_SP(config, m_sp, 44100);
-	ROLAND_TVF(config, m_tvf, 44100);
-	for(int n = 0; n != roland_sp_device::VOICES; n++)
-		m_sp->add_route(n, m_tvf, 1.0, (n - 4) & (roland_tvf_device::VOICES - 1));
-	for(int n = 0; n != roland_tvf_device::VOICES; n++) {
-		m_tvf->add_route(n, "speaker", 0.25, 0);
-		m_tvf->add_route(n, "speaker", 0.25, 1);
-	}
+void roland_s770_state::sp700(machine_config &config)
+{
+	common(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::sp700_data_map);
+
+	INTEL_28F010(config, m_flash);
+
+	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
+
+	T6963C(config, m_t6963c);
+	m_t6963c->set_addrmap(0, &roland_s770_state::t6963c_map);
+
+	screen_device &lcd(SCREEN(config, "lcd").set_lcd());
+	lcd.set_refresh_hz(60);
+	lcd.set_size(240, 64);
+	lcd.set_visarea_full();
+	lcd.set_screen_update(m_t6963c, FUNC(t6963c_device::screen_update));
+	lcd.set_palette("palette");
 }
 
 ROM_START(s760)
@@ -609,6 +686,18 @@ ROM_START(s760)
 	ROM_LOAD("s760_1.0.1.bin", 0x0000, 0x8000, CRC(ac9d8be1) SHA1(c77dbbb6510e27d4ee15e55440e713795c4ee74e))
 ROM_END
 
+// the EPROMs and the flash in the upper half of the 2 MB bus: flash at 140000, IC55 at 1A0000,
+// IC54 at 1C0000 with the boot block at 1E0000
+ROM_START(sp700)
+	ROM_REGION16_LE(0x100000, "boot", ROMREGION_ERASEFF)
+	ROM_LOAD("sp700_ic55_1.12.bin", 0xa0000, 0x20000, CRC(476eac70) SHA1(83ed101295fbba9cd850054bc7d90c478853f604))
+	ROM_LOAD("sp700_ic54_1.12.bin", 0xc0000, 0x40000, CRC(0b25f092) SHA1(55aa0a232e23b21e8f0088ca98413ff8868c6ae1))
+
+	ROM_REGION(0x400, "t6963c:cgrom", ROMREGION_ERASE00)
+	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, NO_DUMP)
+ROM_END
+
 } // anonymous namespace
 
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
+SYST(1996, sp700, 0, 0, sp700, s760, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
