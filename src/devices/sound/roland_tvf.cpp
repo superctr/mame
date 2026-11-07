@@ -111,6 +111,16 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	v.regs[word] = data;
 	switch (word)
 	{
+	case READBACK_LOW:
+	case READBACK_HIGH:
+	case STATE_A:
+	case STATE_B:
+	case STATE_C:
+	case STATE_D:
+		v.low = 0;
+		v.band = 0;
+		break;
+
 	case CUTOFF_INITIAL:
 		v.cutoff.set(data, 0);
 		break;
