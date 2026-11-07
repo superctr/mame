@@ -11,8 +11,9 @@
 
     The S-760 loads its system from floppy and shows Perform Play on the LCD
     and, with the OP-760-1, on the CRT.  The MU-1 mouse and MIDI work, volumes
-    load from floppy, and the sampler chips play through the TVF; the MEQ mixer
-    (levels, pan, EQ, the outputs) is not emulated, and there is no RC-100.
+    load from floppy, and the sampler chips play through the TVF and the MEQ to
+    the two stereo outputs; the serial inputs (sampling) and the digital
+    outputs are not emulated, and there is no RC-100.
 
 ****************************************************************************/
 
@@ -26,6 +27,7 @@
 #include "machine/mb87030.h"
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
+#include "sound/roland_meq.h"
 #include "sound/roland_sp.h"
 #include "sound/roland_tvf.h"
 #include "bus/midi/midi.h"
@@ -68,6 +70,7 @@ public:
 		, m_flash(*this, "flash")
 		, m_sp(*this, "sp")
 		, m_tvf(*this, "tvf")
+		, m_meq(*this, "meq")
 		, m_keys(*this, "ROW%u", 0U)
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
@@ -137,6 +140,7 @@ private:
 	optional_device<intel_28f010_device> m_flash;
 	required_device<roland_sp_device> m_sp;
 	required_device<roland_tvf_device> m_tvf;
+	required_device<roland_meq_device> m_meq;
 	required_ioport_array<4> m_keys;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
@@ -502,6 +506,7 @@ void roland_s770_state::data_map(address_map &map)
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
 	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xdc00, 0xdc0b).rw(m_meq, FUNC(roland_meq_device::read), FUNC(roland_meq_device::write));
 	map(0xe000, 0xe003).m(m_fdc, FUNC(upd72069_device::map)).umask16(0x00ff);
 	map(0xe400, 0xe41f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
 	map(0xe800, 0xe81f).rw(m_vdp, FUNC(rf5c16_device::read), FUNC(rf5c16_device::write)).umask16(0x00ff);
@@ -517,6 +522,7 @@ void roland_s770_state::sp700_data_map(address_map &map)
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
 	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xd400, 0xd40b).rw(m_meq, FUNC(roland_meq_device::read), FUNC(roland_meq_device::write));
 	map(0xd800, 0xd81f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
 	map(0xdc00, 0xdc03).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
 	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
@@ -622,16 +628,32 @@ void roland_s770_state::common(machine_config &config)
 	// sampler voices 4-15 and 20-31 play, into TVF voices 0-23; 0-3 and 16-19 are never keyed
 	for(int n = 0; n != roland_sp_device::VOICES; n++)
 		m_sp->add_route(n, m_tvf, 1.0, n < 16 ? (n + 28) & 31 : n - 8);
-	for(int n = 0; n != 24; n++) {
-		m_tvf->add_route(n, "speaker", 0.25, 0);
-		m_tvf->add_route(n, "speaker", 0.25, 1);
-	}
+	ROLAND_MEQ(config, m_meq, 44100);
+	for(int n = 0; n != roland_meq_device::VOICES; n++)
+		m_tvf->add_route(n, m_meq, 1.0, n);
 }
+
+// the MEQ steps at which system 2.24's program takes each TVF voice
+static const u16 s760_meq_slots[24][2] = {
+	{ 0x25, 0x26 }, { 0x2e, 0x2f }, { 0x37, 0x38 }, { 0x40, 0x41 }, { 0x49, 0x4a }, { 0x52, 0x53 },
+	{ 0x5b, 0x5c }, { 0x60, 0x61 }, { 0x69, 0x6a }, { 0x72, 0x73 }, { 0x78, 0x79 }, { 0x7c, 0x7d },
+	{ 0xa3, 0xa4 }, { 0xac, 0xad }, { 0x9a, 0x9b }, { 0x9e, 0x9f }, { 0xa7, 0xa8 }, { 0xb0, 0xb1 },
+	{ 0xba, 0xbb }, { 0xbe, 0xbf }, { 0x08, 0x09 }, { 0x11, 0x12 }, { 0x1a, 0x1b }, { 0x21, 0x22 }
+};
 
 void roland_s770_state::s760(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::data_map);
+
+	// SDO1's latches in step order: DIGITAL OUT 1 L, STEREO OUT 1 R, DIGITAL OUT 1 R, STEREO OUT 1 L;
+	// SDO2's likewise for the second pair
+	m_meq->set_voice_slots(s760_meq_slots);
+	SPEAKER(config, "out2", 2).front();
+	m_meq->add_route(3, "speaker", 1.0, 0);
+	m_meq->add_route(1, "speaker", 1.0, 1);
+	m_meq->add_route(7, "out2", 1.0, 0);
+	m_meq->add_route(5, "out2", 1.0, 1);
 
 	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
 	m_fdc->set_ready_line_connected(false);
