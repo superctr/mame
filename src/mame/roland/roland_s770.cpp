@@ -85,6 +85,8 @@ public:
 	void sp700(machine_config &config) ATTR_COLD;
 	void s770(machine_config &config) ATTR_COLD;
 
+	DECLARE_INPUT_CHANGED_MEMBER(encoder_step);
+
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
@@ -477,6 +479,17 @@ void roland_s770_state::dma_service()
 	}
 }
 
+INPUT_CHANGED_MEMBER(roland_s770_state::encoder_step)
+{
+	if(!newval)
+		return;
+	m_maincpu->set_input_line(i8x9x_device::T2UPDN_LINE, param);
+	for(int level : { 1, 0 }) {
+		m_maincpu->set_input_line(i8x9x_device::T2CLK_LINE, level);
+		m_maincpu->set_input_line(i8x9x_device::HSI1_LINE, level);
+	}
+}
+
 TIMER_CALLBACK_MEMBER(roland_s770_state::hsi_clock)
 {
 	m_hsi_level = !m_hsi_level;
@@ -740,6 +753,10 @@ static INPUT_PORTS_START(sp700)
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F5") PORT_CODE(KEYCODE_F5)
 	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F4") PORT_CODE(KEYCODE_F4)
+
+	PORT_START("ENCODER")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value -") PORT_CODE(KEYCODE_COMMA) PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(roland_s770_state::encoder_step), 1)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP) PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(roland_s770_state::encoder_step), 0)
 INPUT_PORTS_END
 
 void roland_s770_state::floppy_formats(format_registration &fr)
@@ -767,6 +784,7 @@ static const u16 s760_eeprom[0x40] = {
 void roland_s770_state::common_core(machine_config &config)
 {
 	I80C196KB(config, m_maincpu, 16_MHz_XTAL);
+	m_maincpu->set_timer2_external(true);
 	m_maincpu->set_addrmap(AS_OPCODES, &roland_s770_state::code_map);
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::p1_w));
 	m_maincpu->in_p2_cb().set(FUNC(roland_s770_state::p2_r));
