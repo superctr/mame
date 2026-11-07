@@ -64,7 +64,7 @@ protected:
 	virtual void state_export(const device_state_entry &entry) override;
 	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
-	address_space_config program_config, regs_config;
+	address_space_config program_config, regs_config, opcodes_config;
 	address_space *program, *regs;
 	memory_access<16, 0, 0, ENDIANNESS_LITTLE>::cache m_cache8;
 	memory_access<16, 1, 0, ENDIANNESS_LITTLE>::cache m_cache16;
@@ -72,7 +72,7 @@ protected:
 	required_shared_ptr<u16> register_file;
 
 	int icount, bcount, inst_state, cycles_scaling;
-	uint8_t pending_irq;
+	uint8_t pending_irq, pending_irq1, int_mask1, wsr;
 	uint16_t PC, PPC, PSW;
 	uint16_t OP1;
 	uint8_t OP2, OP3, OPI;
@@ -95,6 +95,10 @@ protected:
 	u8 int_mask_r();
 	void int_pending_w(u8 data);
 	u8 int_pending_r();
+	void int_mask1_w(u8 data);
+	u8 int_mask1_r();
+	void int_pending1_w(u8 data);
+	u8 int_pending1_r();
 
 	void reg_w8(uint8_t adr, uint8_t data);
 	void reg_w16(uint8_t adr, uint16_t data);

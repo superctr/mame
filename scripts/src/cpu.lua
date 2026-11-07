@@ -1351,17 +1351,21 @@ if CPUS["MCS96"] then
 		MAME_DIR .. "src/devices/cpu/mcs96/i8x9x.h",
 		MAME_DIR .. "src/devices/cpu/mcs96/i8xc196.cpp",
 		MAME_DIR .. "src/devices/cpu/mcs96/i8xc196.h",
+		MAME_DIR .. "src/devices/cpu/mcs96/i80c196kb.cpp",
+		MAME_DIR .. "src/devices/cpu/mcs96/i80c196kb.h",
 	}
 	dependency {
 		{ MAME_DIR .. "src/devices/cpu/mcs96/mcs96.cpp",   GEN_DIR .. "emu/cpu/mcs96/mcs96.hxx" },
 		{ MAME_DIR .. "src/devices/cpu/mcs96/i8x9x.cpp",   GEN_DIR .. "emu/cpu/mcs96/i8x9x.hxx" },
 		{ MAME_DIR .. "src/devices/cpu/mcs96/i8xc196.cpp", GEN_DIR .. "emu/cpu/mcs96/i8xc196.hxx" },
+		{ MAME_DIR .. "src/devices/cpu/mcs96/i80c196kb.cpp", GEN_DIR .. "emu/cpu/mcs96/i80c196kb.hxx" },
 	}
 
 	custombuildtask {
 		{ MAME_DIR .. "src/devices/cpu/mcs96/mcs96ops.lst" , GEN_DIR .. "emu/cpu/mcs96/mcs96.hxx",   { MAME_DIR .. "src/devices/cpu/mcs96/mcs96make.py" }, {"@echo Generating mcs96 source file...", PYTHON .. " $(1) s mcs96 $(<) $(@)" }},
 		{ MAME_DIR .. "src/devices/cpu/mcs96/mcs96ops.lst" , GEN_DIR .. "emu/cpu/mcs96/i8x9x.hxx",   { MAME_DIR .. "src/devices/cpu/mcs96/mcs96make.py" }, {"@echo Generating i8x9x source file...", PYTHON .. " $(1) s i8x9x $(<) $(@)" }},
 		{ MAME_DIR .. "src/devices/cpu/mcs96/mcs96ops.lst" , GEN_DIR .. "emu/cpu/mcs96/i8xc196.hxx", { MAME_DIR .. "src/devices/cpu/mcs96/mcs96make.py" }, {"@echo Generating i8xc196 source file...", PYTHON .. " $(1) s i8xc196 $(<) $(@)" }},
+		{ MAME_DIR .. "src/devices/cpu/mcs96/mcs96ops.lst" , GEN_DIR .. "emu/cpu/mcs96/i80c196kb.hxx", { MAME_DIR .. "src/devices/cpu/mcs96/mcs96make.py" }, {"@echo Generating i80c196kb source file...", PYTHON .. " $(1) s i80c196kb $(<) $(@)" }},
 	}
 end
 

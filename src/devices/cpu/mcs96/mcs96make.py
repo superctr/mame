@@ -142,7 +142,7 @@ class OpcodeList:
     def save_opcodes(self, f, t):
         pf = ""
         is_196 = False
-        if t == "i8xc196":
+        if t == "i8xc196" or t == "i80c196kb":
             pf = "_196"
             is_196 = True
         for opc in self.opcode_info:
@@ -179,7 +179,7 @@ def main(argv):
 
     m = argv[1]
     t = argv[2]
-    opcodes = OpcodeList(argv[3], t == "i8xc196")
+    opcodes = OpcodeList(argv[3], t == "i8xc196" or t == "i80c196kb")
     
     try:
         f = open(argv[4], "w")

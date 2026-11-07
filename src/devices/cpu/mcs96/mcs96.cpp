@@ -17,8 +17,9 @@ mcs96_device::mcs96_device(const machine_config &mconfig, device_type type, cons
 	cpu_device(mconfig, type, tag, owner, clock),
 	program_config("program", ENDIANNESS_LITTLE, data_width, 16),
 	regs_config("register", ENDIANNESS_LITTLE, 16, 8, 0, regs_map),
+	opcodes_config("opcodes", ENDIANNESS_LITTLE, data_width, 16),
 	program(nullptr), regs(nullptr), register_file(*this, "register_file"),
-	icount(0), bcount(0), inst_state(0), cycles_scaling(0), pending_irq(0),
+	icount(0), bcount(0), inst_state(0), cycles_scaling(0), pending_irq(0), pending_irq1(0), int_mask1(0), wsr(0),
 	PC(0), PPC(0), PSW(0), OP1(0), OP2(0), OP3(0), OPI(0), TMP(0), irq_requested(false), m_long_index(false)
 {
 }
@@ -26,11 +27,12 @@ mcs96_device::mcs96_device(const machine_config &mconfig, device_type type, cons
 void mcs96_device::device_start()
 {
 	program = &space(AS_PROGRAM);
-	if(program->data_width() == 8) {
-		program->cache(m_cache8);
+	address_space &opcodes = has_space(AS_OPCODES) ? space(AS_OPCODES) : *program;
+	if(opcodes.data_width() == 8) {
+		opcodes.cache(m_cache8);
 		m_pr8 = [this](offs_t address) -> u8 { return m_cache8.read_byte(address); };
 	} else {
-		program->cache(m_cache16);
+		opcodes.cache(m_cache16);
 		m_pr8 = [this](offs_t address) -> u8 { return m_cache16.read_byte(address); };
 	}
 	regs = &space(AS_DATA);
@@ -60,6 +62,9 @@ void mcs96_device::device_start()
 
 	save_item(NAME(inst_state));
 	save_item(NAME(pending_irq));
+	save_item(NAME(pending_irq1));
+	save_item(NAME(int_mask1));
+	save_item(NAME(wsr));
 	save_item(NAME(PC));
 	save_item(NAME(PPC));
 	save_item(NAME(PSW));
@@ -77,6 +82,9 @@ void mcs96_device::device_reset()
 	PC = 0x2080;
 	PPC = PC;
 	PSW = 0;
+	pending_irq1 = 0;
+	int_mask1 = 0;
+	wsr = 0;
 	irq_requested = false;
 	inst_state = STATE_FETCH;
 }
@@ -102,7 +110,7 @@ void mcs96_device::recompute_bcount(uint64_t event_time)
 
 void mcs96_device::check_irq()
 {
-	irq_requested = (PSW & pending_irq) && (PSW & F_I);
+	irq_requested = ((PSW & pending_irq) || (int_mask1 & pending_irq1)) && (PSW & F_I);
 }
 
 void mcs96_device::int_mask_w(u8 data)
@@ -125,6 +133,28 @@ void mcs96_device::int_pending_w(u8 data)
 u8 mcs96_device::int_pending_r()
 {
 	return pending_irq;
+}
+
+void mcs96_device::int_mask1_w(u8 data)
+{
+	int_mask1 = data;
+	check_irq();
+}
+
+u8 mcs96_device::int_mask1_r()
+{
+	return int_mask1;
+}
+
+void mcs96_device::int_pending1_w(u8 data)
+{
+	pending_irq1 = data;
+	check_irq();
+}
+
+u8 mcs96_device::int_pending1_r()
+{
+	return pending_irq1;
 }
 
 void mcs96_device::execute_run()
@@ -151,6 +181,12 @@ void mcs96_device::execute_run()
 
 device_memory_interface::space_config_vector mcs96_device::memory_space_config() const
 {
+	if(has_configured_map(AS_OPCODES))
+		return space_config_vector {
+			std::make_pair(AS_PROGRAM, &program_config),
+			std::make_pair(AS_DATA, &regs_config),
+			std::make_pair(AS_OPCODES, &opcodes_config)
+		};
 	return space_config_vector {
 		std::make_pair(AS_PROGRAM, &program_config),
 		std::make_pair(AS_DATA, &regs_config)

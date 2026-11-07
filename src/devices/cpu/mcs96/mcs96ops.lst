@@ -4,10 +4,16 @@ fetch
 	m_long_index = false;
 	if(irq_requested) {
 		int level;
-		for(level = 7; level >= 0 && !(PSW & pending_irq & (1<<level)); level--);
-		if(level != 7)
-			pending_irq &= ~(1<<level);
-		OP1 = level;
+		if(int_mask1 & pending_irq1) {
+			for(level = 7; level >= 0 && !(int_mask1 & pending_irq1 & (1<<level)); level--);
+			pending_irq1 &= ~(1<<level);
+			OP1 = 0x18 + level;
+		} else {
+			for(level = 7; level >= 0 && !(PSW & pending_irq & (1<<level)); level--);
+			if(level != 7)
+				pending_irq &= ~(1<<level);
+			OP1 = level;
+		}
 		standard_irq_callback(OP1, PC);
 		TMP = reg_r16(0x18);
 		TMP -= 2;
@@ -1542,6 +1548,19 @@ c0    st    direct_2w
 	next(4);
 
 c1    bmov  direct_2w 196
+	{
+		u16 count = reg_r16(OP1);
+		u16 src = reg_r16(OP2);
+		u16 dst = reg_r16(OP2+2);
+		for(u16 i = 0; i != count; i++) {
+			any_w16(dst, any_r16(src));
+			src += 2;
+			dst += 2;
+		}
+		reg_w16(OP2, src);
+		reg_w16(OP2+2, dst);
+		next(6 + 8*count);
+	}
 
 c2    st    indirect_2w
 	any_w16(OP1, reg_r16(OP2));
@@ -1556,6 +1575,23 @@ c4    stb   direct_2b
 	next(4);
 
 c5    cmpl  direct_2w 196
+	{
+		u32 v2 = reg_r16(OP1) | (reg_r16(OP1+2) << 16);
+		u32 v1 = reg_r16(OP2) | (reg_r16(OP2+2) << 16);
+		u64 diff = u64(v1) - v2;
+		PSW &= ~(F_N|F_V|F_Z|F_C);
+		if(!u32(diff))
+			PSW |= F_Z;
+		else if(s32(diff) < 0)
+			PSW |= F_N;
+		if((v1^v2) & (v1^u32(diff)) & 0x80000000) {
+			PSW |= F_V|F_VT;
+			PSW ^= F_N;
+		}
+		if(!(diff >> 32))
+			PSW |= F_C;
+		next(7);
+	}
 
 c6    stb   indirect_2b
 	any_w8(OP1, reg_r8(OP2));
@@ -1604,6 +1640,20 @@ cc    pop   direct_1w
 	next(12); // +2 when external sp
 
 cd    bmovi direct_2w 196
+	{
+		u16 count = reg_r16(OP1);
+		u16 src = reg_r16(OP2);
+		u16 dst = reg_r16(OP2+2);
+		for(u16 i = 0; i != count; i++) {
+			any_w16(dst, any_r16(src));
+			src += 2;
+			dst += 2;
+		}
+		reg_w16(OP1, 0);
+		reg_w16(OP2, src);
+		reg_w16(OP2+2, dst);
+		next(6 + 8*count);
+	}
 
 ce    pop   indirect_1w
 	TMP = reg_r16(0x18);
@@ -1832,8 +1882,26 @@ f3    popf  none
 	next_noirq(9); // +4 for external sp
 
 f4    pusha none 196
+	TMP = reg_r16(0x18);
+	TMP -= 2;
+	any_w16(TMP, PSW);
+	TMP -= 2;
+	any_w16(TMP, int_mask1 | (wsr << 8));
+	reg_w16(0x18, TMP);
+	PSW = 0x0000;
+	int_mask1 = 0x00;
+	check_irq();
+	next_noirq(12); // +6 for external sp
 
 f5    popa  none 196
+	TMP = reg_r16(0x18);
+	OP1 = any_r16(TMP);
+	int_mask1 = OP1;
+	wsr = OP1 >> 8;
+	PSW = any_r16(TMP+2);
+	reg_w16(0x18, TMP+4);
+	check_irq();
+	next_noirq(12); // +6 for external sp
 
 f6    idlpd none 196
 
