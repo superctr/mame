@@ -2768,8 +2768,6 @@ TIMER_CALLBACK_MEMBER(upd765_family_device::run_drive_ready_polling)
 				irq = true;
 			}
 		}
-		else if(flopi[fid].st0_filled && !flopi[fid].st0_seek)
-			irq = true;
 	}
 
 	check_irq();
