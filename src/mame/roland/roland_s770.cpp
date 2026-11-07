@@ -863,6 +863,15 @@ ROM_START(s770)
 	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, NO_DUMP)
 ROM_END
 
+// an MB27C128 read as a 27C256: two identical halves
+ROM_START(s750)
+	ROM_REGION16_LE(0x8000, "boot", 0)
+	ROM_LOAD("s750_1.02.bin", 0x0000, 0x8000, CRC(29d9ed2d) SHA1(867ada312386ec8d01c262c35ba6ef189dff2223))
+
+	ROM_REGION(0x400, "t6963c:cgrom", ROMREGION_ERASE00)
+	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, NO_DUMP)
+ROM_END
+
 ROM_START(s760)
 	ROM_REGION16_LE(0x8000, "boot", 0)
 	ROM_LOAD("s760_1.0.1.bin", 0x0000, 0x8000, CRC(ac9d8be1) SHA1(c77dbbb6510e27d4ee15e55440e713795c4ee74e))
@@ -882,5 +891,6 @@ ROM_END
 } // anonymous namespace
 
 SYST(1990, s770, 0, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1991, s750, s770, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1996, sp700, 0, 0, sp700, s760, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
