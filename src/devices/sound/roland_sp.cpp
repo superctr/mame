@@ -92,6 +92,7 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_wave_base(0),
 	m_wave_decoded(false),
 	m_wave_words(0),
+	m_wave_fitted(0),
 	m_wave_ptr(nullptr),
 	m_key{ 0, 0 },
 	m_sel_block(BLOCK_NONE), m_sel_voice(0), m_sel_word(0),
@@ -107,6 +108,8 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 void roland_sp_device::device_start()
 {
 	m_wave_words = m_wave_size / 2;
+	if(!m_wave_fitted)
+		m_wave_fitted = m_wave_words;
 	memory_share *share = machine().memory().share_alloc(*this, "wave", 16, m_wave_size, ENDIANNESS_LITTLE);
 	m_wave_ptr = reinterpret_cast<u16 *>(share->ptr());
 	m_stream = stream_alloc(0, VOICES, clock());
@@ -136,6 +139,7 @@ void roland_sp_device::device_start()
 	save_item(NAME(m_host_latch));
 	save_item(NAME(m_record_in));
 	save_item(NAME(m_level_channel));
+	save_item(NAME(m_wave_fitted));
 }
 
 void roland_sp_device::device_clock_changed()
