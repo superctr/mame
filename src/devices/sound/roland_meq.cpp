@@ -12,8 +12,11 @@
     latches on three serial ports, exposed here as four words a port in
     step order.
 
-    Not emulated: the serial inputs (the A/D and the digital input), the
-    clock-pin field.
+    Two serial input ports arrive as stream inputs after the voices, left
+    then right: a port's first read in a sample takes the left word, its
+    second the right.
+
+    Not emulated: the clock-pin field.
 
 ***************************************************************************/
 
@@ -57,7 +60,7 @@ void roland_meq_device::device_start()
 				if(m_slot_table[v][i] < STEPS)
 					m_slot_of_step[m_slot_table[v][i]] = v;
 
-	m_stream = stream_alloc(VOICES, PORTS * LATCHES, clock());
+	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock());
 
 	save_item(NAME(m_program));
 	save_item(NAME(m_coef));
@@ -147,10 +150,11 @@ s32 roland_meq_device::multiply(s32 x, u16 coef) const
 	return s32(((s64(x) * m) << SHIFTS[(coef >> 12) & 3]) >> 11);
 }
 
-void roland_meq_device::run(const s32 *voices)
+void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 {
 	int const length = std::min((m_config[0] & 0x1ff) + 3, int(STEPS));
 	int latched[PORTS] = { 0, 0, 0 };
+	int serial_reads[SERIAL_INPUTS] = { 0, 0 };
 
 	for(int m = 0; m != length; m++) {
 		u16 const hi = m_program[m] >> 16;
@@ -210,8 +214,13 @@ void roland_meq_device::run(const s32 *voices)
 			m_prev_read = rd;
 
 		bool push = true;
-		if(lo & LO_SERIAL_IN)
-			m_operand = m_operand2 = 0;
+		if(lo & LO_SERIAL_IN) {
+			int const port = ((lo >> 2) & 3) - 1;
+			if(port >= 0 && port < SERIAL_INPUTS)
+				m_operand = m_operand2 = serial[port][serial_reads[port]++ & 1];
+			else
+				m_operand = m_operand2 = 0;
+		}
 		else if(reads && (addend != ADD_READ || !(lo & LO_OPERAND2)))
 			m_operand = m_operand2 = rd;
 		if((lo & LO_TRANSFER) && !(lo & LO_SERIAL_IN)) {
@@ -231,10 +240,14 @@ void roland_meq_device::run(const s32 *voices)
 void roland_meq_device::sound_stream_update(sound_stream &stream)
 {
 	s32 voices[VOICES];
+	s32 serial[SERIAL_INPUTS][2];
 	for(int i = 0; i != stream.samples(); i++) {
 		for(int v = 0; v != VOICES; v++)
 			voices[v] = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * 0x7fffff) & ~0x1f;
-		run(voices);
+		for(int p = 0; p != SERIAL_INPUTS; p++)
+			for(int c = 0; c != 2; c++)
+				serial[p][c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7fffff);
+		run(voices, serial);
 		for(int p = 0; p != PORTS; p++)
 			for(int l = 0; l != LATCHES; l++)
 				stream.put_int(p * LATCHES + l, i, m_port[p][l], 0x800000);

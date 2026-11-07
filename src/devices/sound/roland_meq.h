@@ -11,6 +11,8 @@ public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
 	static constexpr int VOICES = 24;
+	static constexpr int SERIAL_INPUTS = 2;
+	static constexpr int INPUT_SERIAL = VOICES;
 	static constexpr int PORTS = 3;
 	static constexpr int LATCHES = 4;
 	static constexpr int STEPS = 400;
@@ -34,7 +36,7 @@ private:
 	enum : u32 { DATA_WORDS = 128 };
 
 	s32 multiply(s32 x, u16 coef) const;
-	void run(const s32 *voices);
+	void run(const s32 *voices, const s32 (*serial)[2]);
 
 	sound_stream *m_stream;
 	const u16 (*m_slot_table)[2];
