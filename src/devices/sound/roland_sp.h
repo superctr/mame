@@ -16,19 +16,13 @@ public:
 
 	auto int_callback() { return m_int_cb.bind(); }
 
-	void set_wave_size(u32 bytes) { m_wave_size = bytes; }
+	static constexpr unsigned WAVE_BLOCKS = 0x100, BLOCK_WORDS = 0x10000;
 
-	// the word address of the first populated word; the host port reads open bus outside the memory
-	void set_wave_base(u32 word) { m_wave_base = word; m_wave_decoded = true; }
-
-	// the populated part of the memory, from the base; the rest of the decoded space reads open bus
-	void set_wave_fitted(u32 bytes) { m_wave_fitted = std::min(bytes, m_wave_size) / 2; }
+	// the wave memory the board decodes, in blocks of 64K words; a block without memory reads open bus
+	void set_wave_block(unsigned block, u16 *words);
 
 	u16 read(offs_t offset, u16 mem_mask);
 	void write(offs_t offset, u16 data, u16 mem_mask);
-
-	// the host port's bank, from the I/O gate array; the on-board memory is bank 1
-	void host_bank_w(u8 bank) { m_host_bank = bank; }
 
 	// the host port's data register, for DMA
 	u16 host_read();
@@ -72,8 +66,8 @@ private:
 		bool ended = false;
 	};
 
-	bool host_hit() const { return m_host_bank == 1 && (!m_wave_decoded || ((m_host_addr - m_wave_base) & 0xffffff) < m_wave_fitted); }
-	u16 wave_word(s64 adr) const { return m_wave_ptr[adr & (m_wave_words - 1)]; }
+	u16 wave_word(s64 adr) const { u16 const *const b = m_blocks[(adr >> 16) & 0xff]; return b ? b[adr & 0xffff] : 0xffff; }
+	u16 *wave_ptr(s64 adr) const { u16 *const b = m_blocks[(adr >> 16) & 0xff]; return b ? &b[adr & 0xffff] : nullptr; }
 	u32 c4_long(const voice &v, int word) const { return u32(v.c4[word + 1]) << 16 | v.c4[word]; }
 	u32 c2_read(const voice &v) const;
 	void c2_write(voice &v, u32 data);
@@ -88,12 +82,7 @@ private:
 	devcb_write_line m_int_cb;
 	sound_stream *m_stream;
 	emu_timer *m_int_timer;
-	u32 m_wave_size;
-	u32 m_wave_base;
-	bool m_wave_decoded;
-	u32 m_wave_words;
-	u32 m_wave_fitted;
-	u16 *m_wave_ptr;
+	u16 *m_blocks[WAVE_BLOCKS];
 
 	voice m_voices[VOICES];
 	u16 m_key[2];
@@ -108,7 +97,6 @@ private:
 	u8 m_event_count;
 	bool m_int_state;
 
-	u8 m_host_bank;
 	u32 m_host_addr;
 	u16 m_host_latch;
 

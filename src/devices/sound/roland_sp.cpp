@@ -88,30 +88,20 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_int_cb(*this),
 	m_stream(nullptr),
 	m_int_timer(nullptr),
-	m_wave_size(0x200000),
-	m_wave_base(0),
-	m_wave_decoded(false),
-	m_wave_words(0),
-	m_wave_fitted(0),
-	m_wave_ptr(nullptr),
 	m_key{ 0, 0 },
 	m_sel_block(BLOCK_NONE), m_sel_voice(0), m_sel_word(0),
 	m_c2_latch(0),
 	m_event_head(0), m_event_count(0), m_int_state(false),
-	m_host_bank(0), m_host_addr(0), m_host_latch(0),
+	m_host_addr(0), m_host_latch(0),
 	m_record_inputs(false), m_record_in{ 0, 0 }, m_level_channel(0)
 {
 	std::fill(std::begin(m_ctrl), std::end(m_ctrl), 0);
+	std::fill(std::begin(m_blocks), std::end(m_blocks), nullptr);
 	std::fill(std::begin(m_events), std::end(m_events), 0);
 }
 
 void roland_sp_device::device_start()
 {
-	m_wave_words = m_wave_size / 2;
-	if(!m_wave_fitted)
-		m_wave_fitted = m_wave_words;
-	memory_share *share = machine().memory().share_alloc(*this, "wave", 16, m_wave_size, ENDIANNESS_LITTLE);
-	m_wave_ptr = reinterpret_cast<u16 *>(share->ptr());
 	m_stream = stream_alloc(m_record_inputs ? 2 : 0, VOICES, clock(), m_record_inputs ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 	m_int_timer = timer_alloc(FUNC(roland_sp_device::update_int), this);
 
@@ -134,12 +124,10 @@ void roland_sp_device::device_start()
 	save_item(NAME(m_event_head));
 	save_item(NAME(m_event_count));
 	save_item(NAME(m_int_state));
-	save_item(NAME(m_host_bank));
 	save_item(NAME(m_host_addr));
 	save_item(NAME(m_host_latch));
 	save_item(NAME(m_record_in));
 	save_item(NAME(m_level_channel));
-	save_item(NAME(m_wave_fitted));
 }
 
 void roland_sp_device::device_clock_changed()
@@ -158,19 +146,26 @@ void roland_sp_device::device_reset()
 	m_int_cb(0);
 }
 
+void roland_sp_device::set_wave_block(unsigned block, u16 *words)
+{
+	if(m_stream)
+		m_stream->update();
+	m_blocks[block % WAVE_BLOCKS] = words;
+}
+
 u16 roland_sp_device::host_read()
 {
 	u16 const data = m_host_latch;
 	m_host_addr++;
-	m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
+	m_host_latch = wave_word(m_host_addr);
 	return data;
 }
 
 void roland_sp_device::host_write(u16 data, u16 mem_mask)
 {
 	m_stream->update();
-	if(host_hit())
-		COMBINE_DATA(&m_wave_ptr[m_host_addr & (m_wave_words - 1)]);
+	if(u16 *const w = wave_ptr(m_host_addr))
+		COMBINE_DATA(w);
 	m_host_addr++;
 }
 
@@ -295,11 +290,11 @@ void roland_sp_device::write(offs_t offset, u16 data, u16 mem_mask)
 		break;
 	case 0x06:
 		m_host_addr = (m_host_addr & 0x0000ffff) | (data << 16);
-		m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
+		m_host_latch = wave_word(m_host_addr);
 		break;
 	case 0x07:
 		m_host_addr = (m_host_addr & 0xffff0000) | data;
-		m_host_latch = host_hit() ? m_wave_ptr[m_host_addr & (m_wave_words - 1)] : 0xffff;
+		m_host_latch = wave_word(m_host_addr);
 		break;
 	case 0x08:
 		m_c2_latch = (m_c2_latch & 0xffff0000) | data;
@@ -424,7 +419,8 @@ void roland_sp_device::record()
 		voice &v = m_voices[n];
 		if(!v.on || !recording(n))
 			continue;
-		m_wave_ptr[(v.pos >> POS_FRACTION) & (m_wave_words - 1)] = u16(m_record_in[c] >> 8);
+		if(u16 *const w = wave_ptr(v.pos >> POS_FRACTION))
+			*w = u16(m_record_in[c] >> 8);
 		advance(n, v);
 	}
 }
