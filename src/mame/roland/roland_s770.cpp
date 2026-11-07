@@ -340,8 +340,8 @@ void roland_s770_state::spc_dreq_w(int state)
 void roland_s770_state::dma_service()
 {
 	while(m_dma_active) {
-		bool const to_device = BIT(m_dma_ctrl, 5);
-		bool const wave = (m_dma_ctrl & 0xc0) == 0x80 && BIT(m_dma_ctrl, 3);
+		bool const to_device = !BIT(m_dma_ctrl, 0);
+		bool const wave = (m_dma_ctrl & 0xc0) == 0x80 && (BIT(m_dma_ctrl, 3) || (m_dma_ctrl & 7) == 7);
 		bool const fdc = !wave && BIT(m_dma_ctrl, 7);
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			return;
@@ -649,6 +649,8 @@ void roland_s770_state::s760(machine_config &config)
 	// SDO1's latches in step order: DIGITAL OUT 1 L, STEREO OUT 1 R, DIGITAL OUT 1 R, STEREO OUT 1 L;
 	// SDO2's likewise for the second pair
 	m_meq->set_voice_slots(s760_meq_slots);
+	m_meq->port3_callback().set(m_sp, FUNC(roland_sp_device::record_w));
+	m_meq->set_synchronous(true);
 	SPEAKER(config, "out2", 2).front();
 	m_meq->add_route(3, "speaker", 1.0, 0);
 	m_meq->add_route(1, "speaker", 1.0, 1);
