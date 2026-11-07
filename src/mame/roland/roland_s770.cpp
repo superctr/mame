@@ -10,8 +10,8 @@
     from floppy or SCSI into DRAM.
 
     Skeleton: the S-760 loads its system from floppy and shows Perform Play on
-    the LCD and, with the OP-760-1, on the CRT.  The MU-1 mouse works; no RC-100,
-    no MIDI, no sound yet.
+    the LCD and, with the OP-760-1, on the CRT.  The MU-1 mouse and MIDI work; no RC-100
+    and no sound yet.
 
 ****************************************************************************/
 
@@ -24,11 +24,13 @@
 #include "machine/mb87030.h"
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
+#include "bus/midi/midi.h"
 #include "bus/nscsi/devices.h"
 #include "bus/roland/extport.h"
 #include "video/rf5c16.h"
 #include "video/sed1330.h"
 
+#include "diserial.h"
 #include "emupal.h"
 #include "screen.h"
 
@@ -41,12 +43,14 @@
 
 namespace {
 
-class roland_s770_state : public driver_device
+class roland_s770_state : public driver_device, public device_serial_interface
 {
 public:
 	roland_s770_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
+		, device_serial_interface(mconfig, *this)
 		, m_maincpu(*this, "maincpu")
+		, m_midiout(*this, "mdout")
 		, m_eeprom(*this, "eeprom")
 		, m_fdc(*this, "fdc")
 		, m_floppy(*this, "fdc:0")
@@ -70,8 +74,12 @@ protected:
 private:
 	enum : u8 {
 		IRQ_FDC = 0,
-		IRQ_DMA = 4
+		IRQ_DMA = 4,
+		IRQ_MIDI_RX = 6
 	};
+
+	virtual void rcv_complete() override;
+	virtual void tra_callback() override;
 
 	void code_map(address_map &map) ATTR_COLD;
 	void data_map(address_map &map) ATTR_COLD;
@@ -105,6 +113,7 @@ private:
 	static void floppy_formats(format_registration &fr);
 
 	required_device<i80c196kb_device> m_maincpu;
+	required_device<midi_port_device> m_midiout;
 	required_device<eeprom_serial_93cxx_device> m_eeprom;
 	required_device<upd72069_device> m_fdc;
 	required_device<floppy_connector> m_floppy;
@@ -131,6 +140,8 @@ private:
 	emu_timer *m_fdc_tc;
 	u32 m_wave_addr;
 	u16 m_wave_latch;
+	u8 m_midi_rx;
+	bool m_midi_rx_full;
 };
 
 void roland_s770_state::machine_start()
@@ -149,6 +160,12 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_key_row));
 	save_item(NAME(m_wave_addr));
 	save_item(NAME(m_wave_latch));
+	save_item(NAME(m_midi_rx));
+	save_item(NAME(m_midi_rx_full));
+
+	set_data_frame(1, 8, PARITY_NONE, STOP_BITS_1);
+	set_rcv_rate(31250);
+	set_tra_rate(31250);
 }
 
 void roland_s770_state::machine_reset()
@@ -168,6 +185,23 @@ void roland_s770_state::machine_reset()
 	m_key_row = 0;
 	m_wave_addr = 0;
 	m_wave_latch = 0;
+	m_midi_rx = 0;
+	m_midi_rx_full = false;
+	receive_register_reset();
+	transmit_register_reset();
+}
+
+void roland_s770_state::rcv_complete()
+{
+	receive_register_extract();
+	m_midi_rx = get_received_char();
+	m_midi_rx_full = true;
+	irq_w(IRQ_MIDI_RX, 1);
+}
+
+void roland_s770_state::tra_callback()
+{
+	m_midiout->write_txd(transmit_register_get_data_bit());
 }
 
 void roland_s770_state::irq_w(int source, int state)
@@ -191,20 +225,37 @@ void roland_s770_state::update_irq()
 u16 roland_s770_state::ga_r(offs_t offset, u16 mem_mask)
 {
 	u16 data = m_ga[offset];
+	if(offset == 0xa)
+		data = (data & 0xff00) | (is_transmit_register_empty() ? 0x02 : 0x00) | (m_midi_rx_full ? 0x01 : 0x00);
+	else if(offset == 0xb) {
+		data = (data & 0xff00) | m_midi_rx;
+		if(ACCESSING_BITS_0_7 && !machine().side_effects_disabled()) {
+			m_midi_rx_full = false;
+			irq_w(IRQ_MIDI_RX, 0);
+		}
+		return data;
+	}
 	if(offset == 0xe && ACCESSING_BITS_8_15 && !machine().side_effects_disabled()) {
 		if(BIT(m_irq_pending, IRQ_DMA)) {
 			m_irq_pending &= ~(1 << IRQ_DMA);
 			update_irq();
 		}
 	}
-	if(!machine().side_effects_disabled() && offset >= 8)
+	if(!machine().side_effects_disabled() && offset >= 8 && offset != 0xa)
 		LOGMASKED(LOG_GA, "ga_r %04x & %04x = %04x (%04x)\n", 0x100 + offset*2, mem_mask, data, m_maincpu->pc());
 	return data;
 }
 
 void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if(offset >= 8)
+	if(offset == 0xb && ACCESSING_BITS_0_7) {
+		if(is_transmit_register_empty())
+			transmit_register_setup(data & 0xff);
+		else
+			LOGMASKED(LOG_GA, "midi tx overrun %02x\n", data & 0xff);
+		return;
+	}
+	if(offset >= 8 && offset != 0xa)
 		LOGMASKED(LOG_GA, "ga_w %04x = %04x & %04x (%04x)\n", 0x100 + offset*2, data, mem_mask, m_maincpu->pc());
 	COMBINE_DATA(&m_ga[offset]);
 
@@ -525,6 +576,9 @@ void roland_s770_state::s760(machine_config &config)
 	scsi.set_external_device(7, m_spc);
 
 	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
+
+	MIDI_PORT(config, "mdin", midiin_slot, "midiin").rxd_handler().set(FUNC(roland_s770_state::rx_w));
+	MIDI_PORT(config, m_midiout, midiout_slot, "midiout");
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
