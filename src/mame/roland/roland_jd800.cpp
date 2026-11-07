@@ -4,12 +4,23 @@
 
     Skeleton driver for Roland JD-800 synthesizer.
 
+    The H8/532 runs with its on-chip ROM enabled, and that ROM is not
+    dumped, so nothing boots yet.  The program ROM shows the MEQ on an
+    8-bit bus at E000 and the effects DSP's host port at E010.
+
 ****************************************************************************/
 
 #include "emu.h"
 //#include "bus/midi/midi.h"
 //#include "cpu/h8/h8330.h"
 #include "cpu/h8500/h8532.h"
+#include "sound/roland_meq.h"
+
+#include "speaker.h"
+
+#define LOG_IO (1U << 1)
+#define VERBOSE (0)
+#include "logmacro.h"
 //#include "machine/nvram.h"
 //#include "machine/ssc1000.h"
 
@@ -22,6 +33,7 @@ public:
 	roland_jd800_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
+		, m_meq(*this, "meq")
 	{
 	}
 
@@ -30,18 +42,59 @@ public:
 private:
 	void mem_map(address_map &map) ATTR_COLD;
 
+	u8 dsp_r(offs_t offset);
+	void dsp_w(offs_t offset, u8 data);
+	u8 io_r(offs_t offset);
+	void io_w(offs_t offset, u8 data);
+
 	required_device<h8532_device> m_maincpu;
+	required_device<roland_meq_device> m_meq;
 };
+
+
+u8 roland_jd800_state::dsp_r(offs_t offset)
+{
+	if(!machine().side_effects_disabled())
+		LOGMASKED(LOG_IO, "dsp_r %04x (%x)\n", 0xe010 + offset, m_maincpu->pc());
+	return 0;
+}
+
+void roland_jd800_state::dsp_w(offs_t offset, u8 data)
+{
+	LOGMASKED(LOG_IO, "dsp_w %04x = %02x (%x)\n", 0xe010 + offset, data, m_maincpu->pc());
+}
+
+u8 roland_jd800_state::io_r(offs_t offset)
+{
+	if(!machine().side_effects_disabled())
+		LOGMASKED(LOG_IO, "io_r %04x (%x)\n", 0xf100 + offset, m_maincpu->pc());
+	return 0;
+}
+
+void roland_jd800_state::io_w(offs_t offset, u8 data)
+{
+	LOGMASKED(LOG_IO, "io_w %04x = %02x (%x)\n", 0xf100 + offset, data, m_maincpu->pc());
+}
 
 
 void roland_jd800_state::mem_map(address_map &map)
 {
+	map(0x0e000, 0x0e00b).rw(m_meq, FUNC(roland_meq_device::read8), FUNC(roland_meq_device::write8));
+	map(0x0e010, 0x0e017).rw(FUNC(roland_jd800_state::dsp_r), FUNC(roland_jd800_state::dsp_w));
+	map(0x0f100, 0x0f11f).rw(FUNC(roland_jd800_state::io_r), FUNC(roland_jd800_state::io_w));
 	map(0xc0000, 0xfffff).rom().region("progrom", 0);
 }
 
 
 static INPUT_PORTS_START(jd800)
 INPUT_PORTS_END
+
+// the MEQ steps at which the patch mode's program takes each tone generator voice
+static const u16 jd800_meq_slots[24][1] = {
+	{ 0x00b }, { 0x01b }, { 0x021 }, { 0x02d }, { 0x04a }, { 0x057 }, { 0x07e }, { 0x08b },
+	{ 0x098 }, { 0x0b2 }, { 0x0b6 }, { 0x0c2 }, { 0x0d2 }, { 0x0ef }, { 0x0f9 }, { 0x103 },
+	{ 0x113 }, { 0x120 }, { 0x12d }, { 0x139 }, { 0xffff }, { 0xffff }, { 0xffff }, { 0xffff }
+};
 
 void roland_jd800_state::jd800(machine_config &config)
 {
@@ -54,8 +107,17 @@ void roland_jd800_state::jd800(machine_config &config)
 
 	//H8330(config, "iomcu", 20_MHz_XTAL / 2).set_disable(); // MD0 = MD1 = +5V (single-chip mode)
 
-	//MB83371A(config, "pcm", 26.195_MHz_XTAL);
-	//TC24SC220AF_001(config, "mixer", 28.224_MHz_XTAL);
+	//MB87731A(config, "pcm", 26.195_MHz_XTAL);
+	//MB87424A(config, "tvf", 26.195_MHz_XTAL);
+	//TC23SC260AF(config, "dsp", 28.224_MHz_XTAL);
+
+	SPEAKER(config, "speaker", 2).front();
+
+	// the patch mode's program: its final left and right leave on the third serial port
+	ROLAND_MEQ(config, m_meq, 28.224_MHz_XTAL / 640);
+	m_meq->set_voice_slots(jd800_meq_slots);
+	m_meq->add_route(roland_meq_device::output(2, 0), "speaker", 1.0, 0);
+	m_meq->add_route(roland_meq_device::output(2, 1), "speaker", 1.0, 1);
 }
 
 ROM_START(jd800)
