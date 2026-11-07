@@ -546,6 +546,18 @@ static void s770_floppies(device_slot_interface &device)
 	device.option_add("35hd", FLOPPY_35_HD);
 }
 
+// as the boot ROM and system 2.24 initialise it, then Controller Mouse+CRT and Exclusive RX on
+static const u16 s760_eeprom[0x40] = {
+	0x0702, 0x0000, 0x0001, 0x0000, 0x0801, 0x0000, 0x2e31, 0x3030,
+	0x6f52, 0x616c, 0x646e, 0x6556, 0x2e72, 0x3120, 0x302e, 0x3631,
+	0x0100, 0x00ff, 0x0000, 0x0100, 0x0000, 0x0000, 0x00e1, 0x00e1,
+	0x00e1, 0x00e1, 0x0000, 0x0000, 0x0001, 0x0000, 0x0000, 0x0000,
+	0x7f08, 0x0000, 0x0001, 0x00ff, 0x0001, 0x3c3c, 0x3c3c, 0x7f7f,
+	0x7f7f, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+	0x1918, 0x1b1a, 0x1d1c, 0x1f1e, 0x4f4e, 0x5150, 0x5352, 0x5554,
+	0x1110, 0x1312, 0x1514, 0x1716, 0x4746, 0x4948, 0x4b4a, 0x4d4c,
+};
+
 void roland_s770_state::s760(machine_config &config)
 {
 	I80C196KB(config, m_maincpu, 16_MHz_XTAL);
@@ -554,7 +566,7 @@ void roland_s770_state::s760(machine_config &config)
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::p1_w));
 	m_maincpu->in_p2_cb().set(FUNC(roland_s770_state::p2_r));
 
-	EEPROM_93C46_16BIT(config, m_eeprom);
+	EEPROM_93C46_16BIT(config, m_eeprom).default_data(s760_eeprom, sizeof(s760_eeprom));
 
 	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
 	m_fdc->set_ready_line_connected(false);
