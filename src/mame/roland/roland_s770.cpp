@@ -84,6 +84,7 @@ protected:
 private:
 	enum : u8 {
 		IRQ_FDC = 0,
+		IRQ_SAMPLER = 2,
 		IRQ_DMA = 4,
 		IRQ_MIDI_RX = 6
 	};
@@ -616,6 +617,7 @@ void roland_s770_state::common(machine_config &config)
 	SPEAKER(config, "speaker", 2).front();
 
 	ROLAND_SP(config, m_sp, 44100);
+	m_sp->int_callback().set([this](int state) { irq_w(IRQ_SAMPLER, state); });
 	ROLAND_TVF(config, m_tvf, 44100);
 	// sampler voices 4-15 and 20-31 play, into TVF voices 0-23; 0-3 and 16-19 are never keyed
 	for(int n = 0; n != roland_sp_device::VOICES; n++)
