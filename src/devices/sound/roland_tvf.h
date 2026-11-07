@@ -11,7 +11,6 @@ public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
 	static constexpr int VOICES = 32;
-	static constexpr u32 SAMPLE_RATE = 44100;
 	static constexpr int RAMP_SAMPLES = 315;
 	static constexpr int SAMPLE_FRACTION_BITS = 28;
 	static constexpr s32 SAMPLE_ONE = 1 << SAMPLE_FRACTION_BITS;
@@ -42,6 +41,7 @@ protected:
 	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+	virtual void device_clock_changed() override;
 
 	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;

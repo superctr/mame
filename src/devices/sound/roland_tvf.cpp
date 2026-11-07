@@ -30,7 +30,7 @@ roland_tvf_device::roland_tvf_device(const machine_config &mconfig, const char *
 
 void roland_tvf_device::device_start()
 {
-	m_stream = stream_alloc(VOICES, VOICES, SAMPLE_RATE);
+	m_stream = stream_alloc(VOICES, VOICES, clock());
 
 	save_item(NAME(m_regs));
 	save_item(STRUCT_MEMBER(m_voices, regs));
@@ -49,6 +49,11 @@ void roland_tvf_device::device_start()
 	}
 	save_item(STRUCT_MEMBER(m_voices, low));
 	save_item(STRUCT_MEMBER(m_voices, band));
+}
+
+void roland_tvf_device::device_clock_changed()
+{
+	m_stream->set_sample_rate(clock());
 }
 
 void roland_tvf_device::device_reset()
