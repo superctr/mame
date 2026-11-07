@@ -664,7 +664,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		floppy_image_device *floppy = m_floppy ? m_floppy->get_device() : nullptr;
 		bool const disk = floppy && floppy->exists();
 		bool const hd = disk && floppy->get_variant() == floppy_image::DSHD;
-		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02) | digital_in_status();
+		return (floppy ? floppy->dskchg_r() : 0) | (hd ? 0x00 : 0x02) | digital_in_status();
 	}
 	case 5: {
 		u8 data = 0xff;
