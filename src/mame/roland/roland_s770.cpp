@@ -258,7 +258,7 @@ void roland_s770_state::machine_reset()
 		m_sp->host_bank_w(1);
 
 	if(m_wave_mem)
-		m_sp->set_wave_fitted((m_wave_mem->read() + 1) << 23);
+		m_sp->set_wave_fitted(m_wave_mem->read() << 20);
 
 	// stands in for the CPU's PWM output, which the core does not drive
 	if(m_flash)
@@ -772,7 +772,7 @@ static INPUT_PORTS_START(s760)
 	PORT_CONFSETTING(0x04, DEF_STR(On))
 INPUT_PORTS_END
 
-static INPUT_PORTS_START(s770)
+static INPUT_PORTS_START(s770_panel)
 	PORT_START("ROW0")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.0")
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.1")
@@ -806,6 +806,37 @@ static INPUT_PORTS_START(s770)
 	PORT_START("DIAL")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value -") PORT_CODE(KEYCODE_COMMA)
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP)
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(s770)
+	PORT_INCLUDE(s770_panel)
+
+	PORT_START("WAVE_MEM")
+	PORT_CONFNAME(0x3f, 2, "Wave memory")
+	PORT_CONFSETTING(2, "2 MB")
+	PORT_CONFSETTING(4, "4 MB")
+	PORT_CONFSETTING(6, "6 MB")
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(10, "10 MB")
+	PORT_CONFSETTING(12, "12 MB")
+	PORT_CONFSETTING(14, "14 MB")
+	PORT_CONFSETTING(16, "16 MB")
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(s750)
+	PORT_INCLUDE(s770_panel)
+
+	PORT_START("WAVE_MEM")
+	PORT_CONFNAME(0x3f, 2, "Wave memory")
+	PORT_CONFSETTING(2, "2 MB")
+	PORT_CONFSETTING(4, "4 MB")
+	PORT_CONFSETTING(6, "6 MB")
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(10, "10 MB")
+	PORT_CONFSETTING(12, "12 MB")
+	PORT_CONFSETTING(14, "14 MB")
+	PORT_CONFSETTING(16, "16 MB")
+	PORT_CONFSETTING(18, "18 MB")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(sp700)
@@ -851,11 +882,11 @@ static INPUT_PORTS_START(sp700)
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP) PORT_CHANGED_MEMBER(DEVICE_SELF, FUNC(roland_s770_state::encoder_step), 0)
 
 	PORT_START("WAVE_MEM")
-	PORT_CONFNAME(0x03, 0x00, "Wave memory")
-	PORT_CONFSETTING(0x00, "8 MB")
-	PORT_CONFSETTING(0x01, "16 MB")
-	PORT_CONFSETTING(0x02, "24 MB")
-	PORT_CONFSETTING(0x03, "32 MB")
+	PORT_CONFNAME(0x3f, 8, "Wave memory")
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(16, "16 MB")
+	PORT_CONFSETTING(24, "24 MB")
+	PORT_CONFSETTING(32, "32 MB")
 INPUT_PORTS_END
 
 void roland_s770_state::floppy_formats(format_registration &fr)
@@ -1062,6 +1093,7 @@ void roland_s770_state::s770(machine_config &config)
 	m_old_ga = true;
 	m_maincpu->set_clock(12_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
+	m_sp->set_wave_size(0x2000000);
 	m_sp->set_wave_base(0x700000);
 	m_eeprom->default_data(s770_eeprom, sizeof(s770_eeprom));
 
@@ -1138,6 +1170,6 @@ ROM_END
 } // anonymous namespace
 
 SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING)
-SYST(1991, s750, s770, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING)
+SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING)
