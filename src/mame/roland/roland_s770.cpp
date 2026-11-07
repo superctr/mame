@@ -133,6 +133,7 @@ private:
 	void spc_dreq_w(int state);
 	void dma_service();
 	TIMER_CALLBACK_MEMBER(fdc_tc);
+	TIMER_CALLBACK_MEMBER(hsi_clock);
 	void dma_byte_w(u8 data);
 	u8 dma_byte_r();
 
@@ -176,6 +177,8 @@ private:
 	u8 m_key_row;
 	u8 m_p1;
 	emu_timer *m_fdc_tc;
+	emu_timer *m_hsi_clock;
+	bool m_hsi_level;
 	u16 m_wave_dma_word;
 	u8 m_midi_rx;
 	bool m_midi_rx_full;
@@ -184,6 +187,9 @@ private:
 void roland_s770_state::machine_start()
 {
 	m_fdc_tc = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::fdc_tc), this));
+	m_hsi_clock = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::hsi_clock), this));
+	m_hsi_level = false;
+	save_item(NAME(m_hsi_level));
 	save_item(NAME(m_ga));
 	save_item(NAME(m_irq_pending));
 	save_item(NAME(m_irq_line));
@@ -235,6 +241,10 @@ void roland_s770_state::machine_reset()
 	// on-board memory is always the host port's
 	if(m_flash)
 		m_sp->host_bank_w(1);
+
+	// the SP-700's HSI.0 clocks its panel scan; its source is not traced, the word clock is a guess
+	if(m_flash)
+		m_hsi_clock->adjust(attotime::from_hz(44100 * 2), 0, attotime::from_hz(44100 * 2));
 	receive_register_reset();
 	transmit_register_reset();
 }
@@ -465,6 +475,12 @@ void roland_s770_state::dma_service()
 			irq_w(IRQ_DMA, 1);
 		}
 	}
+}
+
+TIMER_CALLBACK_MEMBER(roland_s770_state::hsi_clock)
+{
+	m_hsi_level = !m_hsi_level;
+	m_maincpu->set_input_line(i8x9x_device::HSI0_LINE, m_hsi_level);
 }
 
 TIMER_CALLBACK_MEMBER(roland_s770_state::fdc_tc)
