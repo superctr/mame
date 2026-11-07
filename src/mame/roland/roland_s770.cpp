@@ -654,6 +654,16 @@ void roland_s770_state::s760(machine_config &config)
 	m_meq->add_route(1, "speaker", 1.0, 1);
 	m_meq->add_route(7, "out2", 1.0, 0);
 	m_meq->add_route(5, "out2", 1.0, 1);
+	SPEAKER(config, "dout1", 2).front();
+	SPEAKER(config, "dout2", 2).front();
+	m_meq->add_route(0, "dout1", 1.0, 0);
+	m_meq->add_route(2, "dout1", 1.0, 1);
+	m_meq->add_route(4, "dout2", 1.0, 0);
+	m_meq->add_route(6, "dout2", 1.0, 1);
+
+	auto &adc(MICROPHONE(config, "adc", 2).front());
+	adc.add_route(0, m_meq, 1.0, roland_meq_device::INPUT_SERIAL);
+	adc.add_route(1, m_meq, 1.0, roland_meq_device::INPUT_SERIAL + 1);
 
 	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
 	m_fdc->set_ready_line_connected(false);
