@@ -14,6 +14,8 @@ public:
 
 	roland_sp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
+	auto int_callback() { return m_int_cb.bind(); }
+
 	void set_wave_size(u32 bytes) { m_wave_size = bytes; }
 
 	u16 read(offs_t offset, u16 mem_mask);
@@ -33,24 +35,40 @@ protected:
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
-	enum : int { POS_FRACTION = 14 };
+	enum : int { POS_FRACTION = 14, EVENTS = 64 };
+
+	// C2's top bits and the END register's mode byte
+	enum : u32 {
+		C2_IDLE = 1U << 31, C2_NO_END = 1U << 30, C2_BACKWARD = 1U << 27,
+		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30, MODE_ONE_SHOT = 1U << 29
+	};
+
+	// event codes as C002 reads them: the voice, and bit 5 for the end event
+	enum : u8 { EVENT_LOOP = 0x00, EVENT_END = 0x20 };
 
 	struct voice
 	{
 		u16 c4[8] = { 0 };
 		u16 c6[8] = { 0 };
-		u64 pos = 0;
-		u8 flags = 0;
+		s64 pos = 0;
+		u32 flags = 0;
 		bool on = false;
+		bool looped = false;
+		bool ended = false;
 	};
 
-	u16 wave_word(u64 adr) const { return m_wave_ptr[adr & (m_wave_words - 1)]; }
+	u16 wave_word(s64 adr) const { return m_wave_ptr[adr & (m_wave_words - 1)]; }
+	u32 c4_long(const voice &v, int word) const { return u32(v.c4[word + 1]) << 16 | v.c4[word]; }
 	u32 c2_read(const voice &v) const;
 	void c2_write(voice &v, u32 data);
 	void key_w(int base, u16 data);
-	s32 step(voice &v);
+	void event(int voice, u8 kind);
+	s32 step(int n, voice &v);
+	TIMER_CALLBACK_MEMBER(update_int);
 
+	devcb_write_line m_int_cb;
 	sound_stream *m_stream;
+	emu_timer *m_int_timer;
 	u32 m_wave_size;
 	u32 m_wave_words;
 	u16 *m_wave_ptr;
@@ -62,6 +80,11 @@ private:
 	u8 m_sel_voice;
 	u8 m_sel_word;
 	u32 m_c2_latch;
+
+	u8 m_events[EVENTS];
+	u8 m_event_head;
+	u8 m_event_count;
+	bool m_int_state;
 
 	u8 m_host_bank;
 	u32 m_host_addr;
