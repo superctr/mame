@@ -72,6 +72,9 @@ public:
 		, m_tvf(*this, "tvf")
 		, m_meq(*this, "meq")
 		, m_keys(*this, "ROW%u", 0U)
+		, m_option(*this, "OPTION")
+		, m_dial(*this, "DIAL")
+		, m_digital_in(*this, "DIGITAL_IN")
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
 	{
@@ -105,6 +108,8 @@ private:
 	u16 ga_r(offs_t offset, u16 mem_mask);
 	void ga_w(offs_t offset, u16 data, u16 mem_mask);
 	void p1_w(u8 data);
+	u8 digital_in_status() const;
+	u8 dial_r();
 	u8 p2_r();
 	u16 bus_r(u16 bank, offs_t offset, u16 mem_mask);
 	void bus_w(u16 bank, offs_t offset, u16 data, u16 mem_mask);
@@ -142,6 +147,12 @@ private:
 	required_device<roland_tvf_device> m_tvf;
 	required_device<roland_meq_device> m_meq;
 	required_ioport_array<4> m_keys;
+	required_ioport m_option;
+	required_ioport m_dial;
+	u8 m_dial_last;
+	u8 m_dial_idle;
+	s8 m_dial_steps;
+	optional_ioport m_digital_in;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
 
@@ -179,6 +190,9 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_wave_dma_word));
 	save_item(NAME(m_midi_rx));
 	save_item(NAME(m_midi_rx_full));
+	save_item(NAME(m_dial_last));
+	save_item(NAME(m_dial_idle));
+	save_item(NAME(m_dial_steps));
 
 	set_data_frame(1, 8, PARITY_NONE, STOP_BITS_1);
 	set_rcv_rate(31250);
@@ -200,6 +214,9 @@ void roland_s770_state::machine_reset()
 	m_fdc_drq = false;
 	m_spc_dreq = false;
 	m_key_row = 0;
+	m_dial_last = m_dial->read();
+	m_dial_idle = 0;
+	m_dial_steps = 0;
 	m_wave_dma_word = 0;
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
@@ -300,8 +317,49 @@ void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 	}
 }
 
+u8 roland_s770_state::dial_r()
+{
+	if(machine().side_effects_disabled())
+		return 0;
+	u8 const keys = m_dial->read();
+	u8 const pressed = keys & ~m_dial_last;
+	m_dial_last = keys;
+	if(BIT(pressed, 0))
+		m_dial_steps--;
+	if(BIT(pressed, 1))
+		m_dial_steps++;
+	if(m_dial_idle) {
+		m_dial_idle--;
+		return 0;
+	}
+	if(!m_dial_steps)
+		return 0;
+	bool const up = m_dial_steps > 0;
+	m_dial_steps += up ? -1 : 1;
+	m_dial_idle = 4;
+	return up ? 0x02 : 0x03;
+}
+
+u8 roland_s770_state::digital_in_status() const
+{
+	static const u8 FIN[4] = { 0x00, 0x00, 0x10, 0x18 };
+	u8 const in = m_digital_in ? m_digital_in->read() : 0;
+	if(!(in & 3))
+		return 0x00;
+	return 0x80 | FIN[in & 3] | (BIT(in, 2) ? 0x40 : 0x00);
+}
+
 void roland_s770_state::p1_w(u8 data)
 {
+	static const u32 RATES[4] = { 44100, 44100, 48000, 32000 };
+	u8 const in = m_digital_in ? m_digital_in->read() : 0;
+	u32 const rate = BIT(data, 5) && (in & 3) ? RATES[in & 3] : RATES[data >> 6];
+	if(rate != m_sp->clock()) {
+		m_sp->set_unscaled_clock(rate);
+		m_tvf->set_unscaled_clock(rate);
+		m_meq->set_unscaled_clock(rate);
+	}
+
 	m_eeprom->cs_write(BIT(data, 0));
 	m_eeprom->di_write(BIT(data, 2));
 	m_eeprom->clk_write(BIT(data, 1));
@@ -460,10 +518,10 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		floppy_image_device *floppy = m_floppy ? m_floppy->get_device() : nullptr;
 		bool const disk = floppy && floppy->exists();
 		bool const hd = disk && floppy->get_variant() == floppy_image::DSHD;
-		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02);
+		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02) | digital_in_status();
 	}
 	case 5: {
-		u8 const data = m_keys[m_key_row & 3]->read();
+		u8 const data = (m_keys[m_key_row & 3]->read() & 0x3f) | m_option->read();
 		if(!machine().side_effects_disabled())
 			m_key_row++;
 		return data;
@@ -471,7 +529,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 	case 4:
 		return m_ext_port ? m_ext_port->read() : 0xff;
 	case 9:
-		return 0;
+		return dial_r();
 	default:
 		if(!machine().side_effects_disabled())
 			LOGMASKED(LOG_IO, "panel_r %04x (%04x)\n", 0xf000 + offset*2, m_maincpu->pc());
@@ -546,10 +604,7 @@ static INPUT_PORTS_START(s760)
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_UNKNOWN) PORT_NAME("Key 0.3")
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_UNKNOWN) PORT_NAME("Key 0.4")
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Preview") PORT_CODE(KEYCODE_P)
-	PORT_CONFNAME(0xc0, 0x00, "Option board")
-	PORT_CONFSETTING(0xc0, DEF_STR(None))
-	PORT_CONFSETTING(0x00, "OP-760-1")
-	PORT_CONFSETTING(0x40, "Option ID 01")
+	PORT_BIT(0xc0, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("ROW1")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Mode") PORT_CODE(KEYCODE_M)
@@ -571,6 +626,26 @@ static INPUT_PORTS_START(s760)
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN)
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_UNKNOWN) PORT_NAME("Key 3.3")
 	PORT_BIT(0xf0, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("DIAL")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value -") PORT_CODE(KEYCODE_COMMA)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP)
+
+	PORT_START("OPTION")
+	PORT_CONFNAME(0xc0, 0x00, "Option board")
+	PORT_CONFSETTING(0xc0, DEF_STR(None))
+	PORT_CONFSETTING(0x00, "OP-760-1")
+	PORT_CONFSETTING(0x40, "Option ID 01")
+
+	PORT_START("DIGITAL_IN")
+	PORT_CONFNAME(0x03, 0x00, "OP-760-1 digital input")
+	PORT_CONFSETTING(0x00, "Not connected")
+	PORT_CONFSETTING(0x01, "44.1 kHz")
+	PORT_CONFSETTING(0x02, "48 kHz")
+	PORT_CONFSETTING(0x03, "32 kHz")
+	PORT_CONFNAME(0x04, 0x00, "Digital input emphasis")
+	PORT_CONFSETTING(0x00, DEF_STR(Off))
+	PORT_CONFSETTING(0x04, DEF_STR(On))
 INPUT_PORTS_END
 
 void roland_s770_state::floppy_formats(format_registration &fr)
@@ -666,6 +741,11 @@ void roland_s770_state::s760(machine_config &config)
 	auto &adc(MICROPHONE(config, "adc", 2).front());
 	adc.add_route(0, m_meq, 1.0, roland_meq_device::INPUT_SERIAL);
 	adc.add_route(1, m_meq, 1.0, roland_meq_device::INPUT_SERIAL + 1);
+
+	auto &digital_in(MICROPHONE(config, "digital_in", 2).front());
+	digital_in.add_route(0, m_meq, 1.0, roland_meq_device::INPUT_SERIAL + 2);
+	digital_in.add_route(1, m_meq, 1.0, roland_meq_device::INPUT_SERIAL + 3);
+	m_meq->set_serial_right_first(1, true);
 
 	UPD72069(config, m_fdc, 16_MHz_XTAL / 2);
 	m_fdc->set_ready_line_connected(false);
