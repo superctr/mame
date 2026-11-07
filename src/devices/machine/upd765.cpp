@@ -2768,6 +2768,8 @@ TIMER_CALLBACK_MEMBER(upd765_family_device::run_drive_ready_polling)
 				irq = true;
 			}
 		}
+		else if(flopi[fid].st0_filled && !flopi[fid].st0_seek)
+			irq = true;
 	}
 
 	check_irq();
@@ -3673,6 +3675,7 @@ void upd72069_device::auxcmd_w(uint8_t data)
 	case 0x5f: // select ECMA/ISO format (select 255 tracks on some other 7206x variants)
 	case 0x35: // set standby
 	case 0x47: // start clock
+	case 0x27: // the Roland S-760 sends it twice after a reset and discards the status
 	case 0x34: // reset standby
 	case 0x33: // enable external mode
 	case 0x80: // Not a valid auxcmd, but the Akai S3000 sends it and expects an ACK.
