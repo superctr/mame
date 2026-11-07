@@ -1071,6 +1071,12 @@ void roland_s770_state::s770(machine_config &config)
 		m_tvf->add_route(n, m_mix, 0.125, n);
 	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 1.0, 0);
 	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 1.0, 1);
+	m_sp->set_record_inputs();
+	auto &adc(MICROPHONE(config, "adc", 2).front());
+	// the A/D's left word reaches the recorder of voice 20, the right voice 4's
+	adc.add_route(0, m_sp, 1.0, 1);
+	adc.add_route(1, m_sp, 1.0, 0);
+
 	SPEAKER(config, "indiv12", 2).front();
 	SPEAKER(config, "indiv34", 2).front();
 	SPEAKER(config, "indiv56", 2).front();
