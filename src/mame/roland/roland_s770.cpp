@@ -82,6 +82,7 @@ public:
 
 	void s760(machine_config &config) ATTR_COLD;
 	void sp700(machine_config &config) ATTR_COLD;
+	void s770(machine_config &config) ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -101,7 +102,9 @@ private:
 	void code_map(address_map &map) ATTR_COLD;
 	void data_map(address_map &map) ATTR_COLD;
 	void sp700_data_map(address_map &map) ATTR_COLD;
+	void common_core(machine_config &config) ATTR_COLD;
 	void common(machine_config &config) ATTR_COLD;
+	void s770_data_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 	void t6963c_map(address_map &map) ATTR_COLD;
 
@@ -145,7 +148,7 @@ private:
 	optional_device<intel_28f010_device> m_flash;
 	required_device<roland_sp_device> m_sp;
 	required_device<roland_tvf_device> m_tvf;
-	required_device<roland_meq_device> m_meq;
+	optional_device<roland_meq_device> m_meq;
 	required_ioport_array<4> m_keys;
 	required_ioport m_option;
 	required_ioport m_dial;
@@ -357,7 +360,8 @@ void roland_s770_state::p1_w(u8 data)
 	if(rate != m_sp->clock()) {
 		m_sp->set_unscaled_clock(rate);
 		m_tvf->set_unscaled_clock(rate);
-		m_meq->set_unscaled_clock(rate);
+		if(m_meq)
+			m_meq->set_unscaled_clock(rate);
 	}
 
 	m_eeprom->cs_write(BIT(data, 0));
@@ -399,7 +403,7 @@ void roland_s770_state::dma_service()
 {
 	while(m_dma_active) {
 		bool const to_device = !BIT(m_dma_ctrl, 0);
-		bool const wave = (m_dma_ctrl & 0xc0) == 0x80 && (BIT(m_dma_ctrl, 3) || (m_dma_ctrl & 7) == 7);
+		bool const wave = (m_dma_ctrl & 0xe0) == 0xa0;
 		bool const fdc = !wave && BIT(m_dma_ctrl, 7);
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			return;
@@ -573,6 +577,20 @@ void roland_s770_state::data_map(address_map &map)
 	map(0xf802, 0xf802).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::command_w));
 }
 
+void roland_s770_state::s770_data_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
+	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
+	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
+	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xe000, 0xe003).m(m_fdc, FUNC(upd72069_device::map)).umask16(0x00ff);
+	map(0xe400, 0xe41f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
+	map(0xe800, 0xe81f).rw(m_vdp, FUNC(rf5c16_device::read), FUNC(rf5c16_device::write)).umask16(0x00ff);
+	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
+	map(0xf400, 0xf403).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
+}
+
 void roland_s770_state::sp700_data_map(address_map &map)
 {
 	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
@@ -670,14 +688,14 @@ static const u16 s760_eeprom[0x40] = {
 	0x1110, 0x1312, 0x1514, 0x1716, 0x4746, 0x4948, 0x4b4a, 0x4d4c,
 };
 
-void roland_s770_state::common(machine_config &config)
+void roland_s770_state::common_core(machine_config &config)
 {
 	I80C196KB(config, m_maincpu, 16_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_OPCODES, &roland_s770_state::code_map);
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::p1_w));
 	m_maincpu->in_p2_cb().set(FUNC(roland_s770_state::p2_r));
 
-	EEPROM_93C46_16BIT(config, m_eeprom).default_data(s760_eeprom, sizeof(s760_eeprom));
+	EEPROM_93C46_16BIT(config, m_eeprom);
 
 	auto &scsi(NSCSI_BUS(config, "scsi"));
 	NSCSI_CONNECTOR(config, "scsi:0", default_scsi_devices, nullptr);
@@ -703,6 +721,12 @@ void roland_s770_state::common(machine_config &config)
 	// sampler voices 4-15 and 20-31 play, into TVF voices 0-23; 0-3 and 16-19 are never keyed
 	for(int n = 0; n != roland_sp_device::VOICES; n++)
 		m_sp->add_route(n, m_tvf, 1.0, n < 16 ? (n + 28) & 31 : n - 8);
+}
+
+void roland_s770_state::common(machine_config &config)
+{
+	common_core(config);
+	m_eeprom->default_data(s760_eeprom, sizeof(s760_eeprom));
 	ROLAND_MEQ(config, m_meq, 44100);
 	for(int n = 0; n != roland_meq_device::VOICES; n++)
 		m_tvf->add_route(n, m_meq, 1.0, n);
@@ -797,6 +821,48 @@ void roland_s770_state::sp700(machine_config &config)
 	lcd.set_palette("palette");
 }
 
+void roland_s770_state::s770(machine_config &config)
+{
+	common_core(config);
+	m_maincpu->set_clock(12_MHz_XTAL);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
+
+	UPD72069(config, m_fdc, 8_MHz_XTAL);
+	m_fdc->set_ready_line_connected(false);
+	m_fdc->intrq_wr_callback().set([this](int state) { irq_w(IRQ_FDC, state); });
+	m_fdc->drq_wr_callback().set(FUNC(roland_s770_state::fdc_drq_w));
+	FLOPPY_CONNECTOR(config, m_floppy, s770_floppies, "35hd", roland_s770_state::floppy_formats).enable_sound(true);
+
+	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
+
+	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
+
+	T6963C(config, m_t6963c);
+	m_t6963c->set_addrmap(0, &roland_s770_state::t6963c_map);
+
+	screen_device &lcd(SCREEN(config, "lcd").set_lcd());
+	lcd.set_refresh_hz(60);
+	lcd.set_size(240, 64);
+	lcd.set_visarea_full();
+	lcd.set_screen_update(m_t6963c, FUNC(t6963c_device::screen_update));
+	lcd.set_palette("palette");
+
+	screen_device &crt(SCREEN(config, "crt"));
+	crt.set_raw(14.318181_MHz_XTAL, 912, 0, 640, 262, 0, 200);
+	crt.set_screen_update(m_vdp, FUNC(rf5c16_device::screen_update));
+
+	RF5C16(config, m_vdp, 14.318181_MHz_XTAL);
+	m_vdp->set_screen("crt");
+}
+
+ROM_START(s770)
+	ROM_REGION16_LE(0x4000, "boot", 0)
+	ROM_LOAD("s770_1.12.bin", 0x0000, 0x4000, CRC(ca5f8352) SHA1(2a9ac99b862cef9f005bbadbcf2ce158553fb3fc))
+
+	ROM_REGION(0x400, "t6963c:cgrom", ROMREGION_ERASE00)
+	ROM_LOAD("t6963c_0101.bin", 0x000, 0x400, NO_DUMP)
+ROM_END
+
 ROM_START(s760)
 	ROM_REGION16_LE(0x8000, "boot", 0)
 	ROM_LOAD("s760_1.0.1.bin", 0x0000, 0x8000, CRC(ac9d8be1) SHA1(c77dbbb6510e27d4ee15e55440e713795c4ee74e))
@@ -815,5 +881,6 @@ ROM_END
 
 } // anonymous namespace
 
+SYST(1990, s770, 0, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1996, sp700, 0, 0, sp700, s760, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
