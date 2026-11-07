@@ -111,7 +111,10 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 		break;
 
 	case CUTOFF:
-		v.cutoff.set(data, RAMP_SAMPLES);
+		if (BIT(data, 15))
+			v.cutoff.set(data & 0x7fff, 0);
+		else
+			v.cutoff.set(data, RAMP_SAMPLES);
 		break;
 
 	case AMPLITUDE:
