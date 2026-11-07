@@ -517,7 +517,7 @@ void mb87030_device::step(bool timeout)
 	case State::TransferWaitFifoEmpty:
 		if (!m_fifo.empty())
 			break;
-		if ((m_scsi_ctrl & S_ACK) && (ctrl & S_INP) && (ctrl & S_PHASE_MASK) != S_PHASE_MSG_IN)
+		if ((ctrl & S_ACK) && (ctrl & S_INP) && (ctrl & S_PHASE_MASK) != S_PHASE_MSG_IN)
 			scsi_set_ctrl(0, S_ACK);
 		m_scsi_bus->data_w(m_scsi_refid, 0);
 		scsi_command_complete();
