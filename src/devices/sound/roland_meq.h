@@ -22,8 +22,8 @@ public:
 
 	roland_meq_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// the steps at which each voice input is the multiplicand
-	template <unsigned N> void set_voice_slots(const u16 (&slots)[VOICES][N]) { m_slot_table = &slots[0][0]; m_slots_per_voice = N; }
+	// the voice input whose word the first strobe of a sample brings; the others follow in order
+	void set_first_voice(int voice) { m_first_voice = voice; }
 
 	// a port whose latches are told apart by their steps, as a demultiplexer timed to the program
 	// takes them: output(port, n) carries the word latched at steps[n], zero in a sample without it
@@ -64,9 +64,7 @@ private:
 	bool m_synchronous;
 	bool m_serial_right_first[SERIAL_INPUTS];
 	sound_stream *m_stream;
-	const u16 *m_slot_table;
-	unsigned m_slots_per_voice;
-	s8 m_slot_of_step[STEPS];
+	int m_first_voice;
 	const u16 *m_latch_steps[PORTS];
 	s8 m_latch_of_step[PORTS][STEPS];
 
@@ -79,10 +77,12 @@ private:
 
 	s32 m_operand_l;
 	s32 m_operand_p;
+	s32 m_operand_v;
+	s32 m_voice_word;
 	s32 m_r1;
 	s32 m_r2;
 	s32 m_pipe[2];
-	s32 m_prev_read;
+	s32 m_read_p;
 	s32 m_pending_coef;
 	s32 m_port[PORTS][LATCHES];
 };

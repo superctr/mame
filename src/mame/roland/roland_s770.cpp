@@ -1014,14 +1014,6 @@ void roland_s770_state::common(machine_config &config)
 		m_tvf->add_route(n, m_meq, 0.25, n);
 }
 
-// the MEQ steps at which system 2.24's program takes each TVF voice
-static const u16 s760_meq_slots[24][2] = {
-	{ 0x25, 0x26 }, { 0x2e, 0x2f }, { 0x37, 0x38 }, { 0x40, 0x41 }, { 0x49, 0x4a }, { 0x52, 0x53 },
-	{ 0x5b, 0x5c }, { 0x60, 0x61 }, { 0x69, 0x6a }, { 0x72, 0x73 }, { 0x78, 0x79 }, { 0x7c, 0x7d },
-	{ 0xa3, 0xa4 }, { 0xac, 0xad }, { 0x9a, 0x9b }, { 0x9e, 0x9f }, { 0xa7, 0xa8 }, { 0xb0, 0xb1 },
-	{ 0xba, 0xbb }, { 0xbe, 0xbf }, { 0x08, 0x09 }, { 0x11, 0x12 }, { 0x1a, 0x1b }, { 0x21, 0x22 }
-};
-
 void roland_s770_state::s760(machine_config &config)
 {
 	common(config);
@@ -1030,7 +1022,6 @@ void roland_s770_state::s760(machine_config &config)
 
 	// SDO1's latches in step order: DIGITAL OUT 1 L, STEREO OUT 1 R, DIGITAL OUT 1 R, STEREO OUT 1 L;
 	// SDO2's likewise for the second pair
-	m_meq->set_voice_slots(s760_meq_slots);
 	m_meq->port3_callback().set(m_sp, FUNC(roland_sp_device::record_w));
 	m_meq->set_synchronous(true);
 	SPEAKER(config, "out2", 2).front();
@@ -1084,14 +1075,6 @@ void roland_s770_state::s760(machine_config &config)
 
 }
 
-// the MEQ steps at which the SP-700's program takes each TVF voice, left and right
-static const u16 sp700_meq_slots[24][2] = {
-	{ 0x036, 0x039 }, { 0x03e, 0x041 }, { 0x044, 0x047 }, { 0x057, 0x05a }, { 0x05f, 0x062 }, { 0x06f, 0x072 },
-	{ 0x075, 0x078 }, { 0x07e, 0x081 }, { 0x08e, 0x091 }, { 0x094, 0x097 }, { 0x0a1, 0x0a4 }, { 0x0a7, 0x0aa },
-	{ 0x0b7, 0x0ba }, { 0x0be, 0x0c1 }, { 0x0cd, 0x0d0 }, { 0x0d3, 0x0d6 }, { 0x0e0, 0x0e3 }, { 0x0ef, 0x0f2 },
-	{ 0x0f5, 0x0f8 }, { 0x000, 0x003 }, { 0x006, 0x009 }, { 0x017, 0x01a }, { 0x01e, 0x021 }, { 0x025, 0x028 }
-};
-
 static const u16 sp700_meq_latches[roland_meq_device::LATCHES] = { 0x01d, 0x03d, 0x05d, 0x07d, 0x09d, 0x0bd, 0x0dd, 0x0ff };
 
 void roland_s770_state::sp700(machine_config &config)
@@ -1102,7 +1085,6 @@ void roland_s770_state::sp700(machine_config &config)
 	m_maincpu->out_p1_cb().set(FUNC(roland_s770_state::sp700_p1_w));
 	m_maincpu->in_p0_cb().set(FUNC(roland_s770_state::sp700_p0_r));
 
-	m_meq->set_voice_slots(sp700_meq_slots);
 	m_meq->set_latch_steps(1, sp700_meq_latches);
 	SPEAKER(config, "out_b", 2).front();
 	SPEAKER(config, "out_c", 2).front();

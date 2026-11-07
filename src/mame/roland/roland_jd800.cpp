@@ -89,13 +89,6 @@ void roland_jd800_state::mem_map(address_map &map)
 static INPUT_PORTS_START(jd800)
 INPUT_PORTS_END
 
-// the MEQ steps at which the patch mode's program takes each tone generator voice
-static const u16 jd800_meq_slots[24][1] = {
-	{ 0x00b }, { 0x01b }, { 0x021 }, { 0x02d }, { 0x04a }, { 0x057 }, { 0x07e }, { 0x08b },
-	{ 0x098 }, { 0x0b2 }, { 0x0b6 }, { 0x0c2 }, { 0x0d2 }, { 0x0ef }, { 0x0f9 }, { 0x103 },
-	{ 0x113 }, { 0x120 }, { 0x12d }, { 0x139 }, { 0xffff }, { 0xffff }, { 0xffff }, { 0xffff }
-};
-
 void roland_jd800_state::jd800(machine_config &config)
 {
 	HD6435328(config, m_maincpu, 20_MHz_XTAL); // MD2 = VCC, MD1 = MD0 = GND
@@ -115,7 +108,6 @@ void roland_jd800_state::jd800(machine_config &config)
 
 	// the patch mode's program: its final left and right leave on the third serial port
 	ROLAND_MEQ(config, m_meq, 28.224_MHz_XTAL / 640);
-	m_meq->set_voice_slots(jd800_meq_slots);
 	m_meq->add_route(roland_meq_device::output(2, 0), "speaker", 1.0, 0);
 	m_meq->add_route(roland_meq_device::output(2, 1), "speaker", 1.0, 1);
 }
