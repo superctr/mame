@@ -508,8 +508,8 @@ void mb87030_device::step(bool timeout)
 		// deassert ATN after last byte of message out phase
 		if (!m_tc && (ctrl & S_PHASE_MASK) == S_PHASE_MSG_OUT && m_send_atn_during_selection)
 			scsi_set_ctrl(0, S_ATN|S_ACK);
-		// deassert ACK except for last byte of message in phase
-		else if (m_tc || (ctrl & S_PHASE_MASK) != S_PHASE_MSG_IN)
+		// deassert ACK except for last byte of message in phase, and of an input phase while the FIFO holds data
+		else if (m_tc || ((ctrl & S_PHASE_MASK) != S_PHASE_MSG_IN && (!(ctrl & S_INP) || m_fifo.empty())))
 			scsi_set_ctrl(0, S_ACK);
 		}
 		break;
@@ -517,6 +517,8 @@ void mb87030_device::step(bool timeout)
 	case State::TransferWaitFifoEmpty:
 		if (!m_fifo.empty())
 			break;
+		if ((m_scsi_ctrl & S_ACK) && (ctrl & S_INP) && (ctrl & S_PHASE_MASK) != S_PHASE_MSG_IN)
+			scsi_set_ctrl(0, S_ACK);
 		m_scsi_bus->data_w(m_scsi_refid, 0);
 		scsi_command_complete();
 		break;
