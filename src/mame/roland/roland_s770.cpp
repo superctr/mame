@@ -28,6 +28,7 @@
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
 #include "sound/roland_meq.h"
+#include "sound/roland_mix.h"
 #include "sound/roland_sp.h"
 #include "sound/roland_tvf.h"
 #include "bus/midi/midi.h"
@@ -71,6 +72,7 @@ public:
 		, m_sp(*this, "sp")
 		, m_tvf(*this, "tvf")
 		, m_meq(*this, "meq")
+		, m_mix(*this, "mix")
 		, m_keys(*this, "ROW%u", 0U)
 		, m_option(*this, "OPTION")
 		, m_dial(*this, "DIAL")
@@ -114,6 +116,8 @@ private:
 	u16 ga_r(offs_t offset, u16 mem_mask);
 	void ga_w(offs_t offset, u16 data, u16 mem_mask);
 	void p1_w(u8 data);
+	void set_rate(u32 rate);
+	void s770_aes_w(offs_t offset, u16 data, u16 mem_mask);
 	void sp700_p1_w(u8 data);
 	u8 sp700_p0_r();
 	u8 digital_in_status() const;
@@ -155,6 +159,7 @@ private:
 	required_device<roland_sp_device> m_sp;
 	required_device<roland_tvf_device> m_tvf;
 	optional_device<roland_meq_device> m_meq;
+	optional_device<roland_mix_device> m_mix;
 	optional_ioport_array<4> m_keys;
 	optional_ioport m_option;
 	optional_ioport m_dial;
@@ -184,6 +189,7 @@ private:
 	emu_timer *m_hsi_clock;
 	bool m_hsi_level;
 	u16 m_wave_dma_word;
+	u16 m_aes[0x10];
 	u8 m_midi_rx;
 	bool m_midi_rx_full;
 };
@@ -207,6 +213,7 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_key_row));
 	save_item(NAME(m_p1));
 	save_item(NAME(m_wave_dma_word));
+	save_item(NAME(m_aes));
 	save_item(NAME(m_midi_rx));
 	save_item(NAME(m_midi_rx_full));
 	save_item(NAME(m_dial_last));
@@ -239,12 +246,13 @@ void roland_s770_state::machine_reset()
 	m_dial_idle = 0;
 	m_dial_steps = 0;
 	m_wave_dma_word = 0;
+	std::fill(std::begin(m_aes), std::end(m_aes), 0);
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
 
-	// the SP-700 configures its wave memory through F400-F406, not yet read; until then its
-	// on-board memory is always the host port's
-	if(m_flash)
+	// only the S-760 banks its wave memory through F000; the S-770's and the SP-700's (F400-F406,
+	// not yet read) on-board memory is always the host port's
+	if(!m_option)
 		m_sp->host_bank_w(1);
 
 	// the SP-700's HSI.0 clocks its panel scan; its source is not traced, the word clock is a guess
@@ -374,17 +382,31 @@ u8 roland_s770_state::digital_in_status() const
 	return 0x80 | FIN[in & 3] | (BIT(in, 2) ? 0x40 : 0x00);
 }
 
-void roland_s770_state::p1_w(u8 data)
+void roland_s770_state::set_rate(u32 rate)
 {
-	static const u32 RATES[4] = { 44100, 44100, 48000, 32000 };
-	u8 const in = m_digital_in ? m_digital_in->read() : 0;
-	u32 const rate = BIT(data, 5) && (in & 3) ? RATES[in & 3] : RATES[data >> 6];
 	if(rate != m_sp->clock()) {
 		m_sp->set_unscaled_clock(rate);
 		m_tvf->set_unscaled_clock(rate);
 		if(m_meq)
 			m_meq->set_unscaled_clock(rate);
+		if(m_mix)
+			m_mix->set_unscaled_clock(rate);
 	}
+}
+
+void roland_s770_state::s770_aes_w(offs_t offset, u16 data, u16 mem_mask)
+{
+	COMBINE_DATA(&m_aes[offset & 0xf]);
+	if(offset == 3)
+		set_rate(BIT(m_aes[3], 1) ? 48000 : 44100);
+}
+
+void roland_s770_state::p1_w(u8 data)
+{
+	static const u32 RATES[4] = { 44100, 44100, 48000, 32000 };
+	u8 const in = m_digital_in ? m_digital_in->read() : 0;
+	if(!m_old_ga)
+		set_rate(BIT(data, 5) && (in & 3) ? RATES[in & 3] : RATES[data >> 6]);
 
 	m_eeprom->cs_write(BIT(data, 0));
 	m_eeprom->di_write(BIT(data, 2));
@@ -443,7 +465,7 @@ void roland_s770_state::dma_service()
 	while(m_dma_active) {
 		bool const to_device = !BIT(m_dma_ctrl, 0);
 		u8 const group = m_dma_ctrl >> 6;
-		bool const wave = group == 2 && BIT(m_dma_ctrl, 5);
+		bool const wave = m_old_ga ? (m_dma_ctrl & 0xe4) == 0x64 : group == 2 && BIT(m_dma_ctrl, 5);
 		bool const fdc = group == 3 || (group == 2 && !BIT(m_dma_ctrl, 5) && m_old_ga);
 		bool const scsi_wave = group == 2 && !BIT(m_dma_ctrl, 5) && !m_old_ga;
 		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
@@ -597,7 +619,11 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		return (disk ? 0x01 : 0x00) | (hd ? 0x00 : 0x02) | digital_in_status();
 	}
 	case 5: {
-		u8 const data = m_keys[0] ? (m_keys[m_key_row & 3]->read() & 0x3f) | m_option->read() : 0xff;
+		u8 data = 0xff;
+		if(m_keys[0] && m_option)
+			data = (m_keys[m_key_row & 3]->read() & 0x3f) | m_option->read();
+		else if(m_keys[0])
+			data = m_keys[m_key_row % 3]->read();
 		if(!machine().side_effects_disabled())
 			m_key_row++;
 		return data;
@@ -615,7 +641,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 
 void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
-	if(offset == 0)
+	if(offset == 0 && m_option)
 		m_sp->host_bank_w((data >> 4) & 3);
 	if(offset == 4) {
 		if(m_ext_port)
@@ -656,6 +682,8 @@ void roland_s770_state::s770_data_map(address_map &map)
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
 	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xd400, 0xd41f).w(FUNC(roland_s770_state::s770_aes_w));
+	map(0xd800, 0xd87f).rw(m_mix, FUNC(roland_mix_device::read), FUNC(roland_mix_device::write));
 	map(0xe000, 0xe003).m(m_fdc, FUNC(upd72069_device::map)).umask16(0x00ff);
 	map(0xe400, 0xe41f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
 	map(0xe800, 0xe81f).rw(m_vdp, FUNC(rf5c16_device::read), FUNC(rf5c16_device::write)).umask16(0x00ff);
@@ -736,6 +764,42 @@ static INPUT_PORTS_START(s760)
 	PORT_CONFNAME(0x04, 0x00, "Digital input emphasis")
 	PORT_CONFSETTING(0x00, DEF_STR(Off))
 	PORT_CONFSETTING(0x04, DEF_STR(On))
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(s770)
+	PORT_START("ROW0")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.0")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.1")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.2")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.3")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("F2") PORT_CODE(KEYCODE_F2)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("S1") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.6")
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 0.7")
+
+	PORT_START("ROW1")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.1")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.2")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.3")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.4")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.5")
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Jump") PORT_CODE(KEYCODE_J)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 1.7")
+
+	PORT_START("ROW2")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Index") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 2.1")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 2.2")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 2.3")
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Key 2.4")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("System") PORT_CODE(KEYCODE_Y)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Sound") PORT_CODE(KEYCODE_S)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Performance") PORT_CODE(KEYCODE_P)
+
+	PORT_START("DIAL")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value -") PORT_CODE(KEYCODE_COMMA)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Value +") PORT_CODE(KEYCODE_STOP)
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(sp700)
@@ -963,12 +1027,37 @@ void roland_s770_state::sp700(machine_config &config)
 	lcd.set_palette("palette");
 }
 
+// as system 2.25 leaves it with the controller set to the mouse, Master Freq 44.1 kHz and the analog outputs Stereo+6outs
+static const u16 s770_eeprom[0x40] = {
+	0x0107, 0x0801, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+	0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+	0xffff, 0xffff, 0xff00, 0x01ff, 0x01ff, 0xffff, 0xffff, 0xffff,
+	0xff01, 0x01ff, 0xffff, 0xffff, 0xffff, 0x00ff, 0xff01, 0xffff,
+	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+	0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+	0x4f52, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+	0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+};
+
 void roland_s770_state::s770(machine_config &config)
 {
 	common_core(config);
 	m_old_ga = true;
 	m_maincpu->set_clock(12_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
+	m_sp->set_wave_base(0x700000);
+	m_eeprom->default_data(s770_eeprom, sizeof(s770_eeprom));
+
+	ROLAND_MIX(config, m_mix, 44100);
+	for(int n = 0; n != roland_mix_device::VOICES; n++)
+		m_tvf->add_route(n, m_mix, 1.0, n);
+	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 1.0, 0);
+	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 1.0, 1);
+	SPEAKER(config, "indiv12", 2).front();
+	SPEAKER(config, "indiv34", 2).front();
+	SPEAKER(config, "indiv56", 2).front();
+	for(int n = 0; n != 6; n++)
+		m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, n < 2 ? "indiv12" : n < 4 ? "indiv34" : "indiv56", 1.0, n & 1);
 
 	UPD72069(config, m_fdc, 8_MHz_XTAL);
 	m_fdc->set_ready_line_connected(false);
@@ -1024,7 +1113,7 @@ ROM_END
 
 } // anonymous namespace
 
-SYST(1990, s770, 0, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(1991, s750, s770, 0, s770, s760, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING)
+SYST(1991, s750, s770, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING)
 SYST(1996, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
