@@ -2030,6 +2030,18 @@ end
 
 ---------------------------------------------------
 --
+--@src/devices/machine/i28f010.h,MACHINES["I28F010"] = true
+---------------------------------------------------
+
+if MACHINES["I28F010"] then
+	files {
+		MAME_DIR .. "src/devices/machine/i28f010.cpp",
+		MAME_DIR .. "src/devices/machine/i28f010.h",
+	}
+end
+
+---------------------------------------------------
+--
 --@src/devices/machine/jvsdev.h,MACHINES["JVS"] = true
 --@src/devices/machine/jvshost.h,MACHINES["JVS"] = true
 ---------------------------------------------------
