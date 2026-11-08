@@ -2,18 +2,17 @@
 // copyright-holders:superctr
 /****************************************************************************
 
-    Roland S-760, S-770 and S-750 16-bit samplers.
+    Roland S-760, S-770 and S-750 16-bit samplers, and the SP-700 player.
 
     80C196KB with an HG62E33 gate array for DRAM, DMA, MIDI and interrupts;
     MB87422 and MB87423 sampler chips, MB87424 TVF; RF5C16A video (on the
     S-760 only with the OP-760-1 option).  The boot ROM loads the system
-    from floppy or SCSI into DRAM.
+    from floppy or SCSI into DRAM; the SP-700 runs from EPROM.
 
-    The S-760 loads its system from floppy and shows Perform Play on the LCD
-    and, with the OP-760-1, on the CRT.  The MU-1 mouse and MIDI work, volumes
-    load from floppy, and the sampler chips play through the TVF and the MEQ to
-    the two stereo outputs; the serial inputs (sampling) and the digital
-    outputs are not emulated, and there is no RC-100.
+    The S-760 mixes through the MEQ to two stereo and two digital outputs and
+    samples through it; the S-770 and S-750 mix through the MIX to the stereo
+    pair and six individual outputs.  Panels, the value dial, the MU-1 mouse,
+    the RC-100 on the EXT CTRL port, MIDI, floppy and SCSI CD-ROM work.
 
 ****************************************************************************/
 
@@ -1226,7 +1225,7 @@ ROM_END
 
 } // anonymous namespace
 
-SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE)
-SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE)
-SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE)
-SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE)
+SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_SUPPORTS_SAVE)
+SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_SUPPORTS_SAVE)
+SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_SUPPORTS_SAVE)
+SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_SUPPORTS_SAVE)
