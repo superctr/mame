@@ -65,7 +65,7 @@ bool intel_28f010_device::nvram_write(util::write_stream &file)
 u8 intel_28f010_device::read(offs_t offset)
 {
 	offset &= SIZE - 1;
-	if(m_mode == MODE_ID)
+	if (m_mode == MODE_ID)
 		return BIT(offset, 0) ? 0xb4 : 0x89;
 	return m_data[offset];
 }
@@ -73,7 +73,8 @@ u8 intel_28f010_device::read(offs_t offset)
 void intel_28f010_device::write(offs_t offset, u8 data)
 {
 	offset &= SIZE - 1;
-	switch(m_mode) {
+	switch (m_mode)
+	{
 	case MODE_PROGRAM_SETUP:
 		LOG("program %05x = %02x\n", offset, data);
 		m_data[offset] &= data;
@@ -82,7 +83,8 @@ void intel_28f010_device::write(offs_t offset, u8 data)
 
 	case MODE_ERASE_SETUP:
 		m_mode = MODE_READ;
-		if(data == 0x20) {
+		if (data == 0x20)
+		{
 			LOG("erase\n");
 			std::fill_n(m_data.get(), SIZE, 0xff);
 			return;
@@ -90,9 +92,10 @@ void intel_28f010_device::write(offs_t offset, u8 data)
 		break;
 	}
 
-	if(data != 0xff)
+	if (data != 0xff)
 		m_reset_count = 0;
-	switch(data) {
+	switch (data)
+	{
 	case 0x00:
 	case 0xa0:
 	case 0xc0:
@@ -108,7 +111,8 @@ void intel_28f010_device::write(offs_t offset, u8 data)
 		m_mode = MODE_PROGRAM_SETUP;
 		break;
 	case 0xff:
-		if(++m_reset_count == 2) {
+		if (++m_reset_count == 2)
+		{
 			m_mode = MODE_READ;
 			m_reset_count = 0;
 		}
