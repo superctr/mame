@@ -30,7 +30,8 @@ DEFINE_DEVICE_TYPE(ROLAND_MEQ, roland_meq_device, "roland_meq", "Roland MEQ")
 
 namespace {
 
-enum : u16 {
+enum : u16
+{
 	LO_SERIAL_LATCH = 0x0600, LO_SMOOTH = 0x0800, LO_DATA_COEF = 0x1000, LO_ABS = 0x2000,
 	LO_R2 = 0x0100, LO_SATURATE = 0x0080, LO_SERIAL_IN = 0x0010,
 	LO_TRANSFER = 0x0008, LO_TRANSFER_R1 = 0x0004, LO_STROBE = 0x0002, LO_OPERAND2 = 0x0001,
@@ -58,11 +59,12 @@ roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *
 
 void roland_meq_device::device_start()
 {
-	for(int port = 0; port != PORTS; port++) {
+	for (int port = 0; port != PORTS; port++)
+	{
 		std::fill(std::begin(m_latch_of_step[port]), std::end(m_latch_of_step[port]), -1);
-		if(m_latch_steps[port])
-			for(int n = 0; n != LATCHES; n++)
-				if(m_latch_steps[port][n] < STEPS)
+		if (m_latch_steps[port])
+			for (int n = 0; n != LATCHES; n++)
+				if (m_latch_steps[port][n] < STEPS)
 					m_latch_of_step[port][m_latch_steps[port][n]] = n;
 	}
 
@@ -103,13 +105,14 @@ void roland_meq_device::device_reset()
 	m_pipe[0] = m_pipe[1] = 0;
 	m_read_p = 0;
 	m_pending_coef = -1;
-	for(auto &port : m_port)
+	for (auto &port : m_port)
 		std::fill(std::begin(port), std::end(port), 0);
 }
 
 u16 roland_meq_device::read(offs_t offset)
 {
-	switch(offset & 7) {
+	switch (offset & 7)
+	{
 	case 0:
 		return m_latch;
 	case 1:
@@ -121,7 +124,8 @@ u16 roland_meq_device::read(offs_t offset)
 
 void roland_meq_device::write(offs_t offset, u16 data)
 {
-	switch(offset & 7) {
+	switch (offset & 7)
+	{
 	case 0:
 		m_latch = (m_latch & 0xffff0000) | data;
 		break;
@@ -129,22 +133,26 @@ void roland_meq_device::write(offs_t offset, u16 data)
 		m_latch = (m_latch & 0x0000ffff) | (data << 16);
 		break;
 	case 2:
-		if(data < 0x200)
+		if (data < 0x200)
 			m_latch = data < STEPS ? m_program[data] : 0;
-		else if(data < 0x400)
+		else if (data < 0x400)
 			m_latch = data - 0x200 < STEPS ? m_coef[data - 0x200] : 0;
 		else
 			m_latch = m_data[data & (DATA_WORDS - 1)] & 0xffffff;
 		break;
 	case 3:
 		m_stream->update();
-		if(data < 0x200) {
-			if(data < STEPS)
+		if (data < 0x200)
+		{
+			if (data < STEPS)
 				m_program[data] = m_latch;
-		} else if(data < 0x400) {
-			if(data - 0x200 < STEPS)
+		}
+		else if (data < 0x400)
+		{
+			if (data - 0x200 < STEPS)
 				m_coef[data - 0x200] = m_latch & 0x3fff;
-		} else
+		}
+		else
 			m_data[data & (DATA_WORDS - 1)] = util::sext(m_latch, 24);
 		break;
 	case 4:
@@ -172,7 +180,7 @@ u8 roland_meq_device::read8(offs_t offset)
 
 void roland_meq_device::write8(offs_t offset, u8 data)
 {
-	if(!BIT(offset, 0))
+	if (!BIT(offset, 0))
 		m_byte_hi[(offset >> 1) & 7] = data;
 	else
 		write(byte_register(offset), (m_byte_hi[(offset >> 1) & 7] << 8) | data);
@@ -191,33 +199,35 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 	int latched[PORTS] = { 0, 0, 0 };
 	int serial_reads[SERIAL_INPUTS] = { 0, 0 };
 	int strobes = 0;
-	for(int port = 0; port != PORTS; port++)
-		if(m_latch_steps[port])
+	for (int port = 0; port != PORTS; port++)
+		if (m_latch_steps[port])
 			std::fill(std::begin(m_port[port]), std::end(m_port[port]), 0);
 
-	for(int m = 0; m != length; m++) {
+	for (int m = 0; m != length; m++)
+	{
 		u16 const hi = m_program[m] >> 16;
 		u16 const lo = m_program[m];
 		bool const writes = !BIT(hi, 15);
 		bool const reads = !BIT(hi, 7);
 		int const addend = (lo >> 5) & 3;
 
-		if(lo & LO_STROBE)
+		if (lo & LO_STROBE)
 			m_voice_word = voices[(strobes++ + m_first_voice) % VOICES];
 
 		s32 const written = m_pipe[0];
-		if(writes)
+		if (writes)
 			m_data[(hi >> 8) & 0x7f] = written;
 		s32 const rd = reads ? m_data[hi & 0x7f] : 0;
 
 		s32 x;
-		if(lo & LO_OPERAND2)
+		if (lo & LO_OPERAND2)
 			x = addend == ADD_READ ? m_operand_v : m_operand_p;
 		else
 			x = m_operand_l;
 
 		s32 a;
-		switch(addend) {
+		switch (addend)
+		{
 		case ADD_NONE: a = 0; break;
 		case ADD_R1: a = m_r1; break;
 		case ADD_R2: a = m_r2; break;
@@ -226,70 +236,83 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 			break;
 		}
 
-		if(lo & LO_SMOOTH) {
+		if (lo & LO_SMOOTH)
+		{
 			a = x;
 			x = rd - x;
 		}
 
 		u16 coef = m_coef[m];
-		if(m_pending_coef >= 0) {
+		if (m_pending_coef >= 0)
+		{
 			coef = (coef & 0x3000) | m_pending_coef;
 			m_pending_coef = -1;
 		}
-		if(lo & LO_DATA_COEF)
+		if (lo & LO_DATA_COEF)
 			m_pending_coef = (m_r1 >> 12) & 0xfff;
 
 		s64 const sum = s64(a) + multiply(x, coef);
 		s32 const result = ((lo & LO_SATURATE) && !(lo & LO_R2)) ? clamp24(sum) : wrap24(sum);
 
-		if(lo & LO_SERIAL_LATCH) {
+		if (lo & LO_SERIAL_LATCH)
+		{
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
-			if(port == 2)
+			if (port == 2)
 				m_port3_cb(latched[port], u32(written) & 0xffffff);
-			if(m_latch_steps[port]) {
-				if(m_latch_of_step[port][m] >= 0)
+			if (m_latch_steps[port])
+			{
+				if (m_latch_of_step[port][m] >= 0)
 					m_port[port][m_latch_of_step[port][m]] = written;
 				latched[port]++;
-			} else if(latched[port] < LATCHES)
+			}
+			else if (latched[port] < LATCHES)
 				m_port[port][latched[port]++] = written;
 		}
 
 		m_pipe[0] = m_pipe[1];
 		m_pipe[1] = result;
-		if(reads && (lo & LO_OPERAND2))
+		if (reads && (lo & LO_OPERAND2))
 			m_read_p = rd;
 
 		bool loaded = false;
-		if(lo & LO_SERIAL_IN) {
+		if (lo & LO_SERIAL_IN)
+		{
 			int const port = ((lo >> 2) & 3) - 1;
-			if(port >= 0 && port < SERIAL_INPUTS)
+			if (port >= 0 && port < SERIAL_INPUTS)
 				m_operand_l = m_operand_p = serial[port][serial_reads[port]++ & 1];
 			else
 				m_operand_l = m_operand_p = 0;
 			loaded = true;
-		} else if(reads && (addend != ADD_READ || !(lo & LO_OPERAND2))) {
+		}
+		else if (reads && (addend != ADD_READ || !(lo & LO_OPERAND2)))
+		{
 			m_operand_l = m_operand_p = (lo & LO_ABS) ? std::abs(rd) : rd;
 			loaded = true;
 		}
-		if((lo & LO_TRANSFER) && !(lo & LO_SERIAL_IN)) {
-			if(lo & LO_TRANSFER_R1) {
+		if ((lo & LO_TRANSFER) && !(lo & LO_SERIAL_IN))
+		{
+			if (lo & LO_TRANSFER_R1)
+			{
 				m_operand_p = m_r1;
-				if(!loaded)
+				if (!loaded)
 					m_operand_l = m_r1;
-			} else {
+			}
+			else
+			{
 				m_operand_p = m_r2;
-				if(lo & LO_DATA_COEF)
+				if (lo & LO_DATA_COEF)
 					m_operand_l = m_r2;
 			}
 		}
-		if(lo & LO_OPERAND_LOAD)
+		if (lo & LO_OPERAND_LOAD)
 			m_operand_v = m_operand_p;
-		else {
+		else
+		{
 			m_operand_v = m_voice_word;
-			if(!reads || ((lo & LO_OPERAND2) && addend != ADD_READ))
+			if (!reads || ((lo & LO_OPERAND2) && addend != ADD_READ))
 				m_operand_l = m_voice_word;
 		}
-		if(lo & LO_R2)
+		if (lo & LO_R2)
 			m_r2 = m_r1;
 		m_r1 = result;
 	}
@@ -299,19 +322,21 @@ void roland_meq_device::sound_stream_update(sound_stream &stream)
 {
 	s32 voices[VOICES];
 	s32 serial[SERIAL_INPUTS][2];
-	for(int i = 0; i != stream.samples(); i++) {
-		for(int v = 0; v != VOICES; v++)
+	for (int i = 0; i != stream.samples(); i++)
+	{
+		for (int v = 0; v != VOICES; v++)
 			voices[v] = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * 0x7fffff) & ~0x1f;
-		for(int p = 0; p != SERIAL_INPUTS; p++) {
+		for (int p = 0; p != SERIAL_INPUTS; p++)
+		{
 			s32 in[2];
-			for(int c = 0; c != 2; c++)
+			for (int c = 0; c != 2; c++)
 				in[c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7fffff);
 			serial[p][0] = in[m_serial_right_first[p] ? 1 : 0];
 			serial[p][1] = in[m_serial_right_first[p] ? 0 : 1];
 		}
 		run(voices, serial);
-		for(int p = 0; p != PORTS; p++)
-			for(int l = 0; l != LATCHES; l++)
+		for (int p = 0; p != PORTS; p++)
+			for (int l = 0; l != LATCHES; l++)
 				stream.put_int(p * LATCHES + l, i, m_port[p][l], 0x800000);
 	}
 }
