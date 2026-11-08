@@ -286,6 +286,7 @@ void roland_sp_device::write(offs_t offset, u16 data, u16 mem_mask)
 		key_w(16, data);
 		break;
 	case 0x04:
+	case 0x05:
 		host_write(data, mem_mask);
 		break;
 	case 0x06:
