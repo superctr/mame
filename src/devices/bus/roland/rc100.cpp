@@ -207,7 +207,7 @@ u8 roland_rc100_device::ga_r(offs_t offset)
 	switch(reg) {
 	case 4: {
 		u8 const now = m_dial->read();
-		u8 const delta = m_dial_last - now;
+		u8 const delta = now - m_dial_last;
 		if(!machine().side_effects_disabled())
 			m_dial_last = now;
 		return delta;
