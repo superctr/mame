@@ -1034,6 +1034,7 @@ void roland_s330_state::s330(machine_config &config)
 
 	BU3905(config, "outas");
 
+	// TODO: move to the MSX general purpose port as roland_s770 does, for the RC-100 (bus/roland/rc100)
 	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
 
 	add_midi(config);
