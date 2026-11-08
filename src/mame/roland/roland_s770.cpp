@@ -80,6 +80,8 @@ public:
 		, m_keys(*this, "ROW%u", 0U)
 		, m_option(*this, "OPTION")
 		, m_dial(*this, "DIAL")
+		, m_mod(*this, "MOD")
+		, m_scratch(*this, "SCRATCH")
 		, m_digital_in(*this, "DIGITAL_IN")
 		, m_columns(*this, "COL%u", 0U)
 		, m_keyscan(*this, "keyscan")
@@ -118,6 +120,8 @@ private:
 		IRQ_DMA = 4,
 		IRQ_MIDI_RX = 6
 	};
+
+	static inline const attotime SCRATCH_POLL = attotime::from_hz(60);
 
 	enum : u8
 	{
@@ -175,6 +179,8 @@ private:
 	void dma_service();
 	TIMER_CALLBACK_MEMBER(fdc_tc);
 	TIMER_CALLBACK_MEMBER(hsi_clock);
+	TIMER_CALLBACK_MEMBER(scratch_poll);
+	TIMER_CALLBACK_MEMBER(scratch_step);
 	void dma_byte_w(u8 data);
 	u8 dma_byte_r();
 
@@ -202,6 +208,14 @@ private:
 	u8 m_dial_last;
 	u8 m_dial_idle;
 	s8 m_dial_steps;
+	optional_ioport m_mod;
+	optional_ioport m_scratch;
+	emu_timer *m_scratch_poll;
+	emu_timer *m_scratch_step;
+	u16 m_scratch_last;
+	s32 m_scratch_pending;
+	attotime m_scratch_period;
+	bool m_scratch_level;
 	optional_ioport m_digital_in;
 	optional_ioport_array<6> m_columns;
 	optional_device<ssc1000_device> m_keyscan;
@@ -248,6 +262,12 @@ void roland_s770_state::machine_start()
 	m_fdc_tc = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::fdc_tc), this));
 	m_hsi_clock = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::hsi_clock), this));
 	m_hsi_level = false;
+	m_scratch_poll = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::scratch_poll), this));
+	m_scratch_step = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::scratch_step), this));
+	m_scratch_last = 0;
+	m_scratch_pending = 0;
+	m_scratch_period = attotime::never;
+	m_scratch_level = false;
 	std::fill(std::begin(m_ga), std::end(m_ga), 0);
 	m_irq_pending = 0;
 	m_irq_line = false;
@@ -272,6 +292,10 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_dial_last));
 	save_item(NAME(m_dial_idle));
 	save_item(NAME(m_dial_steps));
+	save_item(NAME(m_scratch_last));
+	save_item(NAME(m_scratch_pending));
+	save_item(NAME(m_scratch_period));
+	save_item(NAME(m_scratch_level));
 
 	m_wave = reinterpret_cast<u16 *>(machine().memory().share_alloc(*this, "wave", 16, m_wave_bytes, ENDIANNESS_LITTLE)->ptr());
 	m_wave_bank = 0;
@@ -371,6 +395,14 @@ void roland_s770_state::machine_reset()
 	// stands in for the CPU's PWM output, which the core does not drive
 	if (m_flash)
 		m_hsi_clock->adjust(attotime::from_hz(16_MHz_XTAL / 256), 0, attotime::from_hz(16_MHz_XTAL / 256));
+	if (m_scratch)
+	{
+		m_scratch_last = m_scratch->read();
+		m_scratch_pending = 0;
+		m_scratch_level = false;
+		m_scratch_step->adjust(attotime::never);
+		m_scratch_poll->adjust(SCRATCH_POLL, 0, SCRATCH_POLL);
+	}
 	receive_register_reset();
 	transmit_register_reset();
 }
@@ -707,6 +739,31 @@ TIMER_CALLBACK_MEMBER(roland_s770_state::hsi_clock)
 {
 	m_hsi_level = !m_hsi_level;
 	m_maincpu->set_input_line(i8x9x_device::HSI0_LINE, m_hsi_level);
+}
+
+TIMER_CALLBACK_MEMBER(roland_s770_state::scratch_poll)
+{
+	u16 const pos = m_scratch->read();
+	m_scratch_pending += util::sext(pos - m_scratch_last, 12);
+	m_scratch_last = pos;
+	if (m_scratch_pending)
+	{
+		m_scratch_period = std::max(SCRATCH_POLL / u32(std::abs(m_scratch_pending)), attotime::from_usec(20));
+		if (m_scratch_step->remaining().is_never())
+			m_scratch_step->adjust(m_scratch_period);
+	}
+}
+
+TIMER_CALLBACK_MEMBER(roland_s770_state::scratch_step)
+{
+	if (!m_scratch_pending)
+		return;
+	m_maincpu->set_input_line(i8x9x_device::HSI1_LINE, m_scratch_pending < 0);
+	m_scratch_pending += m_scratch_pending < 0 ? 1 : -1;
+	m_scratch_level = !m_scratch_level;
+	m_maincpu->set_input_line(i8x9x_device::HSI0_LINE, m_scratch_level);
+	if (m_scratch_pending)
+		m_scratch_step->adjust(m_scratch_period);
 }
 
 TIMER_CALLBACK_MEMBER(roland_s770_state::fdc_tc)
@@ -1199,8 +1256,24 @@ static INPUT_PORTS_START(dj70_panel)
 	PORT_CONFSETTING(127, "127")
 INPUT_PORTS_END
 
+static INPUT_PORTS_START(dj70_controls)
+	PORT_START("BEND")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Pitch Bender") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(64) PORT_CODE_DEC(KEYCODE_Q) PORT_CODE_INC(KEYCODE_W)
+
+	PORT_START("MOD")
+	PORT_BIT(0x3ff, 0x000, IPT_PEDAL) PORT_NAME("Modulation") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CODE_INC(KEYCODE_O)
+
+	PORT_START("SCRATCH")
+	PORT_BIT(0xfff, 0x000, IPT_DIAL) PORT_NAME("Scratch Wheel") PORT_SENSITIVITY(50) PORT_KEYDELTA(10) PORT_CODE_DEC(KEYCODE_Z) PORT_CODE_INC(KEYCODE_X)
+
+	PORT_START("FOOTSW")
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Foot Switch") PORT_CODE(KEYCODE_F)
+	PORT_BIT(0xdf, IP_ACTIVE_HIGH, IPT_UNUSED)
+INPUT_PORTS_END
+
 static INPUT_PORTS_START(dj70)
 	PORT_INCLUDE(dj70_panel)
+	PORT_INCLUDE(dj70_controls)
 
 	PORT_START("WAVE_MEM")
 	PORT_CONFNAME(0x3f, 2, "Wave memory")
@@ -1210,6 +1283,7 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START(dj70mk2)
 	PORT_INCLUDE(dj70_panel)
+	PORT_INCLUDE(dj70_controls)
 
 	PORT_START("SIMM1")
 	PORT_CONFNAME(0x1f, 0, "SIMM socket 1")
@@ -1558,6 +1632,10 @@ void roland_s770_state::dj70(machine_config &config)
 	for (int n = 0; n != 2; n++)
 		for (int side = 0; side != 2; side++)
 			m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, "phones", 2.0 * 0.5 * 4.9, side);
+
+	m_maincpu->ach1_cb().set_ioport("BEND");
+	m_maincpu->ach2_cb().set([this] () -> u16 { return 0x3ff - m_mod->read(); });
+	m_maincpu->in_p0_cb().set_ioport("FOOTSW");
 
 	SSC1000(config, m_keyscan, 8_MHz_XTAL);
 	m_keyscan->int_callback().set([this](int state) { irq_w(IRQ_KEYSCAN, state); });
