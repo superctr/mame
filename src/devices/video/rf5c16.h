@@ -17,6 +17,7 @@ public:
 	rf5c16_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_cb.bind(); }
+	void set_middle_level(u8 level) { m_middle = level; }
 
 	u8 read(offs_t offset);
 	void write(offs_t offset, u8 data);
@@ -33,6 +34,7 @@ protected:
 
 private:
 	devcb_write_line m_int_cb;
+	u8 m_middle;
 
 	std::unique_ptr<u16[]> m_vram;
 	emu_timer *m_vblank_timer;

@@ -44,6 +44,7 @@ rf5c16_device::rf5c16_device(const machine_config &mconfig, const char *tag, dev
 	device_t(mconfig, RF5C16, tag, owner, clock),
 	device_video_interface(mconfig, *this),
 	m_int_cb(*this),
+	m_middle(0xaa),
 	m_vblank_timer(nullptr),
 	m_tr(0), m_addr(0), m_imask(0), m_iflag(0), m_mode(0),
 	m_cursor_x(0), m_cursor_y(0), m_bcg(0), m_bcg_cursor(0), m_bfg(0), m_bbg(0),
@@ -218,7 +219,7 @@ void rf5c16_device::write(offs_t offset, u8 data)
 
 u32 rf5c16_device::pen(u8 code) const
 {
-	u8 const on = BIT(code, 3) ? 0xff : 0xaa;
+	u8 const on = BIT(code, 3) ? 0xff : m_middle;
 	return rgb_t(BIT(code, 0) ? on : 0, BIT(code, 1) ? on : 0, BIT(code, 2) ? on : 0);
 }
 
