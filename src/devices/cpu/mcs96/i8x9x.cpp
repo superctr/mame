@@ -147,6 +147,8 @@ void i8x9x_device::device_reset()
 	ios0 = ios1 = 0x00;
 	ioc0 &= 0xaa;
 	hsi_fifo_count = 0;
+	std::fill(std::begin(hsi_fifo_time), std::end(hsi_fifo_time), 0);
+	std::fill(std::begin(hsi_fifo_bits), std::end(hsi_fifo_bits), 0);
 	std::fill(std::begin(hsi_divider), std::end(hsi_divider), 0);
 	ioc1 = (ioc1 & 0xae) | 0x01;
 	ad_result = 0;
