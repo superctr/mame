@@ -84,6 +84,7 @@ public:
 		, m_simms(*this, "SIMM%u", 1U)
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
+		, m_leds(*this, "led%u", 0U)
 	{
 	}
 
@@ -112,6 +113,21 @@ private:
 		IRQ_MIDI_RX = 6
 	};
 
+	enum : u8
+	{
+		LED_PERFORM, LED_PATCH, LED_PARTIAL, LED_DISK, LED_SYSTEM, LED_SHIFT, LED_HOME, LED_MARK,
+		LED_LIST, LED_LIST_RED, LED_NAME, LED_NAME_RED, LED_COMMAND, LED_COMMAND_RED, LED_MIDI, LED_SCSI,
+		LED_MODE, LED_F1, LED_F2, LED_F3, LED_JUMP, LED_GRAPHIC, LED_SOUND,
+		LED_COUNT
+	};
+
+	enum lamps_t : u8
+	{
+		LAMPS_NONE,
+		LAMPS_S760,
+		LAMPS_S770
+	};
+
 	virtual void rcv_complete() override;
 	virtual void tra_callback() override;
 
@@ -132,6 +148,7 @@ private:
 	void s770_aes_w(offs_t offset, u16 data, u16 mem_mask);
 	void sp700_p1_w(u8 data);
 	u8 sp700_p0_r();
+	void lamps_update();
 	u8 digital_in_status() const;
 	u8 dial_r();
 	u8 p2_r();
@@ -185,6 +202,7 @@ private:
 	optional_ioport_array<2> m_simms;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
+	output_finder<LED_COUNT> m_leds;
 
 	u16 m_ga[0x10];
 	u8 m_irq_pending;
@@ -197,6 +215,7 @@ private:
 	bool m_old_ga = false;
 	bool m_fdc_int_f002 = false;
 	bool m_adele = false;
+	lamps_t m_lamps = LAMPS_NONE;
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
@@ -330,6 +349,7 @@ void roland_s770_state::machine_reset()
 	std::fill(std::begin(m_aes), std::end(m_aes), 0);
 	m_midi_rx = 0;
 	m_midi_rx_full = false;
+	lamps_update();
 
 	m_wave_bank = 0;
 	wave_map();
@@ -506,7 +526,37 @@ void roland_s770_state::p1_w(u8 data)
 
 void roland_s770_state::sp700_p1_w(u8 data)
 {
+	static const u8 LEDS[4][4] = {
+		{ LED_PARTIAL, LED_DISK, LED_PERFORM, LED_PATCH },
+		{ LED_SHIFT, LED_MIDI, LED_LIST_RED, LED_LIST },
+		{ LED_HOME, LED_SYSTEM, LED_NAME_RED, LED_NAME },
+		{ LED_MARK, LED_SCSI, LED_COMMAND_RED, LED_COMMAND } };
+
 	m_p1 = data;
+	u8 const column = ~data & 0x0f;
+	if (std::has_single_bit(column))
+		for (int row = 0; row != 4; row++)
+			m_leds[LEDS[std::countr_zero(column)][row]] = BIT(data, 4 + row);
+}
+
+void roland_s770_state::lamps_update()
+{
+	static const u8 S760[7] = { LED_COMMAND, LED_COMMAND_RED, LED_MODE, LED_SHIFT, LED_F1, LED_F2, LED_F3 };
+	static const u8 S770[8] = { LED_JUMP, LED_GRAPHIC, LED_SYSTEM, LED_SOUND, LED_PERFORM, LED_COUNT, LED_MIDI, LED_SCSI };
+
+	if (m_lamps == LAMPS_S760)
+	{
+		for (int i = 0; i != 7; i++)
+			m_leds[S760[i]] = BIT(m_panel[8], i);
+		m_leds[LED_SCSI] = !BIT(m_panel[0], 6);
+		m_leds[LED_MIDI] = !BIT(m_panel[0], 7);
+	}
+	else if (m_lamps == LAMPS_S770)
+	{
+		for (int i = 0; i != 8; i++)
+			if (S770[i] != LED_COUNT)
+				m_leds[S770[i]] = BIT(m_panel[8], i);
+	}
 }
 
 u8 roland_s770_state::sp700_p0_r()
@@ -790,6 +840,8 @@ void roland_s770_state::panel_w(offs_t offset, u8 data)
 		if (m_mix)
 			set_rate(BIT(data, 5) ? 48000 : 44100);
 	}
+	if (offset == 0 || offset == 8)
+		lamps_update();
 }
 
 void roland_s770_state::monitor_update()
@@ -805,6 +857,7 @@ void roland_s770_state::postload()
 {
 	wave_map();
 	monitor_update();
+	lamps_update();
 }
 
 void roland_s770_state::code_map(address_map &map)
@@ -1162,6 +1215,7 @@ void roland_s770_state::common(machine_config &config)
 void roland_s770_state::s760(machine_config &config)
 {
 	common(config);
+	m_lamps = LAMPS_S760;
 	m_wave_bytes = 34 << 20;
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::data_map);
 
@@ -1274,6 +1328,7 @@ void roland_s770_state::s770(machine_config &config)
 {
 	common_core(config);
 	m_old_ga = true;
+	m_lamps = LAMPS_S770;
 	m_maincpu->set_clock(12_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::s770_data_map);
 	m_wave_bytes = 18 << 20;
@@ -1345,6 +1400,7 @@ void roland_s770_state::s750turbo(machine_config &config)
 void roland_s770_state::dj70(machine_config &config)
 {
 	s770(config);
+	m_lamps = LAMPS_NONE;
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::dj70_data_map);
 	m_wave_bytes = 4 << 20;
 	m_wave_base_block = 0x60;
