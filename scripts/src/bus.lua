@@ -5209,6 +5209,18 @@ if BUSES["ROLAND_EXT"] then
 	}
 end
 
+---------------------------------------------------
+--
+--@src/devices/bus/roland/rc100.h,BUSES["ROLAND_RC100"] = true
+---------------------------------------------------
+
+if (BUSES["ROLAND_RC100"]~=null) then
+	files {
+		MAME_DIR .. "src/devices/bus/roland/rc100.cpp",
+		MAME_DIR .. "src/devices/bus/roland/rc100.h",
+	}
+end
+
 
 ---------------------------------------------------
 --
