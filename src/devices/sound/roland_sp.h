@@ -31,8 +31,8 @@ public:
 	// the recording input, a 24-bit word per channel, left (offset 0) then right
 	void record_w(offs_t offset, u32 data);
 
-	// the recording input as stream inputs instead, run one sample at a time: serial input 1 as
-	// inputs 0 and 1, serial input 2 as 2 and 3, the first of each pair for voice 4
+	// serial input 1 as stream inputs 0 and 1 (the first for voice 4), run one sample at a time;
+	// record_w is then serial input 2, taken while C004 bit 1 selects it
 	void set_record_inputs() { m_record_inputs = true; }
 
 protected:

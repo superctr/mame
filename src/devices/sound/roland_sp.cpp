@@ -102,7 +102,7 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 
 void roland_sp_device::device_start()
 {
-	m_stream = stream_alloc(m_record_inputs ? 4 : 0, VOICES, clock(), m_record_inputs ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
+	m_stream = stream_alloc(m_record_inputs ? 2 : 0, VOICES, clock(), m_record_inputs ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 	m_int_timer = timer_alloc(FUNC(roland_sp_device::update_int), this);
 
 	for(int i = 0; i != VOICES; i++) {
@@ -406,7 +406,7 @@ bool roland_sp_device::recording(int n) const
 
 void roland_sp_device::record_w(offs_t offset, u32 data)
 {
-	if(offset > 1)
+	if(offset > 1 || (m_record_inputs && !BIT(m_ctrl[2], 1)))
 		return;
 	m_record_in[offset] = util::sext(data, 24);
 	if(offset == 1)
@@ -428,11 +428,10 @@ void roland_sp_device::record()
 
 void roland_sp_device::sound_stream_update(sound_stream &stream)
 {
-	if(m_record_inputs)
+	if(m_record_inputs && !BIT(m_ctrl[2], 1))
 		for(int i = 0; i != stream.samples(); i++) {
-			int const port = BIT(m_ctrl[2], 1) ? 2 : 0;
 			for(int c = 0; c != 2; c++)
-				m_record_in[c] = std::clamp(s32(stream.get(port + c, i) * 0x800000), -0x800000, 0x7fffff);
+				m_record_in[c] = std::clamp(s32(stream.get(c, i) * 0x800000), -0x800000, 0x7fffff);
 			record();
 		}
 	for(int n = 0; n != VOICES; n++) {
