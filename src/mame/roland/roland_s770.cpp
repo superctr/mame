@@ -1509,7 +1509,7 @@ void roland_s770_state::sp700(machine_config &config)
 
 	INTEL_28F010(config, m_flash);
 
-	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	T6963C(config, m_t6963c);
 	m_t6963c->set_addrmap(0, &roland_s770_state::t6963c_map);
@@ -1580,7 +1580,7 @@ void roland_s770_state::s770(machine_config &config)
 
 	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, s7_ext_ctrl_devices, "mouse");
 
-	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	T6963C(config, m_t6963c);
 	m_t6963c->set_addrmap(0, &roland_s770_state::t6963c_map);
