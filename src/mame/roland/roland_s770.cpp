@@ -1074,7 +1074,7 @@ void roland_s770_state::s760(machine_config &config)
 
 	RF5C16(config, m_vdp, 14.318181_MHz_XTAL);
 	m_vdp->set_screen("crt");
-
+	m_vdp->set_middle_level(0);
 }
 
 static const u16 sp700_meq_latches[roland_meq_device::LATCHES] = { 0x01d, 0x03d, 0x05d, 0x07d, 0x09d, 0x0bd, 0x0dd, 0x0ff };
