@@ -473,7 +473,7 @@ void roland_s770_state::set_rate(u32 rate)
 void roland_s770_state::s770_aes_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_aes[offset & 0xf]);
-	if (offset == 3)
+	if (offset == 3 && !m_mix)
 		set_rate(BIT(m_aes[3], 1) ? 48000 : 44100);
 }
 
@@ -771,6 +771,8 @@ void roland_s770_state::panel_w(offs_t offset, u8 data)
 	{
 		m_monitor = !BIT(data, 2);
 		monitor_update();
+		if (m_mix)
+			set_rate(BIT(data, 5) ? 48000 : 44100);
 	}
 }
 
