@@ -10,10 +10,10 @@
     full level to one of the six individual outputs, or to none.  With the
     stereo pair turned off its two outputs take two more assigns.  The
     host selects a voice by writing its select register and then writes
-    the word to the data register.
+    the word to the data register.  The serial output carries the stereo
+    pair, or with control bit 7 the serial input's words.
 
-    Not emulated: the serial ports and the meaning of the remaining
-    control bits.
+    Not emulated: the meaning of the remaining control bits.
 
 ***************************************************************************/
 
@@ -24,7 +24,7 @@ DEFINE_DEVICE_TYPE(ROLAND_MIX, roland_mix_device, "roland_mix", "Roland MIX")
 
 namespace {
 
-enum : u16 { CONTROL_STEREO_OFF = 0x0040, CONTROL_RUN = 0x0100 };
+enum : u16 { CONTROL_STEREO_OFF = 0x0040, CONTROL_THROUGH = 0x0080, CONTROL_RUN = 0x0100 };
 
 constexpr s32 FULL_SCALE = 0x7ffff;
 
@@ -33,13 +33,14 @@ constexpr s32 FULL_SCALE = 0x7ffff;
 roland_mix_device::roland_mix_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	device_t(mconfig, ROLAND_MIX, tag, owner, clock),
 	device_sound_interface(mconfig, *this),
+	m_serial_cb(*this),
 	m_stream(nullptr)
 {
 }
 
 void roland_mix_device::device_start()
 {
-	m_stream = stream_alloc(VOICES, OUTPUTS, clock());
+	m_stream = stream_alloc(VOICES + 2, OUTPUTS + 2, clock());
 
 	save_item(NAME(m_regs));
 	save_item(NAME(m_voice));
@@ -96,7 +97,17 @@ void roland_mix_device::sound_stream_update(sound_stream &stream)
 			if(!BIT(word, 0) && (assign >= OUTPUT_INDIVIDUAL || !stereo))
 				out[assign] += s64(in) << 6;
 		}
-		for(int o = 0; o != OUTPUTS; o++)
-			stream.put_int(o, i, s32(std::clamp<s64>(out[o] >> 6, -FULL_SCALE - 1, FULL_SCALE)), FULL_SCALE + 1);
+		s32 word[OUTPUTS];
+		for(int o = 0; o != OUTPUTS; o++) {
+			word[o] = s32(std::clamp<s64>(out[o] >> 6, -FULL_SCALE - 1, FULL_SCALE));
+			stream.put_int(o, i, word[o], FULL_SCALE + 1);
+		}
+		for(int c = 0; c != 2; c++) {
+			s32 const serial = (control & CONTROL_THROUGH)
+					? std::clamp(s32(stream.get(INPUT_SERIAL + c, i) * 0x800000), -0x800000, 0x7fffff)
+					: word[OUTPUT_LEFT + c] << 4;
+			stream.put_int(OUTPUT_SERIAL + c, i, serial, 0x800000);
+			m_serial_cb(c, u32(serial) & 0xffffff);
+		}
 	}
 }
