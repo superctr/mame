@@ -529,10 +529,10 @@ void roland_s770_state::dma_service()
 				if(!high)
 					m_wave_dma_word = data;
 				else
-					m_sp->host_write(m_wave_dma_word | data << 8, 0xffff);
+					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
 			} else {
 				if(!high)
-					m_wave_dma_word = m_sp->host_read();
+					m_wave_dma_word = m_sp->wave_data_r();
 				m_spc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
 			}
 		} else if(wave) {
@@ -542,10 +542,10 @@ void roland_s770_state::dma_service()
 				if(!high)
 					m_wave_dma_word = data;
 				else
-					m_sp->host_write(m_wave_dma_word | data << 8, 0xffff);
+					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
 			} else {
 				if(!high)
-					m_wave_dma_word = m_sp->host_read();
+					m_wave_dma_word = m_sp->wave_data_r();
 				dma_byte_w(m_wave_dma_word >> (high ? 8 : 0));
 			}
 		} else if(fdc) {

@@ -24,9 +24,9 @@ public:
 	u16 read(offs_t offset, u16 mem_mask);
 	void write(offs_t offset, u16 data, u16 mem_mask);
 
-	// the host port's data register, for DMA
-	u16 host_read();
-	void host_write(u16 data, u16 mem_mask);
+	// the wave memory port's data register, for DMA
+	u16 wave_data_r();
+	void wave_data_w(u16 data, u16 mem_mask);
 
 	// the recording input, a 24-bit word per channel, left (offset 0) then right
 	void record_w(offs_t offset, u32 data);
@@ -47,21 +47,29 @@ private:
 
 	static constexpr int RECORD_VOICES[2] = { 4, 20 };
 
-	// C2's top bits and the END register's mode byte
+	// the state word's flags, and the mode byte on top of END
 	enum : u32 {
-		C2_NO_LOOP_EVENT = 1U << 31, C2_NO_END_EVENT = 1U << 30, C2_BACKWARD = 1U << 27,
-		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30, MODE_ONE_SHOT = 1U << 29
+		STATE_NO_LOOP_EVENT = 1U << 31, STATE_NO_END_EVENT = 1U << 30, STATE_BACKWARD = 1U << 27,
+		STATE_FLAGS = ~0x07ffffffU,
+		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30, MODE_ONE_SHOT = 1U << 29,
+		END_ADDRESS = 0x00ffffff
 	};
 
 	// event codes as C002 reads them: the voice, and bit 5 for the end event
 	enum : u8 { EVENT_LOOP = 0x00, EVENT_END = 0x20 };
 
+	// the per-voice blocks the select addresses C200, C400 and C600 open
+	enum : u8 { BLOCK_NONE = 0, BLOCK_STATE, BLOCK_PLAYBACK, BLOCK_LEVEL };
+
 	struct voice
 	{
-		u16 c4[8] = { 0 };
-		u16 c6[8] = { 0 };
+		u32 end = 0;
+		u16 pitch = 0;
+		u32 loop_start = 0;
+		u32 loop_end = 0;
+		u32 level = 0;
 		s64 pos = 0;
-		u32 flags = 0;
+		u32 state = 0;
 		bool on = false;
 		bool looped = false;
 		bool ended = false;
@@ -69,9 +77,12 @@ private:
 
 	u16 wave_word(s64 adr) const { u16 const *const b = m_blocks[(adr >> 16) & 0xff]; return b ? b[adr & 0xffff] : 0xffff; }
 	u16 *wave_ptr(s64 adr) const { u16 *const b = m_blocks[(adr >> 16) & 0xff]; return b ? &b[adr & 0xffff] : nullptr; }
-	u32 c4_long(const voice &v, int word) const { return u32(v.c4[word + 1]) << 16 | v.c4[word]; }
-	u32 c2_read(const voice &v) const;
-	void c2_write(voice &v, u32 data);
+	u32 state_r(const voice &v) const;
+	void state_w(voice &v, u32 data);
+	u16 playback_r(const voice &v, int word) const;
+	void playback_w(voice &v, int word, u16 data);
+	u16 level_r(const voice &v, int word) const;
+	void level_w(voice &v, int word, u16 data);
 	void key_w(int base, u16 data);
 	void event(int voice, u8 kind);
 	s32 step(int n, voice &v);
@@ -87,19 +98,19 @@ private:
 
 	voice m_voices[VOICES];
 	u16 m_key[2];
-	u16 m_ctrl[16];
+	u16 m_regs[16];
 	u8 m_sel_block;
 	u8 m_sel_voice;
 	u8 m_sel_word;
-	u32 m_c2_latch;
+	u32 m_state_port;
 
 	u8 m_events[EVENTS];
 	u8 m_event_head;
 	u8 m_event_count;
 	bool m_int_state;
 
-	u32 m_host_addr;
-	u16 m_host_latch;
+	u32 m_wave_addr;
+	u16 m_wave_latch;
 
 	bool m_record_inputs;
 	s32 m_record_in[2];
