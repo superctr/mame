@@ -240,6 +240,9 @@ void roland_s770_state::machine_start()
 	m_fdc_tc = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::fdc_tc), this));
 	m_hsi_clock = timer_alloc(timer_expired_delegate(FUNC(roland_s770_state::hsi_clock), this));
 	m_hsi_level = false;
+	std::fill(std::begin(m_ga), std::end(m_ga), 0);
+	m_irq_pending = 0;
+	m_irq_line = false;
 	save_item(NAME(m_hsi_level));
 	save_item(NAME(m_ga));
 	save_item(NAME(m_irq_pending));
@@ -333,6 +336,7 @@ void roland_s770_state::machine_reset()
 	std::fill(std::begin(m_panel), std::end(m_panel), 0);
 	m_irq_pending = 0;
 	m_irq_line = false;
+	m_maincpu->set_input_line(i80c196kb_device::EXTINT_LINE, CLEAR_LINE);
 	m_dma_ctrl = 0;
 	m_dma_addr = 0;
 	m_dma_count = 0;
@@ -749,7 +753,7 @@ u16 roland_s770_state::data_r(offs_t offset, u16 mem_mask)
 	{
 		u8 const active = m_irq_pending & (m_ga[0xa] >> 8);
 		if (active)
-			return 0x0120 + 4 * std::countr_zero(active);
+			return (bus_r(m_ga[4 + (offset >> 13)], offset & 0x1fff, mem_mask) & ~0x1c) | 4 * std::countr_zero(active);
 	}
 	return bus_r(m_ga[4 + (offset >> 13)], offset & 0x1fff, mem_mask);
 }
