@@ -34,7 +34,8 @@ DEFINE_DEVICE_TYPE(ROLAND_SP, roland_sp_device, "roland_sp", "Roland SP-AG/SP-IP
 namespace {
 
 // the global registers, by word offset from C000
-enum : offs_t {
+enum : offs_t
+{
 	REG_KEY_LOW = 0x00, REG_STATUS = 0x00,
 	REG_KEY_HIGH = 0x01, REG_EVENT = 0x01,
 	REG_RECORD = 0x02,
@@ -50,7 +51,8 @@ enum : offs_t {
 enum : u16 { RECORD_WRITE = 0x0001, RECORD_AUX = 0x0002 };
 
 // the playback block's words: end, pitch, loop start and loop end, the 32-bit ones low half first
-enum : int {
+enum : int
+{
 	PLAY_END_LOW = 0, PLAY_END_HIGH, PLAY_PITCH, PLAY_LOOP_START_LOW, PLAY_LOOP_START_HIGH, PLAY_LOOP_END_LOW, PLAY_LOOP_END_HIGH
 };
 
@@ -118,7 +120,8 @@ void roland_sp_device::device_start()
 	m_stream = stream_alloc(m_record_inputs ? 2 : 0, VOICES, clock(), m_record_inputs ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
 	m_int_timer = timer_alloc(FUNC(roland_sp_device::update_int), this);
 
-	for(int i = 0; i != VOICES; i++) {
+	for (int i = 0; i != VOICES; i++)
+	{
 		save_item(NAME(m_voices[i].end), i);
 		save_item(NAME(m_voices[i].pitch), i);
 		save_item(NAME(m_voices[i].loop_start), i);
@@ -153,7 +156,7 @@ void roland_sp_device::device_clock_changed()
 
 void roland_sp_device::device_reset()
 {
-	for(voice &v : m_voices)
+	for (voice &v : m_voices)
 		v = voice();
 	m_key[0] = m_key[1] = 0;
 	m_sel_block = BLOCK_NONE;
@@ -164,7 +167,7 @@ void roland_sp_device::device_reset()
 
 void roland_sp_device::set_wave_block(unsigned block, u16 *words)
 {
-	if(m_stream)
+	if (m_stream)
 		m_stream->update();
 	m_blocks[block % WAVE_BLOCKS] = words;
 }
@@ -180,7 +183,7 @@ u16 roland_sp_device::wave_data_r()
 void roland_sp_device::wave_data_w(u16 data, u16 mem_mask)
 {
 	m_stream->update();
-	if(u16 *const w = wave_ptr(m_wave_addr))
+	if (u16 *const w = wave_ptr(m_wave_addr))
 		COMBINE_DATA(w);
 	m_wave_addr++;
 }
@@ -198,7 +201,8 @@ void roland_sp_device::state_w(voice &v, u32 data)
 
 u16 roland_sp_device::playback_r(const voice &v, int word) const
 {
-	switch(word) {
+	switch (word)
+	{
 	case PLAY_END_LOW:      return v.end;
 	case PLAY_END_HIGH:     return v.end >> 16;
 	case PLAY_PITCH:        return v.pitch;
@@ -212,7 +216,8 @@ u16 roland_sp_device::playback_r(const voice &v, int word) const
 
 void roland_sp_device::playback_w(voice &v, int word, u16 data)
 {
-	switch(word) {
+	switch (word)
+	{
 	case PLAY_END_LOW:      v.end = (v.end & 0xffff0000) | data; break;
 	case PLAY_END_HIGH:     v.end = (v.end & 0x0000ffff) | (u32(data) << 16); break;
 	case PLAY_PITCH:        v.pitch = data; break;
@@ -226,7 +231,8 @@ void roland_sp_device::playback_w(voice &v, int word, u16 data)
 
 u16 roland_sp_device::level_r(const voice &v, int word) const
 {
-	switch(word) {
+	switch (word)
+	{
 	case LEVEL_LOW:  return v.level;
 	case LEVEL_HIGH: return v.level >> 16;
 	default:         return 0;
@@ -235,7 +241,8 @@ u16 roland_sp_device::level_r(const voice &v, int word) const
 
 void roland_sp_device::level_w(voice &v, int word, u16 data)
 {
-	switch(word) {
+	switch (word)
+	{
 	case LEVEL_LOW:  v.level = (v.level & 0xffff0000) | data; break;
 	case LEVEL_HIGH: v.level = (v.level & 0x0000ffff) | (u32(data) << 16); break;
 	default:         LOG("level word %d = %04x\n", word, data); break;
@@ -247,10 +254,12 @@ void roland_sp_device::key_w(int base, u16 data)
 	m_stream->update();
 	u16 const rise = data & ~m_key[base >> 4];
 	m_key[base >> 4] = data;
-	for(int i = 0; i != 16; i++) {
+	for (int i = 0; i != 16; i++)
+	{
 		voice &v = m_voices[base + i];
 		v.on = BIT(data, i);
-		if(BIT(rise, i)) {
+		if (BIT(rise, i))
+		{
 			v.looped = v.ended = false;
 			LOG("key on %d at %06x pitch %04x mode %02x flags %02x\n", base + i, u32(v.pos >> POS_FRACTION), v.pitch, v.end >> 24, v.state >> 24);
 		}
@@ -259,7 +268,8 @@ void roland_sp_device::key_w(int base, u16 data)
 
 void roland_sp_device::event(int voice, u8 kind)
 {
-	if(m_event_count == EVENTS) {
+	if (m_event_count == EVENTS)
+	{
 		LOG("event queue full\n");
 		return;
 	}
@@ -270,7 +280,8 @@ void roland_sp_device::event(int voice, u8 kind)
 TIMER_CALLBACK_MEMBER(roland_sp_device::update_int)
 {
 	bool const state = m_event_count != 0;
-	if(state != m_int_state) {
+	if (state != m_int_state)
+	{
 		m_int_state = state;
 		m_int_cb(state);
 	}
@@ -279,29 +290,32 @@ TIMER_CALLBACK_MEMBER(roland_sp_device::update_int)
 u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 {
 	offset &= 0x3ff;
-	if(offset >= 0x100) {
-		if(!machine().side_effects_disabled()) {
+	if (offset >= 0x100)
+	{
+		if (!machine().side_effects_disabled())
+		{
 			m_stream->update();
 			m_sel_block = BLOCK_STATE + (offset >> 8) - 1;
 			m_sel_voice = (offset >> 3) & 0x1f;
 			m_sel_word = offset & 7;
-			if(m_sel_block == BLOCK_STATE)
+			if (m_sel_block == BLOCK_STATE)
 				m_state_port = state_r(m_voices[m_sel_voice]);
 		}
 		return 0;
 	}
 
-	switch(offset) {
+	switch (offset)
+	{
 	case REG_STATUS:
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			m_level_channel ^= 1;
 		return m_level_channel ? 0x0082 : 0x0042;
 	case REG_EVENT:
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			m_stream->update();
 		return m_event_count ? m_events[m_event_head] : 0;
 	case REG_WAVE_DATA:
-		if(machine().side_effects_disabled())
+		if (machine().side_effects_disabled())
 			return m_wave_latch;
 		return wave_data_r();
 	case REG_STATE_LOW:
@@ -311,7 +325,8 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 	case REG_PLAYBACK:
 		return m_sel_block == BLOCK_PLAYBACK ? playback_r(m_voices[m_sel_voice], m_sel_word) : 0;
 	case REG_ACK:
-		if(!machine().side_effects_disabled() && m_event_count) {
+		if (!machine().side_effects_disabled() && m_event_count)
+		{
 			m_event_head = (m_event_head + 1) % EVENTS;
 			m_event_count--;
 			m_int_state = false;
@@ -324,7 +339,7 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 	case REG_INPUT:
 		return u16(m_record_in[m_level_channel] >> 11);
 	default:
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			LOG("read %04x\n", 0xc000 + offset * 2);
 		return m_regs[offset & 0xf];
 	}
@@ -333,14 +348,16 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 void roland_sp_device::write(offs_t offset, u16 data, u16 mem_mask)
 {
 	offset &= 0x3ff;
-	if(offset >= 0x100) {
+	if (offset >= 0x100)
+	{
 		m_sel_block = BLOCK_STATE + (offset >> 8) - 1;
 		m_sel_voice = (offset >> 3) & 0x1f;
 		m_sel_word = offset & 7;
 		return;
 	}
 
-	switch(offset) {
+	switch (offset)
+	{
 	case REG_KEY_LOW:
 		key_w(0, data);
 		break;
@@ -364,19 +381,22 @@ void roland_sp_device::write(offs_t offset, u16 data, u16 mem_mask)
 		break;
 	case REG_STATE_HIGH:
 		m_state_port = (m_state_port & 0x0000ffff) | (data << 16);
-		if(m_sel_block == BLOCK_STATE) {
+		if (m_sel_block == BLOCK_STATE)
+		{
 			m_stream->update();
 			state_w(m_voices[m_sel_voice], m_state_port);
 		}
 		break;
 	case REG_PLAYBACK:
-		if(m_sel_block == BLOCK_PLAYBACK) {
+		if (m_sel_block == BLOCK_PLAYBACK)
+		{
 			m_stream->update();
 			playback_w(m_voices[m_sel_voice], m_sel_word, data);
 		}
 		break;
 	case REG_LEVEL:
-		if(m_sel_block == BLOCK_LEVEL) {
+		if (m_sel_block == BLOCK_LEVEL)
+		{
 			m_stream->update();
 			level_w(m_voices[m_sel_voice], m_sel_word, data);
 		}
@@ -394,17 +414,20 @@ s32 roland_sp_device::step(int n, voice &v)
 	s64 adr = v.pos >> POS_FRACTION;
 	int phase = v.pos & ((1 << POS_FRACTION) - 1);
 	int dir = 1;
-	if(backward && phase) {
+	if (backward && phase)
+	{
 		adr++;
 		phase = (1 << POS_FRACTION) - phase;
 		dir = -1;
-	} else if(backward)
+	}
+	else if (backward)
 		dir = -1;
 	phase >>= POS_FRACTION - 7;
 
 	s32 prev = s16(wave_word(adr));
 	s32 sum = 4 * prev;
-	for(int i = 0; i != 3; i++) {
+	for (int i = 0; i != 3; i++)
+	{
 		s32 const next = s16(wave_word(adr + dir * (i + 1)));
 		sum += ((interp_weights[i][phase] * (next - prev)) & ~3) >> 10;
 		prev = next;
@@ -420,41 +443,54 @@ void roland_sp_device::advance(int n, voice &v)
 	s64 const loop_end = s64(v.loop_end) << (POS_FRACTION - 8);
 	s64 const pitch = v.pitch;
 
-	auto looped = [&]() {
-		if(!v.looped && !(v.state & STATE_NO_LOOP_EVENT)) {
+	auto looped = [&]()
+	{
+		if (!v.looped && !(v.state & STATE_NO_LOOP_EVENT))
+		{
 			v.looped = true;
 			event(n, EVENT_LOOP);
 		}
 	};
 
-	if(end & MODE_REVERSE) {
+	if (end & MODE_REVERSE)
+	{
 		v.pos -= pitch;
-		if(v.pos <= loop_end) {
+		if (v.pos <= loop_end)
+		{
 			looped();
-			if(end & MODE_ONE_SHOT)
+			if (end & MODE_ONE_SHOT)
 				v.on = false;
 			else
 				v.pos += loop_start - loop_end;
 		}
-	} else if(v.state & STATE_BACKWARD) {
+	}
+	else if (v.state & STATE_BACKWARD)
+	{
 		v.pos -= pitch;
-		if(v.pos <= loop_start) {
+		if (v.pos <= loop_start)
+		{
 			v.state &= ~STATE_BACKWARD;
 			v.pos = 2 * loop_start - v.pos;
 		}
-	} else {
+	}
+	else
+	{
 		v.pos += pitch;
-		if(v.pos >= loop_end + (s64(1) << POS_FRACTION)) {
+		if (v.pos >= loop_end + (s64(1) << POS_FRACTION))
+		{
 			looped();
-			if(end & MODE_ONE_SHOT)
+			if (end & MODE_ONE_SHOT)
 				v.on = false;
-			else if(end & MODE_ALTERNATE) {
+			else if (end & MODE_ALTERNATE)
+			{
 				v.state |= STATE_BACKWARD;
 				v.pos = 2 * loop_end - v.pos;
-			} else
+			}
+			else
 				v.pos -= loop_end - loop_start;
 		}
-		if(!(v.state & STATE_NO_END_EVENT) && !v.ended && v.pos >= s64(end & END_ADDRESS) << POS_FRACTION) {
+		if (!(v.state & STATE_NO_END_EVENT) && !v.ended && v.pos >= s64(end & END_ADDRESS) << POS_FRACTION)
+		{
 			v.ended = true;
 			event(n, EVENT_END);
 		}
@@ -468,21 +504,22 @@ bool roland_sp_device::recording(int n) const
 
 void roland_sp_device::record_w(offs_t offset, u32 data)
 {
-	if(offset > 1 || (m_record_inputs && !(m_regs[REG_RECORD] & RECORD_AUX)))
+	if (offset > 1 || (m_record_inputs && !(m_regs[REG_RECORD] & RECORD_AUX)))
 		return;
 	m_record_in[offset] = util::sext(data, 24);
-	if(offset == 1)
+	if (offset == 1)
 		record();
 }
 
 void roland_sp_device::record()
 {
-	for(int c = 0; c != 2; c++) {
+	for (int c = 0; c != 2; c++)
+	{
 		int const n = RECORD_VOICES[c];
 		voice &v = m_voices[n];
-		if(!v.on || !recording(n))
+		if (!v.on || !recording(n))
 			continue;
-		if(u16 *const w = wave_ptr(v.pos >> POS_FRACTION))
+		if (u16 *const w = wave_ptr(v.pos >> POS_FRACTION))
 			*w = u16(m_record_in[c] >> 8);
 		advance(n, v);
 	}
@@ -490,15 +527,17 @@ void roland_sp_device::record()
 
 void roland_sp_device::sound_stream_update(sound_stream &stream)
 {
-	if(m_record_inputs && !(m_regs[REG_RECORD] & RECORD_AUX))
-		for(int i = 0; i != stream.samples(); i++) {
-			for(int c = 0; c != 2; c++)
+	if (m_record_inputs && !(m_regs[REG_RECORD] & RECORD_AUX))
+		for (int i = 0; i != stream.samples(); i++)
+		{
+			for (int c = 0; c != 2; c++)
 				m_record_in[c] = std::clamp(s32(stream.get(c, i) * 0x800000), -0x800000, 0x7fffff);
 			record();
 		}
-	for(int n = 0; n != VOICES; n++) {
+	for (int n = 0; n != VOICES; n++)
+	{
 		voice &v = m_voices[n];
-		for(int i = 0; i != stream.samples(); i++)
+		for (int i = 0; i != stream.samples(); i++)
 			stream.put_int(n, i, v.on && !recording(n) ? step(n, v) : 0, 65536);
 	}
 }

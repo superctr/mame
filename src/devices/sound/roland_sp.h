@@ -48,7 +48,8 @@ private:
 	static constexpr int RECORD_VOICES[2] = { 4, 20 };
 
 	// the state word's flags, and the mode byte on top of END
-	enum : u32 {
+	enum : u32
+	{
 		STATE_NO_LOOP_EVENT = 1U << 31, STATE_NO_END_EVENT = 1U << 30, STATE_BACKWARD = 1U << 27,
 		STATE_FLAGS = ~0x07ffffffU,
 		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30, MODE_ONE_SHOT = 1U << 29,
