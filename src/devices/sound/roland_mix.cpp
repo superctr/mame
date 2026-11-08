@@ -69,40 +69,45 @@ void roland_mix_device::write(offs_t offset, u16 data)
 	offset &= WORDS - 1;
 	m_stream->update();
 	m_regs[offset] = data;
-	if(offset >= REG_SELECT)
+	if (offset >= REG_SELECT)
 		m_select = offset - REG_SELECT;
-	else if(offset == REG_DATA)
+	else if (offset == REG_DATA)
 		m_voice[m_select] = data;
 }
 
 void roland_mix_device::sound_stream_update(sound_stream &stream)
 {
 	u16 const control = m_regs[REG_CONTROL];
-	if(!(control & CONTROL_RUN))
+	if (!(control & CONTROL_RUN))
 		return;
 	bool const stereo = !(control & CONTROL_STEREO_OFF);
 
-	for(int i = 0; i != stream.samples(); i++) {
+	for (int i = 0; i != stream.samples(); i++)
+	{
 		s64 out[OUTPUTS] = { 0 };
-		for(int v = 0; v != VOICES; v++) {
+		for (int v = 0; v != VOICES; v++)
+		{
 			u16 const word = m_voice[v];
 			s32 const in = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * FULL_SCALE);
-			if(!in)
+			if (!in)
 				continue;
-			if(stereo) {
+			if (stereo)
+			{
 				out[OUTPUT_LEFT] += s64(in) * BIT(word, 4, 6);
 				out[OUTPUT_RIGHT] += s64(in) * BIT(word, 10, 6);
 			}
 			int const assign = BIT(word, 1, 3);
-			if(!BIT(word, 0) && (assign >= OUTPUT_INDIVIDUAL || !stereo))
+			if (!BIT(word, 0) && (assign >= OUTPUT_INDIVIDUAL || !stereo))
 				out[assign] += s64(in) << 6;
 		}
 		s32 word[OUTPUTS];
-		for(int o = 0; o != OUTPUTS; o++) {
+		for (int o = 0; o != OUTPUTS; o++)
+		{
 			word[o] = s32(std::clamp<s64>(out[o] >> 6, -FULL_SCALE - 1, FULL_SCALE));
 			stream.put_int(o, i, word[o], FULL_SCALE + 1);
 		}
-		for(int c = 0; c != 2; c++) {
+		for (int c = 0; c != 2; c++)
+		{
 			s32 const serial = (control & CONTROL_THROUGH)
 					? std::clamp(s32(stream.get(INPUT_SERIAL + c, i) * 0x800000), -0x800000, 0x7fffff)
 					: word[OUTPUT_LEFT + c] << 4;
