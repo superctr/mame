@@ -146,6 +146,7 @@ void i8x9x_device::device_reset()
 	port2 = 0xc1 & i8x9x_p2_mask(); // P2.5 is cleared
 	ios0 = ios1 = 0x00;
 	ioc0 &= 0xaa;
+	hsi_mode = 0xff;
 	hsi_fifo_count = 0;
 	std::fill(std::begin(hsi_fifo_time), std::end(hsi_fifo_time), 0);
 	std::fill(std::begin(hsi_fifo_bits), std::end(hsi_fifo_bits), 0);
