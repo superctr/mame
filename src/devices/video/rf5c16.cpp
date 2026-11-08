@@ -218,11 +218,8 @@ void rf5c16_device::write(offs_t offset, u8 data)
 
 u32 rf5c16_device::pen(u8 code) const
 {
-	u8 const hi = BIT(code, 3) ? 0xff : 0xaa;
-	u8 const lo = BIT(code, 3) ? 0x55 : 0x00;
-	if((code & 7) == 0)
-		return 0;
-	return rgb_t(BIT(code, 0) ? hi : lo, BIT(code, 1) ? hi : lo, BIT(code, 2) ? hi : lo);
+	u8 const on = BIT(code, 3) ? 0xff : 0xaa;
+	return rgb_t(BIT(code, 0) ? on : 0, BIT(code, 1) ? on : 0, BIT(code, 2) ? on : 0);
 }
 
 u8 rf5c16_device::cell_dot(u16 code, int x, int y, bool fg) const
