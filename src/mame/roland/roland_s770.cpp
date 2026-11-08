@@ -90,6 +90,7 @@ public:
 	void s760(machine_config &config) ATTR_COLD;
 	void sp700(machine_config &config) ATTR_COLD;
 	void s770(machine_config &config) ATTR_COLD;
+	void s750turbo(machine_config &config) ATTR_COLD;
 
 	DECLARE_INPUT_CHANGED_MEMBER(encoder_step);
 
@@ -1280,15 +1281,29 @@ void roland_s770_state::s770(machine_config &config)
 	m_vdp->set_middle_level(0);
 }
 
+void roland_s770_state::s750turbo(machine_config &config)
+{
+	s770(config);
+	m_maincpu->set_clock(16_MHz_XTAL);
+}
+
 ROM_START(s770)
 	ROM_REGION16_LE(0x4000, "boot", 0)
-	ROM_LOAD("s770_1.12.bin", 0x0000, 0x4000, CRC(ca5f8352) SHA1(2a9ac99b862cef9f005bbadbcf2ce158553fb3fc))
+	ROM_SYSTEM_BIOS(0, "v112", "Monitor ROM 1.12")
+	ROMX_LOAD("s770_1.12.bin", 0x0000, 0x4000, CRC(ca5f8352) SHA1(2a9ac99b862cef9f005bbadbcf2ce158553fb3fc), ROM_BIOS(0))
+	ROM_SYSTEM_BIOS(1, "v100", "Monitor ROM 1.00")
+	ROMX_LOAD("s770_1.00.bin", 0x0000, 0x4000, CRC(d1ed0a5b) SHA1(8980b5041dfe1be43074bab2cb50333d9cc5a830), ROM_BIOS(1))
 ROM_END
 
 // an MB27C128 read as a 27C256: two identical halves
 ROM_START(s750)
 	ROM_REGION16_LE(0x8000, "boot", 0)
 	ROM_LOAD("s750_1.02.bin", 0x0000, 0x8000, CRC(29d9ed2d) SHA1(867ada312386ec8d01c262c35ba6ef189dff2223))
+ROM_END
+
+ROM_START(s750turbo)
+	ROM_REGION16_LE(0x4000, "boot", 0)
+	ROM_LOAD("s750turbo_1.50.bin", 0x0000, 0x4000, CRC(4f4dcaec) SHA1(db88637aeb09eb0e20928ae16beaed29a4713cf0))
 ROM_END
 
 ROM_START(s760)
@@ -1308,5 +1323,6 @@ ROM_END
 
 SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_SUPPORTS_SAVE)
 SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler", MACHINE_SUPPORTS_SAVE)
+SYST(1993, s750turbo, s770, 0, s750turbo, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler (Turbo Kit)", MACHINE_SUPPORTS_SAVE)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_SUPPORTS_SAVE)
 SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_SUPPORTS_SAVE)
