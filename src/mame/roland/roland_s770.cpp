@@ -1161,8 +1161,12 @@ void roland_s770_state::s770(machine_config &config)
 	adc.add_route(0, m_sp, 1.0, 1);
 	adc.add_route(1, m_sp, 1.0, 0);
 	auto &digital_in(MICROPHONE(config, "digital_in", 2).front());
-	digital_in.add_route(0, m_sp, 1.0, 2);
-	digital_in.add_route(1, m_sp, 1.0, 3);
+	digital_in.add_route(0, m_mix, 1.0, roland_mix_device::INPUT_SERIAL);
+	digital_in.add_route(1, m_mix, 1.0, roland_mix_device::INPUT_SERIAL + 1);
+	m_mix->serial_callback().set(m_sp, FUNC(roland_sp_device::record_w));
+	SPEAKER(config, "dout", 2).front();
+	m_mix->add_route(roland_mix_device::OUTPUT_SERIAL, "dout", 1.0, 0);
+	m_mix->add_route(roland_mix_device::OUTPUT_SERIAL + 1, "dout", 1.0, 1);
 
 	SPEAKER(config, "indiv12", 2).front();
 	SPEAKER(config, "indiv34", 2).front();
