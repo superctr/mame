@@ -33,7 +33,9 @@
 #include "sound/roland_tvf.h"
 #include "bus/midi/midi.h"
 #include "bus/nscsi/devices.h"
-#include "bus/roland/extport.h"
+#include "bus/msx/ctrl/ctrl.h"
+#include "bus/msx/ctrl/mouse.h"
+#include "bus/roland/rc100.h"
 #include "video/rf5c16.h"
 #include "video/sed1330.h"
 #include "video/t6963c.h"
@@ -154,7 +156,7 @@ private:
 	optional_device<upd72069_device> m_fdc;
 	optional_device<floppy_connector> m_floppy;
 	required_device<mb89352_device> m_spc;
-	optional_device<roland_ext_port_device> m_ext_port;
+	optional_device<msx_general_purpose_port_device> m_ext_port;
 	optional_device<sed1330_device> m_lcdc;
 	optional_device<rf5c16_device> m_vdp;
 	optional_device<t6963c_device> m_t6963c;
@@ -693,13 +695,24 @@ void roland_s770_state::panel_w(offs_t offset, u8 data)
 		m_wave_bank = (data >> 4) & 3;
 		wave_map();
 	}
-	if(offset == 4) {
-		if(m_ext_port)
-			m_ext_port->write(data);
+	if(offset == 3 && m_ext_port) {
+		if(!BIT(data, 0))
+			m_ext_port->pin_6_w(1);
+		if(!BIT(data, 1))
+			m_ext_port->pin_7_w(1);
+	}
+	else if(offset == 4) {
+		if(m_ext_port) {
+			if(BIT(m_panel[3], 0))
+				m_ext_port->pin_6_w(BIT(data, 4));
+			if(BIT(m_panel[3], 1))
+				m_ext_port->pin_7_w(BIT(data, 5));
+			m_ext_port->pin_8_w(BIT(data, 6));
+		}
 	}
 	else if(offset == 5)
 		m_key_row = data;
-	else if(offset != 6 && offset != 7 && offset != 8)
+	else if(offset != 3 && offset != 6 && offset != 7 && offset != 8)
 		LOGMASKED(LOG_IO, "panel_w %04x = %02x (%04x)\n", 0xf000 + offset*2, data, m_maincpu->pc());
 	m_panel[offset] = data;
 }
@@ -952,6 +965,12 @@ static void s770_floppies(device_slot_interface &device)
 	device.option_add("35hd", FLOPPY_35_HD);
 }
 
+static void s7_ext_ctrl_devices(device_slot_interface &device)
+{
+	device.option_add("mouse", MSX_MOUSE);
+	device.option_add("rc100", ROLAND_RC100);
+}
+
 // as the boot ROM and system 2.24 initialise it, then Controller Mouse+CRT and Exclusive RX on
 static const u16 s760_eeprom[0x40] = {
 	0x0702, 0x0000, 0x0001, 0x0000, 0x0801, 0x0000, 0x2e31, 0x3030,
@@ -1047,7 +1066,7 @@ void roland_s770_state::s760(machine_config &config)
 	m_fdc->drq_wr_callback().set(FUNC(roland_s770_state::fdc_drq_w));
 	FLOPPY_CONNECTOR(config, m_floppy, s770_floppies, "35hd", roland_s770_state::floppy_formats).enable_sound(true);
 
-	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
+	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, s7_ext_ctrl_devices, "mouse");
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
@@ -1158,7 +1177,7 @@ void roland_s770_state::s770(machine_config &config)
 	m_fdc->drq_wr_callback().set(FUNC(roland_s770_state::fdc_drq_w));
 	FLOPPY_CONNECTOR(config, m_floppy, s770_floppies, "35hd", roland_s770_state::floppy_formats).enable_sound(true);
 
-	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
+	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, s7_ext_ctrl_devices, "mouse");
 
 	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
 
