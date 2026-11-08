@@ -92,6 +92,7 @@ public:
 	void s770(machine_config &config) ATTR_COLD;
 	void s750turbo(machine_config &config) ATTR_COLD;
 	void dj70(machine_config &config) ATTR_COLD;
+	void dj70mk2(machine_config &config) ATTR_COLD;
 
 	DECLARE_INPUT_CHANGED_MEMBER(encoder_step);
 
@@ -195,6 +196,7 @@ private:
 	bool m_dma_in_service;
 	bool m_old_ga = false;
 	bool m_fdc_int_f002 = false;
+	bool m_adele = false;
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
@@ -262,7 +264,16 @@ void roland_s770_state::wave_map()
 			m_sp->set_wave_block(at++, mem + b * words);
 	};
 
-	if (m_simms[0])
+	if (m_simms[0] && m_adele)
+	{
+		unsigned at = 0;
+		map(at, m_wave + 0x100000, m_simms[0]->read() * 8);
+		map(at, m_wave + 0x900000, m_simms[1]->read() * 8);
+		if (!at)
+			at = 0x60;
+		map(at, m_wave, 0x10);
+	}
+	else if (m_simms[0])
 	{
 		// on-board 2 MB first in the RAM, then socket 1, then socket 2
 		u16 *const internal = m_wave;
@@ -744,7 +755,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 
 void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
-	if (offset == 0 && m_simms[0] && ((data >> 4) & 3) != m_wave_bank)
+	if (offset == 0 && m_simms[0] && !m_adele && ((data >> 4) & 3) != m_wave_bank)
 	{
 		m_wave_bank = (data >> 4) & 3;
 		wave_map();
@@ -1006,6 +1017,22 @@ static INPUT_PORTS_START(dj70)
 	PORT_CONFNAME(0x3f, 2, "Wave memory")
 	PORT_CONFSETTING(2, "2 MB")
 	PORT_CONFSETTING(4, "4 MB")
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(dj70mk2)
+	PORT_INCLUDE(s770_panel)
+
+	PORT_START("SIMM1")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket 1")
+	PORT_CONFSETTING(0, DEF_STR(None))
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(16, "16 MB")
+
+	PORT_START("SIMM2")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket 2")
+	PORT_CONFSETTING(0, DEF_STR(None))
+	PORT_CONFSETTING(8, "8 MB")
+	PORT_CONFSETTING(16, "16 MB")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(sp700)
@@ -1328,6 +1355,13 @@ void roland_s770_state::dj70(machine_config &config)
 	config.device_remove("extport");
 }
 
+void roland_s770_state::dj70mk2(machine_config &config)
+{
+	dj70(config);
+	m_wave_bytes = 34 << 20;
+	m_adele = true;
+}
+
 ROM_START(s770)
 	ROM_REGION16_LE(0x4000, "boot", 0)
 	ROM_SYSTEM_BIOS(0, "v112", "Monitor ROM 1.12")
@@ -1366,6 +1400,11 @@ ROM_START(dj70)
 	ROM_LOAD("dj70_ic22_1.01.bin", 0x80000, 0x80000, CRC(af37ef1d) SHA1(241bb7bb23bee61d4d577280241a0e67f2091bbd))
 ROM_END
 
+ROM_START(dj70mk2)
+	ROM_REGION16_LE(0x100000, "boot", ROMREGION_ERASEFF)
+	ROM_LOAD("dj70mk2_ic22_1.02.bin", 0x80000, 0x80000, CRC(3ffb0003) SHA1(f69e0076728cf980916e50e0b7a9488346201f1f))
+ROM_END
+
 } // anonymous namespace
 
 SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_SUPPORTS_SAVE)
@@ -1374,3 +1413,4 @@ SYST(1993, s750turbo, s770, 0, s750turbo, s750, roland_s770_state, empty_init, "
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_SUPPORTS_SAVE)
 SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_SUPPORTS_SAVE)
 SYST(1992, dj70, 0, 0, dj70, dj70, roland_s770_state, empty_init, "Roland", "DJ-70 Sampling Workstation", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1996, dj70mk2, dj70, 0, dj70mk2, dj70mk2, roland_s770_state, empty_init, "Roland", "DJ-70mkII Sampling Workstation", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
