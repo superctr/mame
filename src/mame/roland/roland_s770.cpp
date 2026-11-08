@@ -91,6 +91,7 @@ public:
 	void sp700(machine_config &config) ATTR_COLD;
 	void s770(machine_config &config) ATTR_COLD;
 	void s750turbo(machine_config &config) ATTR_COLD;
+	void dj70(machine_config &config) ATTR_COLD;
 
 	DECLARE_INPUT_CHANGED_MEMBER(encoder_step);
 
@@ -119,6 +120,7 @@ private:
 	void common_core(machine_config &config) ATTR_COLD;
 	void common(machine_config &config) ATTR_COLD;
 	void s770_data_map(address_map &map) ATTR_COLD;
+	void dj70_data_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
 	void t6963c_map(address_map &map) ATTR_COLD;
 
@@ -192,6 +194,7 @@ private:
 	bool m_dma_active;
 	bool m_dma_in_service;
 	bool m_old_ga = false;
+	bool m_fdc_int_f002 = false;
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
@@ -716,7 +719,8 @@ u8 roland_s770_state::panel_r(offs_t offset)
 		floppy_image_device *floppy = m_floppy ? m_floppy->get_device() : nullptr;
 		bool const disk = floppy && floppy->exists();
 		bool const hd = disk && floppy->get_variant() == floppy_image::DSHD;
-		return (floppy ? floppy->dskchg_r() : 0) | (hd ? 0x00 : 0x02) | digital_in_status();
+		u8 const b7 = m_fdc_int_f002 ? (BIT(m_irq_pending, IRQ_FDC) ? 0x80 : 0x00) : digital_in_status();
+		return (floppy ? floppy->dskchg_r() : 0) | (hd ? 0x00 : 0x02) | b7;
 	}
 	case 5:
 	{
@@ -841,6 +845,21 @@ void roland_s770_state::sp700_data_map(address_map &map)
 	map(0xdc00, 0xdc03).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
 	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
 	map(0xf400, 0xf41f).w(FUNC(roland_s770_state::s770_aes_w));
+}
+
+void roland_s770_state::dj70_data_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
+	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
+	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
+	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
+	map(0xd400, 0xd41f).w(FUNC(roland_s770_state::s770_aes_w));
+	map(0xd800, 0xd87f).rw(m_mix, FUNC(roland_mix_device::read), FUNC(roland_mix_device::write));
+	map(0xe000, 0xe003).m(m_fdc, FUNC(upd72069_device::map)).umask16(0x00ff);
+	map(0xe400, 0xe41f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
+	map(0xf000, 0xf01f).rw(FUNC(roland_s770_state::panel_r), FUNC(roland_s770_state::panel_w)).umask16(0x00ff);
+	map(0xf400, 0xf403).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
 }
 
 void roland_s770_state::lcdc_map(address_map &map)
@@ -978,6 +997,15 @@ static INPUT_PORTS_START(s750)
 	PORT_CONFSETTING(14, "14 MB")
 	PORT_CONFSETTING(16, "16 MB")
 	PORT_CONFSETTING(18, "18 MB")
+INPUT_PORTS_END
+
+static INPUT_PORTS_START(dj70)
+	PORT_INCLUDE(s770_panel)
+
+	PORT_START("WAVE_MEM")
+	PORT_CONFNAME(0x3f, 2, "Wave memory")
+	PORT_CONFSETTING(2, "2 MB")
+	PORT_CONFSETTING(4, "4 MB")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(sp700)
@@ -1287,6 +1315,19 @@ void roland_s770_state::s750turbo(machine_config &config)
 	m_maincpu->set_clock(16_MHz_XTAL);
 }
 
+void roland_s770_state::dj70(machine_config &config)
+{
+	s770(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s770_state::dj70_data_map);
+	m_wave_bytes = 4 << 20;
+	m_wave_base_block = 0x60;
+	m_fdc_int_f002 = true;
+	m_old_ga = false;
+	config.device_remove("vdp");
+	config.device_remove("crt");
+	config.device_remove("extport");
+}
+
 ROM_START(s770)
 	ROM_REGION16_LE(0x4000, "boot", 0)
 	ROM_SYSTEM_BIOS(0, "v112", "Monitor ROM 1.12")
@@ -1319,6 +1360,12 @@ ROM_START(sp700)
 	ROM_LOAD("sp700_ic54_1.12.bin", 0xc0000, 0x40000, CRC(0b25f092) SHA1(55aa0a232e23b21e8f0088ca98413ff8868c6ae1))
 ROM_END
 
+// the EPROM in the upper half of the 1 MB boot space, its boot block at E0000
+ROM_START(dj70)
+	ROM_REGION16_LE(0x100000, "boot", ROMREGION_ERASEFF)
+	ROM_LOAD("dj70_ic22_1.01.bin", 0x80000, 0x80000, CRC(af37ef1d) SHA1(241bb7bb23bee61d4d577280241a0e67f2091bbd))
+ROM_END
+
 } // anonymous namespace
 
 SYST(1990, s770, 0, 0, s770, s770, roland_s770_state, empty_init, "Roland", "S-770 Digital Sampler", MACHINE_SUPPORTS_SAVE)
@@ -1326,3 +1373,4 @@ SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "
 SYST(1993, s750turbo, s770, 0, s750turbo, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler (Turbo Kit)", MACHINE_SUPPORTS_SAVE)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_SUPPORTS_SAVE)
 SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_SUPPORTS_SAVE)
+SYST(1992, dj70, 0, 0, dj70, dj70, roland_s770_state, empty_init, "Roland", "DJ-70 Sampling Workstation", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
