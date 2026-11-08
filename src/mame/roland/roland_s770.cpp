@@ -149,6 +149,7 @@ private:
 	void s770_data_map(address_map &map) ATTR_COLD;
 	void dj70_data_map(address_map &map) ATTR_COLD;
 	void lcdc_map(address_map &map) ATTR_COLD;
+	void s760_palette(palette_device &palette) const;
 	void t6963c_map(address_map &map) ATTR_COLD;
 
 	u16 ga_r(offs_t offset, u16 mem_mask);
@@ -1007,6 +1008,12 @@ void roland_s770_state::dj70_data_map(address_map &map)
 	map(0xf400, 0xf403).rw(m_t6963c, FUNC(t6963c_device::read), FUNC(t6963c_device::write)).umask16(0x00ff);
 }
 
+void roland_s770_state::s760_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t(156, 214, 44)); // green backlight
+	palette.set_pen_color(1, rgb_t(26, 36, 16));
+}
+
 void roland_s770_state::lcdc_map(address_map &map)
 {
 	map(0x0000, 0x1fff).mirror(0xe000).ram();
@@ -1462,7 +1469,7 @@ void roland_s770_state::s760(machine_config &config)
 
 	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, s7_ext_ctrl_devices, "mouse");
 
-	PALETTE(config, "palette", palette_device::MONOCHROME_INVERTED);
+	PALETTE(config, "palette", FUNC(roland_s770_state::s760_palette), 2);
 
 	screen_device &lcd(SCREEN(config, "lcd").set_lcd());
 	lcd.set_refresh_hz(60);
