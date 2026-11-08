@@ -1184,6 +1184,7 @@ void roland_s770_state::s770(machine_config &config)
 
 	RF5C16(config, m_vdp, 14.318181_MHz_XTAL);
 	m_vdp->set_screen("crt");
+	m_vdp->set_middle_level(0);
 }
 
 ROM_START(s770)
