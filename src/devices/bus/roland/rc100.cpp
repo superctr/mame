@@ -204,17 +204,20 @@ INPUT_CHANGED_MEMBER(roland_rc100_device::reset_changed)
 u8 roland_rc100_device::ga_r(offs_t offset)
 {
 	u8 const reg = BIT(offset, 15) | (BIT(offset, 14) << 1) | (BIT(offset, 13) << 2);
-	switch(reg) {
-	case 4: {
+	switch (reg)
+	{
+	case 4:
+	{
 		u8 const now = m_dial->read();
 		u8 const delta = now - m_dial_last;
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			m_dial_last = now;
 		return delta;
 	}
-	case 5: {
+	case 5:
+	{
 		u8 const data = m_cols[m_col & 3]->read();
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			m_col = (m_col + 1) & 3;
 		return data;
 	}
@@ -226,7 +229,8 @@ u8 roland_rc100_device::ga_r(offs_t offset)
 void roland_rc100_device::ga_w(offs_t offset, u8 data)
 {
 	u8 const reg = BIT(offset, 15) | (BIT(offset, 14) << 1) | (BIT(offset, 13) << 2);
-	switch(reg) {
+	switch (reg)
+	{
 	case 0: case 1: case 2: case 3:
 		m_led[reg] = data;
 		update_leds();
@@ -245,7 +249,7 @@ void roland_rc100_device::ga_w(offs_t offset, u8 data)
 void roland_rc100_device::update_leds()
 {
 	u16 const on = m_led[0] | (m_led[2] << 8);
-	for(int i = 0; i < 16; i++)
+	for (int i = 0; i < 16; i++)
 		m_leds[i] = BIT(on, i);
 }
 
@@ -288,7 +292,8 @@ void roland_rc100_device::lines_sync(s32 param)
 void roland_rc100_device::pin_6_w(int state)
 {
 	u8 const lines = state ? (m_lines | LINE_CLK1) : (m_lines & ~LINE_CLK1);
-	if(lines != m_lines) {
+	if (lines != m_lines)
+	{
 		m_lines = lines;
 		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
 		machine().scheduler().perfect_quantum(attotime::from_usec(200));
@@ -298,7 +303,8 @@ void roland_rc100_device::pin_6_w(int state)
 void roland_rc100_device::pin_7_w(int state)
 {
 	u8 const lines = state ? (m_lines | LINE_CLK2) : (m_lines & ~LINE_CLK2);
-	if(lines != m_lines) {
+	if (lines != m_lines)
+	{
 		m_lines = lines;
 		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
 		machine().scheduler().perfect_quantum(attotime::from_usec(200));
@@ -308,7 +314,8 @@ void roland_rc100_device::pin_7_w(int state)
 void roland_rc100_device::pin_8_w(int state)
 {
 	u8 const lines = state ? (m_lines | LINE_DATA2) : (m_lines & ~LINE_DATA2);
-	if(lines != m_lines) {
+	if (lines != m_lines)
+	{
 		m_lines = lines;
 		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
 	}
