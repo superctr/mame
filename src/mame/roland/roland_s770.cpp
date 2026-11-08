@@ -98,7 +98,8 @@ protected:
 	void wave_map();
 
 private:
-	enum : u8 {
+	enum : u8
+	{
 		IRQ_FDC = 0,
 		IRQ_SAMPLER = 2,
 		IRQ_DMA = 4,
@@ -243,21 +244,24 @@ void roland_s770_state::machine_start()
 void roland_s770_state::wave_map()
 {
 	unsigned const blocks = roland_sp_device::WAVE_BLOCKS, words = roland_sp_device::BLOCK_WORDS;
-	for(unsigned b = 0; b != blocks; b++)
+	for (unsigned b = 0; b != blocks; b++)
 		m_sp->set_wave_block(b, nullptr);
-	auto map = [&](unsigned &at, u16 *mem, unsigned count) {
-		for(unsigned b = 0; b != count && at != blocks; b++)
+	auto map = [&](unsigned &at, u16 *mem, unsigned count)
+	{
+		for (unsigned b = 0; b != count && at != blocks; b++)
 			m_sp->set_wave_block(at++, mem + b * words);
 	};
 
-	if(m_simms[0]) {
+	if (m_simms[0])
+	{
 		// on-board 2 MB first in the RAM, then socket 1, then socket 2
 		u16 *const internal = m_wave;
 		u16 *const socket1 = m_wave + 0x100000;
 		u16 *const socket2 = m_wave + 0x900000;
 		unsigned const size1 = m_simms[0]->read() * 8, size2 = m_simms[1]->read() * 8;
 		unsigned at = 0;
-		switch(m_wave_bank) {
+		switch (m_wave_bank)
+		{
 		case 1:
 			map(at, socket1, size1);
 			map(at, socket2, size2);
@@ -269,11 +273,13 @@ void roland_s770_state::wave_map()
 		case 0:
 			map(at, socket1, size1);
 			at = std::max(at, 0x70U);
-			if(at < 0x80)
+			if (at < 0x80)
 				map(at, internal + (at - 0x70) * words, 0x80 - at);
 			break;
 		}
-	} else {
+	}
+	else
+	{
 		unsigned at = m_wave_base_block;
 		map(at, m_wave, m_wave_mem->read() * 8);
 	}
@@ -282,7 +288,7 @@ void roland_s770_state::wave_map()
 void roland_s770_state::machine_reset()
 {
 	std::fill(std::begin(m_ga), std::end(m_ga), 0);
-	for(int i = 0; i != 8; i++)
+	for (int i = 0; i != 8; i++)
 		m_ga[i] = 0x0780 | (i & 3) << 4;
 	std::fill(std::begin(m_panel), std::end(m_panel), 0);
 	m_irq_pending = 0;
@@ -308,7 +314,7 @@ void roland_s770_state::machine_reset()
 	wave_map();
 
 	// stands in for the CPU's PWM output, which the core does not drive
-	if(m_flash)
+	if (m_flash)
 		m_hsi_clock->adjust(attotime::from_hz(16_MHz_XTAL / 256), 0, attotime::from_hz(16_MHz_XTAL / 256));
 	receive_register_reset();
 	transmit_register_reset();
@@ -329,7 +335,7 @@ void roland_s770_state::tra_callback()
 
 void roland_s770_state::irq_w(int source, int state)
 {
-	if(state)
+	if (state)
 		m_irq_pending |= 1 << source;
 	else
 		m_irq_pending &= ~(1 << source);
@@ -339,7 +345,8 @@ void roland_s770_state::irq_w(int source, int state)
 void roland_s770_state::update_irq()
 {
 	bool const line = m_irq_pending & (m_ga[0xa] >> 8);
-	if(line != m_irq_line) {
+	if (line != m_irq_line)
+	{
 		m_irq_line = line;
 		m_maincpu->set_input_line(i80c196kb_device::EXTINT_LINE, line ? ASSERT_LINE : CLEAR_LINE);
 	}
@@ -348,52 +355,59 @@ void roland_s770_state::update_irq()
 u16 roland_s770_state::ga_r(offs_t offset, u16 mem_mask)
 {
 	u16 data = m_ga[offset];
-	if(offset == 0xa)
+	if (offset == 0xa)
 		data = (data & 0xff00) | (is_transmit_register_empty() ? 0x02 : 0x00) | (m_midi_rx_full ? 0x01 : 0x00);
-	else if(offset == 0xb) {
+	else if (offset == 0xb)
+	{
 		data = (data & 0xff00) | m_midi_rx;
-		if(ACCESSING_BITS_0_7 && !machine().side_effects_disabled()) {
+		if (ACCESSING_BITS_0_7 && !machine().side_effects_disabled())
+		{
 			m_midi_rx_full = false;
 			irq_w(IRQ_MIDI_RX, 0);
 		}
 		return data;
 	}
-	if(offset == 0xe && ACCESSING_BITS_8_15 && !machine().side_effects_disabled()) {
-		if(BIT(m_irq_pending, IRQ_DMA)) {
+	if (offset == 0xe && ACCESSING_BITS_8_15 && !machine().side_effects_disabled())
+	{
+		if (BIT(m_irq_pending, IRQ_DMA))
+		{
 			m_irq_pending &= ~(1 << IRQ_DMA);
 			update_irq();
 		}
 	}
-	if(!machine().side_effects_disabled() && offset >= 8 && offset != 0xa)
+	if (!machine().side_effects_disabled() && offset >= 8 && offset != 0xa)
 		LOGMASKED(LOG_GA, "ga_r %04x & %04x = %04x (%04x)\n", 0x100 + offset*2, mem_mask, data, m_maincpu->pc());
 	return data;
 }
 
 void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if(offset == 0xb && ACCESSING_BITS_0_7) {
-		if(is_transmit_register_empty())
+	if (offset == 0xb && ACCESSING_BITS_0_7)
+	{
+		if (is_transmit_register_empty())
 			transmit_register_setup(data & 0xff);
 		else
 			LOGMASKED(LOG_GA, "midi tx overrun %02x\n", data & 0xff);
 		return;
 	}
-	if(offset >= 8 && offset != 0xa)
+	if (offset >= 8 && offset != 0xa)
 		LOGMASKED(LOG_GA, "ga_w %04x = %04x & %04x (%04x)\n", 0x100 + offset*2, data, mem_mask, m_maincpu->pc());
 	COMBINE_DATA(&m_ga[offset]);
 
-	switch(offset) {
+	switch (offset)
+	{
 	case 0xa:
-		if(ACCESSING_BITS_8_15)
+		if (ACCESSING_BITS_8_15)
 			update_irq();
 		break;
 	case 0xe:
-		if(ACCESSING_BITS_8_15) {
+		if (ACCESSING_BITS_8_15)
+		{
 			m_dma_ctrl = data >> 8;
 			m_dma_addr = m_ga[0xd] | (m_ga[0xe] & 0x000f) << 16;
 			m_dma_count = m_ga[0xc];
 			m_dma_active = true;
-			if(m_fdc)
+			if (m_fdc)
 				m_fdc->tc_w(false);
 			LOGMASKED(LOG_DMA, "dma start ctrl %02x addr %05x count %04x (%04x)\n", m_dma_ctrl, m_dma_addr, m_dma_count, m_maincpu->pc());
 			dma_service();
@@ -404,20 +418,21 @@ void roland_s770_state::ga_w(offs_t offset, u16 data, u16 mem_mask)
 
 u8 roland_s770_state::dial_r()
 {
-	if(!m_dial || machine().side_effects_disabled())
+	if (!m_dial || machine().side_effects_disabled())
 		return 0;
 	u8 const keys = m_dial->read();
 	u8 const pressed = keys & ~m_dial_last;
 	m_dial_last = keys;
-	if(BIT(pressed, 0))
+	if (BIT(pressed, 0))
 		m_dial_steps--;
-	if(BIT(pressed, 1))
+	if (BIT(pressed, 1))
 		m_dial_steps++;
-	if(m_dial_idle) {
+	if (m_dial_idle)
+	{
 		m_dial_idle--;
 		return 0;
 	}
-	if(!m_dial_steps)
+	if (!m_dial_steps)
 		return 0;
 	bool const up = m_dial_steps > 0;
 	m_dial_steps += up ? -1 : 1;
@@ -429,19 +444,20 @@ u8 roland_s770_state::digital_in_status() const
 {
 	static const u8 FIN[4] = { 0x00, 0x00, 0x10, 0x18 };
 	u8 const in = m_digital_in ? m_digital_in->read() : 0;
-	if(!(in & 3))
+	if (!(in & 3))
 		return 0x00;
 	return 0x80 | FIN[in & 3] | (BIT(in, 2) ? 0x40 : 0x00);
 }
 
 void roland_s770_state::set_rate(u32 rate)
 {
-	if(rate != m_sp->clock()) {
+	if (rate != m_sp->clock())
+	{
 		m_sp->set_unscaled_clock(rate);
 		m_tvf->set_unscaled_clock(rate);
-		if(m_meq)
+		if (m_meq)
 			m_meq->set_unscaled_clock(rate);
-		if(m_mix)
+		if (m_mix)
 			m_mix->set_unscaled_clock(rate);
 	}
 }
@@ -449,7 +465,7 @@ void roland_s770_state::set_rate(u32 rate)
 void roland_s770_state::s770_aes_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_aes[offset & 0xf]);
-	if(offset == 3)
+	if (offset == 3)
 		set_rate(BIT(m_aes[3], 1) ? 48000 : 44100);
 }
 
@@ -457,7 +473,7 @@ void roland_s770_state::p1_w(u8 data)
 {
 	static const u32 RATES[4] = { 44100, 44100, 48000, 32000 };
 	u8 const in = m_digital_in ? m_digital_in->read() : 0;
-	if(!m_old_ga)
+	if (!m_old_ga)
 		set_rate(BIT(data, 5) && (in & 3) ? RATES[in & 3] : RATES[data >> 6]);
 
 	m_eeprom->cs_write(BIT(data, 0));
@@ -473,8 +489,8 @@ void roland_s770_state::sp700_p1_w(u8 data)
 u8 roland_s770_state::sp700_p0_r()
 {
 	u8 data = 0;
-	for(int i = 0; i != 4; i++)
-		if(!BIT(m_p1, i))
+	for (int i = 0; i != 4; i++)
+		if (!BIT(m_p1, i))
 			data |= m_columns[i]->read();
 	return data;
 }
@@ -511,51 +527,65 @@ void roland_s770_state::spc_dreq_w(int state)
 
 void roland_s770_state::dma_service()
 {
-	if(m_dma_in_service)
+	if (m_dma_in_service)
 		return;
 	m_dma_in_service = true;
-	while(m_dma_active) {
+	while (m_dma_active)
+	{
 		bool const to_device = !BIT(m_dma_ctrl, 0);
 		u8 const group = m_dma_ctrl >> 6;
 		bool const wave = m_old_ga ? (m_dma_ctrl & 0xe4) == 0x64 : group == 2 && BIT(m_dma_ctrl, 5);
 		bool const fdc = group == 3 || (group == 2 && !BIT(m_dma_ctrl, 5) && m_old_ga);
 		bool const scsi_wave = m_old_ga ? (m_dma_ctrl & 0xe3) == 0x40 : group == 2 && !BIT(m_dma_ctrl, 5);
-		if(!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
+		if (!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			break;
 
-		if(scsi_wave) {
+		if (scsi_wave)
+		{
 			bool const high = BIT(m_dma_count, 0);
-			if(to_device) {
+			if (to_device)
+			{
 				u8 const data = m_spc->dma_r();
-				if(!high)
+				if (!high)
 					m_wave_dma_word = data;
 				else
 					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
-			} else {
-				if(!high)
+			}
+			else
+			{
+				if (!high)
 					m_wave_dma_word = m_sp->wave_data_r();
 				m_spc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
 			}
-		} else if(wave) {
+		}
+		else if (wave)
+		{
 			bool const high = BIT(m_dma_count, 0);
-			if(to_device) {
+			if (to_device)
+			{
 				u8 const data = dma_byte_r();
-				if(!high)
+				if (!high)
 					m_wave_dma_word = data;
 				else
 					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
-			} else {
-				if(!high)
+			}
+			else
+			{
+				if (!high)
 					m_wave_dma_word = m_sp->wave_data_r();
 				dma_byte_w(m_wave_dma_word >> (high ? 8 : 0));
 			}
-		} else if(fdc) {
-			if(to_device)
+		}
+		else if (fdc)
+		{
+			if (to_device)
 				m_fdc->dma_w(dma_byte_r());
 			else
 				dma_byte_w(m_fdc->dma_r());
-		} else {
-			if(to_device)
+		}
+		else
+		{
+			if (to_device)
 				m_spc->dma_w(dma_byte_r());
 			else
 				dma_byte_w(m_spc->dma_r());
@@ -564,9 +594,10 @@ void roland_s770_state::dma_service()
 		m_ga[0xd] = m_dma_addr;
 		m_ga[0xe] = (m_ga[0xe] & 0xff00) | ((m_dma_addr >> 16) & 0x0f);
 		m_ga[0xc] = --m_dma_count;
-		if(!m_dma_count) {
+		if (!m_dma_count)
+		{
 			m_dma_active = false;
-			if(fdc)
+			if (fdc)
 				m_fdc_tc->adjust(attotime::zero);
 			LOGMASKED(LOG_DMA, "dma end at %05x\n", m_dma_addr);
 			irq_w(IRQ_DMA, 1);
@@ -577,10 +608,11 @@ void roland_s770_state::dma_service()
 
 INPUT_CHANGED_MEMBER(roland_s770_state::encoder_step)
 {
-	if(!newval)
+	if (!newval)
 		return;
 	m_maincpu->set_input_line(i8x9x_device::T2UPDN_LINE, param);
-	for(int level : { 1, 0 }) {
+	for (int level : { 1, 0 })
+	{
 		m_maincpu->set_input_line(i8x9x_device::T2CLK_LINE, level);
 		m_maincpu->set_input_line(i8x9x_device::HSI1_LINE, level);
 	}
@@ -594,19 +626,21 @@ TIMER_CALLBACK_MEMBER(roland_s770_state::hsi_clock)
 
 TIMER_CALLBACK_MEMBER(roland_s770_state::fdc_tc)
 {
-	if(m_fdc)
+	if (m_fdc)
 		m_fdc->tc_w(true);
 }
 
 u16 roland_s770_state::bus_r(u16 bank, offs_t offset, u16 mem_mask)
 {
 	u32 const adr = ((bank & 0x3ff) << 10) + (offset << 1);
-	if(BIT(bank, 10)) {
-		if(m_flash && (adr & 0xe0000) == 0x40000) {
+	if (BIT(bank, 10))
+	{
+		if (m_flash && (adr & 0xe0000) == 0x40000)
+		{
 			u16 data = 0;
-			if(ACCESSING_BITS_0_7)
+			if (ACCESSING_BITS_0_7)
 				data |= m_flash->read(adr);
-			if(ACCESSING_BITS_8_15)
+			if (ACCESSING_BITS_8_15)
 				data |= m_flash->read(adr + 1) << 8;
 			return data;
 		}
@@ -618,12 +652,14 @@ u16 roland_s770_state::bus_r(u16 bank, offs_t offset, u16 mem_mask)
 void roland_s770_state::bus_w(u16 bank, offs_t offset, u16 data, u16 mem_mask)
 {
 	u32 const adr = ((bank & 0x3ff) << 10) + (offset << 1);
-	if(BIT(bank, 10) && m_flash && (adr & 0xe0000) == 0x40000) {
-		if(ACCESSING_BITS_0_7)
+	if (BIT(bank, 10) && m_flash && (adr & 0xe0000) == 0x40000)
+	{
+		if (ACCESSING_BITS_0_7)
 			m_flash->write(adr, data);
-		if(ACCESSING_BITS_8_15)
+		if (ACCESSING_BITS_8_15)
 			m_flash->write(adr + 1, data >> 8);
-	} else if(BIT(bank, 10))
+	}
+	else if (BIT(bank, 10))
 		LOGMASKED(LOG_GA, "write to boot ROM %05x = %04x (%04x)\n", adr, data, m_maincpu->pc());
 	else
 		COMBINE_DATA(&m_dram[(adr & 0xfffff) >> 1]);
@@ -636,9 +672,10 @@ u16 roland_s770_state::code_r(offs_t offset, u16 mem_mask)
 
 u16 roland_s770_state::data_r(offs_t offset, u16 mem_mask)
 {
-	if(offset == 0x203a >> 1 && !machine().side_effects_disabled()) {
+	if (offset == 0x203a >> 1 && !machine().side_effects_disabled())
+	{
 		u8 const active = m_irq_pending & (m_ga[0xa] >> 8);
-		if(active)
+		if (active)
 			return 0x0120 + 4 * std::countr_zero(active);
 	}
 	return bus_r(m_ga[4 + (offset >> 13)], offset & 0x1fff, mem_mask);
@@ -651,7 +688,7 @@ void roland_s770_state::data_w(offs_t offset, u16 data, u16 mem_mask)
 
 u16 roland_s770_state::io_r(offs_t offset, u16 mem_mask)
 {
-	if(!machine().side_effects_disabled())
+	if (!machine().side_effects_disabled())
 		LOGMASKED(LOG_IO, "io_r %04x & %04x (%04x)\n", 0xc000 + offset*2, mem_mask, m_maincpu->pc());
 	return 0;
 }
@@ -663,18 +700,21 @@ void roland_s770_state::io_w(offs_t offset, u16 data, u16 mem_mask)
 
 u8 roland_s770_state::panel_r(offs_t offset)
 {
-	switch(offset) {
-	case 1: {
+	switch (offset)
+	{
+	case 1:
+	{
 		floppy_image_device *floppy = m_floppy ? m_floppy->get_device() : nullptr;
 		bool const disk = floppy && floppy->exists();
 		bool const hd = disk && floppy->get_variant() == floppy_image::DSHD;
 		return (floppy ? floppy->dskchg_r() : 0) | (hd ? 0x00 : 0x02) | digital_in_status();
 	}
-	case 5: {
+	case 5:
+	{
 		u8 data = m_keys[m_key_row & 3] ? m_keys[m_key_row & 3]->read() : 0xff;
-		if(m_option)
+		if (m_option)
 			data = (data & 0x3f) | m_option->read();
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			m_key_row++;
 		return data;
 	}
@@ -683,7 +723,7 @@ u8 roland_s770_state::panel_r(offs_t offset)
 	case 9:
 		return dial_r();
 	default:
-		if(!machine().side_effects_disabled())
+		if (!machine().side_effects_disabled())
 			LOGMASKED(LOG_IO, "panel_r %04x (%04x)\n", 0xf000 + offset*2, m_maincpu->pc());
 		return m_panel[offset];
 	}
@@ -691,28 +731,32 @@ u8 roland_s770_state::panel_r(offs_t offset)
 
 void roland_s770_state::panel_w(offs_t offset, u8 data)
 {
-	if(offset == 0 && m_simms[0] && ((data >> 4) & 3) != m_wave_bank) {
+	if (offset == 0 && m_simms[0] && ((data >> 4) & 3) != m_wave_bank)
+	{
 		m_wave_bank = (data >> 4) & 3;
 		wave_map();
 	}
-	if(offset == 3 && m_ext_port) {
-		if(!BIT(data, 0))
+	if (offset == 3 && m_ext_port)
+	{
+		if (!BIT(data, 0))
 			m_ext_port->pin_6_w(1);
-		if(!BIT(data, 1))
+		if (!BIT(data, 1))
 			m_ext_port->pin_7_w(1);
 	}
-	else if(offset == 4) {
-		if(m_ext_port) {
-			if(BIT(m_panel[3], 0))
+	else if (offset == 4)
+	{
+		if (m_ext_port)
+		{
+			if (BIT(m_panel[3], 0))
 				m_ext_port->pin_6_w(BIT(data, 4));
-			if(BIT(m_panel[3], 1))
+			if (BIT(m_panel[3], 1))
 				m_ext_port->pin_7_w(BIT(data, 5));
 			m_ext_port->pin_8_w(BIT(data, 6));
 		}
 	}
-	else if(offset == 5)
+	else if (offset == 5)
 		m_key_row = data;
-	else if(offset != 3 && offset != 6 && offset != 7 && offset != 8)
+	else if (offset != 3 && offset != 6 && offset != 7 && offset != 8)
 		LOGMASKED(LOG_IO, "panel_w %04x = %02x (%04x)\n", 0xf000 + offset*2, data, m_maincpu->pc());
 	m_panel[offset] = data;
 }
@@ -1015,7 +1059,7 @@ void roland_s770_state::common_core(machine_config &config)
 	m_sp->int_callback().set([this](int state) { irq_w(IRQ_SAMPLER, state); });
 	ROLAND_TVF(config, m_tvf, 44100);
 	// sampler voices 4-15 and 20-31 play, into TVF voices 0-23; 0-3 and 16-19 are never keyed
-	for(int n = 0; n != roland_sp_device::VOICES; n++)
+	for (int n = 0; n != roland_sp_device::VOICES; n++)
 		m_sp->add_route(n, m_tvf, 1.0, n < 16 ? (n + 28) & 31 : n - 8);
 }
 
@@ -1025,7 +1069,7 @@ void roland_s770_state::common(machine_config &config)
 	m_eeprom->default_data(s760_eeprom, sizeof(s760_eeprom));
 	ROLAND_MEQ(config, m_meq, 44100);
 	// TVF WO0-17 drive MEQ WB5-22
-	for(int n = 0; n != roland_meq_device::VOICES; n++)
+	for (int n = 0; n != roland_meq_device::VOICES; n++)
 		m_tvf->add_route(n, m_meq, 0.25, n);
 }
 
@@ -1152,7 +1196,7 @@ void roland_s770_state::s770(machine_config &config)
 
 	ROLAND_MIX(config, m_mix, 44100);
 	// TVF WO0-19 drive MIX DI0-19
-	for(int n = 0; n != roland_mix_device::VOICES; n++)
+	for (int n = 0; n != roland_mix_device::VOICES; n++)
 		m_tvf->add_route(n, m_mix, 0.125, n);
 	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 2.0, 0);
 	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 2.0, 1);
@@ -1172,7 +1216,7 @@ void roland_s770_state::s770(machine_config &config)
 	SPEAKER(config, "indiv12", 2).front();
 	SPEAKER(config, "indiv34", 2).front();
 	SPEAKER(config, "indiv56", 2).front();
-	for(int n = 0; n != 6; n++)
+	for (int n = 0; n != 6; n++)
 		m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, n < 2 ? "indiv12" : n < 4 ? "indiv34" : "indiv56", 2.0 * 22 / 39, n & 1);
 
 	UPD72069(config, m_fdc, 8_MHz_XTAL);
