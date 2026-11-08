@@ -1541,7 +1541,6 @@ void roland_s770_state::dj70(machine_config &config)
 	m_wave_bytes = 4 << 20;
 	m_wave_base_block = 0x60;
 	m_fdc_int_f002 = true;
-	m_old_ga = false;
 	config.device_remove("vdp");
 	config.device_remove("crt");
 	config.device_remove("extport");
@@ -1607,5 +1606,5 @@ SYST(1991, s750, s770, 0, s770, s750, roland_s770_state, empty_init, "Roland", "
 SYST(1993, s750turbo, s770, 0, s750turbo, s750, roland_s770_state, empty_init, "Roland", "S-750 Digital Sampler (Turbo Kit)", MACHINE_SUPPORTS_SAVE)
 SYST(1993, s760, 0, 0, s760, s760, roland_s770_state, empty_init, "Roland", "S-760 Digital Sampler", MACHINE_SUPPORTS_SAVE)
 SYST(1993, sp700, 0, 0, sp700, sp700, roland_s770_state, empty_init, "Roland", "SP-700 16-bit Sample Player", MACHINE_SUPPORTS_SAVE)
-SYST(1992, dj70, 0, 0, dj70, dj70, roland_s770_state, empty_init, "Roland", "DJ-70 Sampling Workstation", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-SYST(1996, dj70mk2, dj70, 0, dj70mk2, dj70mk2, roland_s770_state, empty_init, "Roland", "DJ-70mkII Sampling Workstation", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+SYST(1992, dj70, 0, 0, dj70, dj70, roland_s770_state, empty_init, "Roland", "DJ-70 Sampling Workstation", 0)
+SYST(1996, dj70mk2, dj70, 0, dj70mk2, dj70mk2, roland_s770_state, empty_init, "Roland", "DJ-70mkII Sampling Workstation", 0)
