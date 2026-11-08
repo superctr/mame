@@ -17,8 +17,8 @@
     The interpolation is the GP's, XP's and XV's kernel (four taps, as
     the current sample and three differences after it), assumed for this
     family too.  Voices 4 and 20 record the left and right input words
-    into the wave memory instead of playing while C004 bit 0 is set;
-    C01C reads the input words in turn, C000 bits 7 and 6 marking
+    into the wave memory instead of playing while C004 bit 0 is set and
+    their C604 level is zero; C01C reads the input words in turn, C000 bits 7 and 6 marking
     left and right.  Not emulated: the level words (C602, C604).
 
 ***************************************************************************/
@@ -463,7 +463,7 @@ void roland_sp_device::advance(int n, voice &v)
 
 bool roland_sp_device::recording(int n) const
 {
-	return (m_regs[REG_RECORD] & RECORD_WRITE) && (n == RECORD_VOICES[0] || n == RECORD_VOICES[1]);
+	return (m_regs[REG_RECORD] & RECORD_WRITE) && (n == RECORD_VOICES[0] || n == RECORD_VOICES[1]) && !(m_voices[n].level >> 16);
 }
 
 void roland_sp_device::record_w(offs_t offset, u32 data)
