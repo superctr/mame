@@ -1153,8 +1153,8 @@ void roland_s770_state::s770(machine_config &config)
 	// TVF WO0-19 drive MIX DI0-19
 	for(int n = 0; n != roland_mix_device::VOICES; n++)
 		m_tvf->add_route(n, m_mix, 0.125, n);
-	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 1.0, 0);
-	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 1.0, 1);
+	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 2.0, 0);
+	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 2.0, 1);
 	m_sp->set_record_inputs();
 	auto &adc(MICROPHONE(config, "adc", 2).front());
 	// the A/D's left word reaches the recorder of voice 20, the right voice 4's
@@ -1168,7 +1168,7 @@ void roland_s770_state::s770(machine_config &config)
 	SPEAKER(config, "indiv34", 2).front();
 	SPEAKER(config, "indiv56", 2).front();
 	for(int n = 0; n != 6; n++)
-		m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, n < 2 ? "indiv12" : n < 4 ? "indiv34" : "indiv56", 1.0, n & 1);
+		m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, n < 2 ? "indiv12" : n < 4 ? "indiv34" : "indiv56", 2.0 * 22 / 39, n & 1);
 
 	UPD72069(config, m_fdc, 8_MHz_XTAL);
 	m_fdc->set_ready_line_connected(false);
