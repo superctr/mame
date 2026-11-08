@@ -258,15 +258,17 @@ void roland_s770_state::wave_map()
 		unsigned at = 0;
 		switch(m_wave_bank) {
 		case 1:
-			map(at, internal, 0x10);
+			map(at, socket1, size1);
+			map(at, socket2, size2);
 			break;
 		case 2:
 			map(at, socket1, size1);
 			map(at, internal, 0x10);
 			break;
 		case 0:
+			// which of banks 0 and 2 puts the on-board memory first is unknown
+			map(at, internal, 0x10);
 			map(at, socket1, size1);
-			map(at, socket2, size2);
 			break;
 		}
 	} else {
