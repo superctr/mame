@@ -1544,6 +1544,20 @@ void roland_s770_state::dj70(machine_config &config)
 	config.device_remove("vdp");
 	config.device_remove("crt");
 	config.device_remove("extport");
+	config.device_remove("digital_in");
+	config.device_remove("dout");
+	config.device_remove("indiv12");
+	config.device_remove("indiv34");
+	config.device_remove("indiv56");
+
+	// individual 1 and 2 are the headphones' cue: averaged, the stereo stage, then x4.9 into both sides
+	m_mix->reset_routes();
+	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 2.0, 0);
+	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 2.0, 1);
+	SPEAKER(config, "phones", 2).front();
+	for (int n = 0; n != 2; n++)
+		for (int side = 0; side != 2; side++)
+			m_mix->add_route(roland_mix_device::OUTPUT_INDIVIDUAL + n, "phones", 2.0 * 0.5 * 4.9, side);
 
 	SSC1000(config, m_keyscan, 8_MHz_XTAL);
 	m_keyscan->int_callback().set([this](int state) { irq_w(IRQ_KEYSCAN, state); });
