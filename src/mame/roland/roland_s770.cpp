@@ -66,6 +66,7 @@ public:
 		, m_floppy(*this, "fdc:0")
 		, m_spc(*this, "spc")
 		, m_ext_port(*this, "extport")
+		, m_adc(*this, "adc")
 		, m_lcdc(*this, "lcdc")
 		, m_vdp(*this, "vdp")
 		, m_t6963c(*this, "t6963c")
@@ -96,6 +97,8 @@ protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
 	void wave_map();
+	void monitor_update();
+	void postload();
 
 private:
 	enum : u8
@@ -165,6 +168,7 @@ private:
 	required_device<roland_tvf_device> m_tvf;
 	optional_device<roland_meq_device> m_meq;
 	optional_device<roland_mix_device> m_mix;
+	optional_device<microphone_device> m_adc;
 	optional_ioport_array<4> m_keys;
 	optional_ioport m_option;
 	optional_ioport m_dial;
@@ -190,6 +194,7 @@ private:
 	bool m_fdc_drq;
 	bool m_spc_dreq;
 	u8 m_panel[0x10];
+	bool m_monitor;
 	u8 m_key_row;
 	u8 m_p1;
 	emu_timer *m_fdc_tc;
@@ -221,6 +226,7 @@ void roland_s770_state::machine_start()
 	save_item(NAME(m_fdc_drq));
 	save_item(NAME(m_spc_dreq));
 	save_item(NAME(m_panel));
+	save_item(NAME(m_monitor));
 	save_item(NAME(m_key_row));
 	save_item(NAME(m_p1));
 	save_item(NAME(m_wave_dma_word));
@@ -234,7 +240,7 @@ void roland_s770_state::machine_start()
 	m_wave = reinterpret_cast<u16 *>(machine().memory().share_alloc(*this, "wave", 16, m_wave_bytes, ENDIANNESS_LITTLE)->ptr());
 	m_wave_bank = 0;
 	save_item(NAME(m_wave_bank));
-	machine().save().register_postload(save_prepost_delegate(FUNC(roland_s770_state::wave_map), this));
+	machine().save().register_postload(save_prepost_delegate(FUNC(roland_s770_state::postload), this));
 
 	set_data_frame(1, 8, PARITY_NONE, STOP_BITS_1);
 	set_rcv_rate(31250);
@@ -312,6 +318,8 @@ void roland_s770_state::machine_reset()
 
 	m_wave_bank = 0;
 	wave_map();
+	m_monitor = false;
+	monitor_update();
 
 	// stands in for the CPU's PWM output, which the core does not drive
 	if (m_flash)
@@ -759,6 +767,26 @@ void roland_s770_state::panel_w(offs_t offset, u8 data)
 	else if (offset != 3 && offset != 6 && offset != 7 && offset != 8)
 		LOGMASKED(LOG_IO, "panel_w %04x = %02x (%04x)\n", 0xf000 + offset*2, data, m_maincpu->pc());
 	m_panel[offset] = data;
+	if (offset == 0)
+	{
+		m_monitor = !BIT(data, 2);
+		monitor_update();
+	}
+}
+
+void roland_s770_state::monitor_update()
+{
+	if (!m_mix)
+		return;
+	float const gain = m_monitor ? 1.0 : 0.0;
+	for (int c = 0; c != 2; c++)
+		m_adc->set_route_gain(c, subdevice<speaker_device>("speaker"), c, gain);
+}
+
+void roland_s770_state::postload()
+{
+	wave_map();
+	monitor_update();
 }
 
 void roland_s770_state::code_map(address_map &map)
@@ -1205,6 +1233,8 @@ void roland_s770_state::s770(machine_config &config)
 	// the A/D's left word reaches the recorder of voice 20, the right voice 4's
 	adc.add_route(0, m_sp, 1.0, 1);
 	adc.add_route(1, m_sp, 1.0, 0);
+	adc.add_route(0, "speaker", 0.0, 0);
+	adc.add_route(1, "speaker", 0.0, 1);
 	auto &digital_in(MICROPHONE(config, "digital_in", 2).front());
 	digital_in.add_route(0, m_mix, 1.0, roland_mix_device::INPUT_SERIAL);
 	digital_in.add_route(1, m_mix, 1.0, roland_mix_device::INPUT_SERIAL + 1);
