@@ -117,10 +117,15 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	case STATE_B:
 	case STATE_C:
 	case STATE_D:
-	case STATE_E:
 	case STATE_F:
 		v.low = 0;
 		v.band = 0;
+		break;
+
+	case STATE_E:
+		v.low = 0;
+		v.band = 0;
+		v.amplitude.set(data, 0);
 		break;
 
 	case CUTOFF_INITIAL:
