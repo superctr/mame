@@ -7,7 +7,7 @@
 
     TODO:
     - the arithmetic widths and rounding are provisional
-    - the other command values, the four zero pairs, and the readback's layout
+    - the command's bits 15-5, the four zero pairs, and the readback's layout
 
 ***************************************************************************/
 
@@ -129,14 +129,14 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 		if (BIT(data, 15))
 			v.cutoff.set(data & 0x7fff, 0);
 		else
-			v.cutoff.set(data, RAMP_SAMPLES);
+			v.cutoff.set(data, ramp_samples(m_regs[COMMAND]));
 		break;
 
 	case AMPLITUDE:
-		if (BIT(data, 15) || m_regs[COMMAND] == 0x0008)
+		if (BIT(data, 15))
 			v.amplitude.set(data & 0x7fff, 0);
 		else
-			v.amplitude.set(data, m_regs[COMMAND] == 0x0007 ? 32 : RAMP_SAMPLES);
+			v.amplitude.set(data, ramp_samples(m_regs[COMMAND]));
 		break;
 	}
 }
@@ -154,6 +154,11 @@ void roland_tvf_device::ramp::set(u16 data, int samples)
 	remaining = value == target ? 0 : samples;
 	if (!remaining)
 		value = target;
+}
+
+int roland_tvf_device::ramp_samples(u16 command)
+{
+	return (4 | (command & 3)) << (((command >> 2) & 7) + 1);
 }
 
 void roland_tvf_device::ramp::advance()

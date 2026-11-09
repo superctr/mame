@@ -11,7 +11,6 @@ public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
 	static constexpr int VOICES = 32;
-	static constexpr int RAMP_SAMPLES = 315;
 	static constexpr int SAMPLE_FRACTION_BITS = 28;
 	static constexpr s32 SAMPLE_ONE = 1 << SAMPLE_FRACTION_BITS;
 	static constexpr s32 FULL_SCALE = (s64(13355) * SAMPLE_ONE + 5000) / 10000;
@@ -71,6 +70,7 @@ private:
 
 	void voice_w(int n, int word, u16 data);
 	void service(voice &v);
+	static int ramp_samples(u16 command);
 	static s64 rounded_shift(s64 value, int bits);
 	static s32 saturate(s64 value) { return s32(std::clamp(value, -s64(FULL_SCALE), s64(FULL_SCALE))); }
 	s32 filter(voice &v, s64 sample) const;
