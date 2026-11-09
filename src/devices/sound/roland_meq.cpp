@@ -6,11 +6,11 @@
     the JD-800, S-760 and SP-700.
 
     A fixed program of up to 400 steps runs once a sample: each step
-    reads one data word and writes another, multiplies an operand by its
-    coefficient and adds one of the last two results or the word read.
-    24 voice words come in one a strobe, taken into an operand register
-    by the steps that ask for them; results leave through latches on three
-    serial ports, exposed here as eight words a port in step order.
+    reads one data word and writes another, multiplies the input the step
+    before chose by its coefficient and adds a word read, a result or
+    nothing.  24 voice words come in one a strobe; results leave through
+    latches on three serial ports, exposed here as eight words a port in
+    step order.
 
     Two serial input ports arrive as stream inputs after the voices, left
     then right: a port's first read in a sample takes the left word, its
@@ -32,13 +32,16 @@ namespace {
 
 enum : u16
 {
-	LO_SERIAL_LATCH = 0x0600, LO_SMOOTH = 0x0800, LO_DATA_COEF = 0x1000, LO_ABS = 0x2000,
-	LO_R2 = 0x0100, LO_SATURATE = 0x0080, LO_SERIAL_IN = 0x0010,
-	LO_TRANSFER = 0x0008, LO_TRANSFER_R1 = 0x0004, LO_STROBE = 0x0002, LO_OPERAND2 = 0x0001,
-	LO_OPERAND_LOAD = LO_SERIAL_IN | LO_TRANSFER | LO_TRANSFER_R1
+	LO_SERIAL_LATCH = 0x0600, LO_RAMP = 0x0800, LO_R2 = 0x0100, LO_SATURATE = 0x0080,
+	LO_STROBE = 0x0002, LO_READ_Q = 0x0001
 };
 
-enum : int { ADD_READ = 0, ADD_R2 = 1, ADD_R1 = 2, ADD_NONE = 3 };
+enum : int { ADD_Q = 0, ADD_R2 = 1, ADD_RESULT = 2, ADD_NONE = 3 };
+enum : int { SRC_VOICE = 0, SRC_READ = 1, SRC_R2 = 2, SRC_RESULT = 3, SRC_HALF = 4, SRC_SERIAL = 5 };
+enum : int { MODE_DYNAMIC = 1, MODE_SIGN = 2 };
+
+constexpr int input_of(u16 lo) { return (lo >> 2) & 7; }
+constexpr int mode_of(u16 lo) { return (lo >> 12) & 3; }
 
 constexpr s32 wrap24(s64 v) { return s32(util::sext(u32(v), 24)); }
 constexpr s32 clamp24(s64 v) { return s32(std::clamp<s64>(v, -0x800000, 0x7fffff)); }
@@ -76,15 +79,14 @@ void roland_meq_device::device_start()
 	save_item(NAME(m_latch));
 	save_item(NAME(m_config));
 	save_item(NAME(m_byte_hi));
-	save_item(NAME(m_operand_l));
-	save_item(NAME(m_operand_p));
-	save_item(NAME(m_operand_v));
+	save_item(NAME(m_read_l));
+	save_item(NAME(m_read_q));
+	save_item(NAME(m_voice));
 	save_item(NAME(m_voice_word));
-	save_item(NAME(m_r1));
+	save_item(NAME(m_result));
+	save_item(NAME(m_stored));
 	save_item(NAME(m_r2));
-	save_item(NAME(m_pipe));
-	save_item(NAME(m_read_p));
-	save_item(NAME(m_pending_coef));
+	save_item(NAME(m_r2_before));
 	save_item(NAME(m_port));
 }
 
@@ -101,25 +103,16 @@ void roland_meq_device::device_reset()
 	m_latch = 0;
 	m_config[0] = m_config[1] = 0;
 	std::fill(std::begin(m_byte_hi), std::end(m_byte_hi), 0);
-	m_operand_l = m_operand_p = m_operand_v = m_voice_word = m_r1 = m_r2 = 0;
-	m_pipe[0] = m_pipe[1] = 0;
-	m_read_p = 0;
-	m_pending_coef = -1;
+	m_read_l = m_read_q = m_voice = m_voice_word = 0;
+	m_result = 0;
+	m_stored = m_r2 = m_r2_before = 0;
 	for (auto &port : m_port)
 		std::fill(std::begin(port), std::end(port), 0);
 }
 
 u16 roland_meq_device::read(offs_t offset)
 {
-	switch (offset & 7)
-	{
-	case 0:
-		return m_latch;
-	case 1:
-		return m_latch >> 16;
-	default:
-		return 0;
-	}
+	return BIT(offset, 0) ? m_latch >> 16 : m_latch;
 }
 
 void roland_meq_device::write(offs_t offset, u16 data)
@@ -133,12 +126,15 @@ void roland_meq_device::write(offs_t offset, u16 data)
 		m_latch = (m_latch & 0x0000ffff) | (data << 16);
 		break;
 	case 2:
+		data &= 0x7ff;
 		if (data < 0x200)
-			m_latch = data < STEPS ? m_program[data] : 0;
+			m_latch = data < STEPS ? m_program[data] : 0xffffffff;
 		else if (data < 0x400)
-			m_latch = data - 0x200 < STEPS ? m_coef[data - 0x200] : 0;
-		else
+			m_latch = data - 0x200 < STEPS ? m_coef[data - 0x200] : 0xffffffff;
+		else if (data < 0x600)
 			m_latch = m_data[data & (DATA_WORDS - 1)] & 0xffffff;
+		else
+			m_latch = (data << 16) | data;
 		break;
 	case 3:
 		m_stream->update();
@@ -150,9 +146,9 @@ void roland_meq_device::write(offs_t offset, u16 data)
 		else if (data < 0x400)
 		{
 			if (data - 0x200 < STEPS)
-				m_coef[data - 0x200] = m_latch & 0x3fff;
+				m_coef[data - 0x200] = m_latch;
 		}
-		else
+		else if (data < 0x600)
 			m_data[data & (DATA_WORDS - 1)] = util::sext(m_latch, 24);
 		break;
 	case 4:
@@ -186,11 +182,16 @@ void roland_meq_device::write8(offs_t offset, u8 data)
 		write(byte_register(offset), (m_byte_hi[(offset >> 1) & 7] << 8) | data);
 }
 
-s32 roland_meq_device::multiply(s32 x, u16 coef) const
+s64 roland_meq_device::multiply(s32 x, s32 mantissa, u16 coef)
 {
 	static constexpr int SHIFTS[4] = { 0, 1, 2, 4 };
-	s64 const m = util::sext(coef, 12);
-	return s32(((s64(x) * m) << SHIFTS[(coef >> 12) & 3]) >> 11);
+	s64 const n = (s64(x) * mantissa) << SHIFTS[(coef >> 12) & 3];
+	int const s = BIT(coef, 14) ? 22 : 11;
+	if (BIT(coef, 15))
+		return (n >> s) + (n < 0 ? 1 : 0);
+	if (n < 0)
+		return (n * 8 + (s64(3) << s)) >> (s + 3);
+	return (n + (s64(1) << (s - 1))) >> s;
 }
 
 void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
@@ -207,114 +208,97 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 	{
 		u16 const hi = m_program[m] >> 16;
 		u16 const lo = m_program[m];
+		u16 const prev = m_program[m ? m - 1 : length - 1];
+		u16 const prev2 = m_program[m > 1 ? m - 2 : m + length - 2];
 		bool const writes = !BIT(hi, 15);
 		bool const reads = !BIT(hi, 7);
 		int const addend = (lo >> 5) & 3;
+		u16 const coef = m_coef[m];
 
+		if (input_of(prev) == SRC_VOICE && (input_of(prev2) != SRC_VOICE || (prev & LO_STROBE)))
+			m_voice = m_voice_word;
 		if (lo & LO_STROBE)
 			m_voice_word = voices[(strobes++ + m_first_voice) % VOICES];
 
-		s32 const written = m_pipe[0];
-		if (writes)
-			m_data[(hi >> 8) & 0x7f] = written;
-		s32 const rd = reads ? m_data[hi & 0x7f] : 0;
+		s64 f = (lo & LO_SATURATE) ? clamp24(m_result) : m_result;
+		if (prev & LO_RAMP)
+		{
+			u32 const target = u32(m_read_q) & 0xffffff;
+			u32 const t = (u32(f) << 4) & 0xffffff;
+			bool const coarse = ((prev >> 5) & 3) == ADD_NONE;
+			bool const falling = coarse || BIT(target, 11);
+			if (t < 0x800000 && (falling ? t > (target & 0x7ff000) : t < (target & 0x7ff000)))
+				f = coarse ? (t & 0xfff000) : t;
+			else
+				f = target & 0xfff000;
+		}
+		s32 const formatted = wrap24(f);
 
 		s32 x;
-		if (lo & LO_OPERAND2)
-			x = addend == ADD_READ ? m_operand_v : m_operand_p;
-		else
-			x = m_operand_l;
-
-		s32 a;
-		switch (addend)
+		switch (input_of(prev))
 		{
-		case ADD_NONE: a = 0; break;
-		case ADD_R1: a = m_r1; break;
-		case ADD_R2: a = m_r2; break;
+		case SRC_VOICE: x = m_voice; break;
+		case SRC_READ: x = m_read_l; break;
+		case SRC_R2: x = m_r2_before; break;
+		case SRC_RESULT: x = m_stored; break;
+		case SRC_HALF: x = 0x400000; break;
 		default:
-			a = (lo & LO_OPERAND2) ? rd : m_read_p;
+			{
+				int const port = input_of(prev) - SRC_SERIAL;
+				x = port < SERIAL_INPUTS ? serial[port][serial_reads[port]++ & 1] : 0;
+			}
 			break;
 		}
 
-		if (lo & LO_SMOOTH)
-		{
-			a = x;
-			x = rd - x;
-		}
+		s32 mantissa;
+		if (mode_of(prev) & MODE_DYNAMIC)
+			mantissa = util::sext(u32(m_stored) >> 12, 12);
+		else if (mode_of(prev) == MODE_SIGN)
+			mantissa = (coef & 0x7ff) - (x < 0 ? 0x800 : 0);
+		else
+			mantissa = util::sext(coef, 12);
+		s64 const product = multiply(x, mantissa, coef);
 
-		u16 coef = m_coef[m];
-		if (m_pending_coef >= 0)
-		{
-			coef = (coef & 0x3000) | m_pending_coef;
-			m_pending_coef = -1;
-		}
-		if (lo & LO_DATA_COEF)
-			m_pending_coef = (m_r1 >> 12) & 0xfff;
+		if (reads && (lo & LO_READ_Q))
+			m_read_q = m_data[hi & 0x7f];
 
-		s64 const sum = s64(a) + multiply(x, coef);
-		s32 const result = ((lo & LO_SATURATE) && !(lo & LO_R2)) ? clamp24(sum) : wrap24(sum);
+		s64 a;
+		switch (addend)
+		{
+		case ADD_NONE: a = 0; break;
+		case ADD_RESULT: a = formatted; break;
+		case ADD_R2: a = m_r2; break;
+		default: a = (lo & LO_RAMP) ? util::sext(m_read_q, 12) : m_read_q; break;
+		}
+		s64 const result = a + product;
+
+		m_r2_before = m_r2;
+		if (lo & LO_R2)
+			m_r2 = formatted;
+
+		if (writes)
+			m_data[(hi >> 8) & 0x7f] = m_stored;
 
 		if (lo & LO_SERIAL_LATCH)
 		{
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
 			if (port == 2)
-				m_port3_cb(latched[port], u32(written) & 0xffffff);
+				m_port3_cb(latched[port], u32(m_stored) & 0xffffff);
 			if (m_latch_steps[port])
 			{
 				if (m_latch_of_step[port][m] >= 0)
-					m_port[port][m_latch_of_step[port][m]] = written;
+					m_port[port][m_latch_of_step[port][m]] = m_stored;
 				latched[port]++;
 			}
 			else if (latched[port] < LATCHES)
-				m_port[port][latched[port]++] = written;
+				m_port[port][latched[port]++] = m_stored;
 		}
 
-		m_pipe[0] = m_pipe[1];
-		m_pipe[1] = result;
-		if (reads && (lo & LO_OPERAND2))
-			m_read_p = rd;
+		if (reads && !(lo & LO_READ_Q))
+			m_read_l = m_data[hi & 0x7f];
 
-		bool loaded = false;
-		if (lo & LO_SERIAL_IN)
-		{
-			int const port = ((lo >> 2) & 3) - 1;
-			if (port >= 0 && port < SERIAL_INPUTS)
-				m_operand_l = m_operand_p = serial[port][serial_reads[port]++ & 1];
-			else
-				m_operand_l = m_operand_p = 0;
-			loaded = true;
-		}
-		else if (reads && (addend != ADD_READ || !(lo & LO_OPERAND2)))
-		{
-			m_operand_l = m_operand_p = (lo & LO_ABS) ? std::abs(rd) : rd;
-			loaded = true;
-		}
-		if ((lo & LO_TRANSFER) && !(lo & LO_SERIAL_IN))
-		{
-			if (lo & LO_TRANSFER_R1)
-			{
-				m_operand_p = m_r1;
-				if (!loaded)
-					m_operand_l = m_r1;
-			}
-			else
-			{
-				m_operand_p = m_r2;
-				if (lo & LO_DATA_COEF)
-					m_operand_l = m_r2;
-			}
-		}
-		if (lo & LO_OPERAND_LOAD)
-			m_operand_v = m_operand_p;
-		else
-		{
-			m_operand_v = m_voice_word;
-			if (!reads || ((lo & LO_OPERAND2) && addend != ADD_READ))
-				m_operand_l = m_voice_word;
-		}
-		if (lo & LO_R2)
-			m_r2 = m_r1;
-		m_r1 = result;
+		m_stored = formatted;
+		m_result = result;
 	}
 }
 

@@ -57,7 +57,7 @@ private:
 	enum : u32 { DATA_WORDS = 128 };
 
 	static offs_t byte_register(offs_t offset);
-	s32 multiply(s32 x, u16 coef) const;
+	static s64 multiply(s32 x, s32 mantissa, u16 coef);
 	void run(const s32 *voices, const s32 (*serial)[2]);
 
 	devcb_write32 m_port3_cb;
@@ -75,15 +75,14 @@ private:
 	u16 m_config[2];
 	u8 m_byte_hi[8];
 
-	s32 m_operand_l;
-	s32 m_operand_p;
-	s32 m_operand_v;
+	s32 m_read_l;
+	s32 m_read_q;
+	s32 m_voice;
 	s32 m_voice_word;
-	s32 m_r1;
+	s64 m_result;
+	s32 m_stored;
 	s32 m_r2;
-	s32 m_pipe[2];
-	s32 m_read_p;
-	s32 m_pending_coef;
+	s32 m_r2_before;
 	s32 m_port[PORTS][LATCHES];
 };
 
