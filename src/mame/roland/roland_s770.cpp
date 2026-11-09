@@ -653,12 +653,31 @@ void roland_s770_state::dma_service()
 		bool const to_device = !BIT(m_dma_ctrl, 0);
 		u8 const group = m_dma_ctrl >> 6;
 		bool const wave = m_old_ga ? (m_dma_ctrl & 0xe4) == 0x64 : group == 2 && BIT(m_dma_ctrl, 5);
-		bool const fdc = group == 3 || (group == 2 && !BIT(m_dma_ctrl, 5) && m_old_ga);
+		bool const fdc = group == 3 || (group == 2 && m_old_ga);
 		bool const scsi_wave = m_old_ga ? (m_dma_ctrl & 0xe3) == 0x40 : group == 2 && !BIT(m_dma_ctrl, 5);
+		bool const fdc_wave = fdc && BIT(m_dma_ctrl, 5);
 		if (!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
 			break;
 
-		if (scsi_wave)
+		if (fdc_wave)
+		{
+			bool const high = BIT(m_dma_count, 0);
+			if (to_device)
+			{
+				if (!high)
+					m_wave_dma_word = m_sp->wave_data_r();
+				m_fdc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
+			}
+			else
+			{
+				u8 const data = m_fdc->dma_r();
+				if (!high)
+					m_wave_dma_word = data;
+				else
+					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
+			}
+		}
+		else if (scsi_wave)
 		{
 			bool const high = BIT(m_dma_count, 0);
 			if (to_device)
