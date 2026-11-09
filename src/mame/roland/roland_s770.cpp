@@ -650,83 +650,37 @@ void roland_s770_state::dma_service()
 	m_dma_in_service = true;
 	while (m_dma_active)
 	{
-		bool const to_device = !BIT(m_dma_ctrl, 0);
-		u8 const group = m_dma_ctrl >> 6;
-		bool const wave = m_old_ga ? (m_dma_ctrl & 0xe4) == 0x64 : group == 2 && BIT(m_dma_ctrl, 5);
-		bool const fdc = group == 3 || (group == 2 && m_old_ga);
-		bool const scsi_wave = m_old_ga ? (m_dma_ctrl & 0xe3) == 0x40 : group == 2 && !BIT(m_dma_ctrl, 5);
-		bool const fdc_wave = fdc && BIT(m_dma_ctrl, 5);
-		if (!wave && (fdc ? !m_fdc_drq : !m_spc_dreq))
+		int const from = BIT(m_dma_ctrl, 4, 2), to = BIT(m_dma_ctrl, 1, 2);
+		bool const fdc = from == 1 || to == 1;
+		bool const scsi = from == 0 || to == 0;
+		if ((fdc && !m_fdc_drq) || (!fdc && scsi && !m_spc_dreq))
 			break;
 
-		if (fdc_wave)
+		bool const high = BIT(m_dma_count, 0);
+		u8 data;
+		if (from == 3)
+			data = dma_byte_r();
+		else if (from == 2)
 		{
-			bool const high = BIT(m_dma_count, 0);
-			if (to_device)
-			{
-				if (!high)
-					m_wave_dma_word = m_sp->wave_data_r();
-				m_fdc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
-			}
-			else
-			{
-				u8 const data = m_fdc->dma_r();
-				if (!high)
-					m_wave_dma_word = data;
-				else
-					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
-			}
-		}
-		else if (scsi_wave)
-		{
-			bool const high = BIT(m_dma_count, 0);
-			if (to_device)
-			{
-				u8 const data = m_spc->dma_r();
-				if (!high)
-					m_wave_dma_word = data;
-				else
-					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
-			}
-			else
-			{
-				if (!high)
-					m_wave_dma_word = m_sp->wave_data_r();
-				m_spc->dma_w(m_wave_dma_word >> (high ? 8 : 0));
-			}
-		}
-		else if (wave)
-		{
-			bool const high = BIT(m_dma_count, 0);
-			if (to_device)
-			{
-				u8 const data = dma_byte_r();
-				if (!high)
-					m_wave_dma_word = data;
-				else
-					m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
-			}
-			else
-			{
-				if (!high)
-					m_wave_dma_word = m_sp->wave_data_r();
-				dma_byte_w(m_wave_dma_word >> (high ? 8 : 0));
-			}
-		}
-		else if (fdc)
-		{
-			if (to_device)
-				m_fdc->dma_w(dma_byte_r());
-			else
-				dma_byte_w(m_fdc->dma_r());
+			if (!high)
+				m_wave_dma_word = m_sp->wave_data_r();
+			data = m_wave_dma_word >> (high ? 8 : 0);
 		}
 		else
+			data = fdc ? m_fdc->dma_r() : m_spc->dma_r();
+		if (to == 3)
+			dma_byte_w(data);
+		else if (to == 2)
 		{
-			if (to_device)
-				m_spc->dma_w(dma_byte_r());
+			if (!high)
+				m_wave_dma_word = data;
 			else
-				dma_byte_w(m_spc->dma_r());
+				m_sp->wave_data_w(m_wave_dma_word | data << 8, 0xffff);
 		}
+		else if (fdc)
+			m_fdc->dma_w(data);
+		else
+			m_spc->dma_w(data);
 		m_dma_addr++;
 		m_ga[0xd] = m_dma_addr;
 		m_ga[0xe] = (m_ga[0xe] & 0xff00) | ((m_dma_addr >> 16) & 0x0f);
