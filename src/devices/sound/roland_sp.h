@@ -35,6 +35,10 @@ public:
 	// record_w is then serial input 2, taken while C004 bit 1 selects it
 	void set_record_inputs() { m_record_inputs = true; }
 
+	// the recording input's filter, five symmetric taps from C01C/C01E in 64ths (on by default); off records the
+	// input word as it comes
+	void set_input_filter(bool on) { m_input_filter = on; }
+
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -89,6 +93,7 @@ private:
 	s32 step(int n, voice &v);
 	void advance(int n, voice &v);
 	bool recording(int n) const;
+	s32 filtered(int c);
 	void record();
 	TIMER_CALLBACK_MEMBER(update_int);
 
@@ -115,6 +120,8 @@ private:
 
 	bool m_record_inputs;
 	s32 m_record_in[2];
+	s32 m_record_history[2][5];
+	bool m_input_filter;
 	u8 m_level_channel;
 };
 

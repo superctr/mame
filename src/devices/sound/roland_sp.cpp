@@ -45,7 +45,7 @@ enum : offs_t
 	REG_PLAYBACK = 0x0a,
 	REG_ACK = 0x0b,
 	REG_LEVEL = 0x0d,
-	REG_INPUT = 0x0e
+	REG_INPUT = 0x0e, REG_INPUT_TAP = 0x0f
 };
 
 enum : u16 { RECORD_WRITE = 0x0001, RECORD_AUX = 0x0002 };
@@ -108,7 +108,7 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_state_port(0),
 	m_event_head(0), m_event_count(0), m_int_state(false),
 	m_wave_addr(0), m_wave_latch(0),
-	m_record_inputs(false), m_record_in{ 0, 0 }, m_level_channel(0)
+	m_record_inputs(false), m_record_in{ 0, 0 }, m_record_history{ { 0 }, { 0 } }, m_input_filter(true), m_level_channel(0)
 {
 	std::fill(std::begin(m_regs), std::end(m_regs), 0);
 	std::fill(std::begin(m_blocks), std::end(m_blocks), nullptr);
@@ -511,16 +511,29 @@ void roland_sp_device::record_w(offs_t offset, u32 data)
 		record();
 }
 
+s32 roland_sp_device::filtered(int c)
+{
+	s32 *const h = m_record_history[c];
+	std::copy(h + 1, h + 5, h);
+	h[4] = m_record_in[c];
+	if (!m_input_filter)
+		return h[4];
+	s64 const a = s8(m_regs[REG_INPUT] >> 8), b = s8(m_regs[REG_INPUT]), m = s8(m_regs[REG_INPUT_TAP]);
+	s64 const y = (b * (s64(h[0]) + h[4]) + a * (s64(h[1]) + h[3]) + m * h[2]) >> 6;
+	return s32(std::clamp<s64>(y, -0x800000, 0x7fffff));
+}
+
 void roland_sp_device::record()
 {
 	for (int c = 0; c != 2; c++)
 	{
+		s32 const word = filtered(c);
 		int const n = RECORD_VOICES[c];
 		voice &v = m_voices[n];
 		if (!v.on || !recording(n))
 			continue;
 		if (u16 *const w = wave_ptr(v.pos >> POS_FRACTION))
-			*w = u16(m_record_in[c] >> 8);
+			*w = u16(word >> 8);
 		advance(n, v);
 	}
 }
