@@ -332,29 +332,35 @@ void roland_s770_state::wave_map()
 	}
 	else if (m_simms[0])
 	{
-		// on-board 2 MB first in the RAM, then socket 1, then socket 2
 		u16 *const internal = m_wave;
-		u16 *const socket1 = m_wave + 0x100000;
-		u16 *const socket2 = m_wave + 0x900000;
-		unsigned const size1 = m_simms[0]->read() * 8, size2 = m_simms[1]->read() * 8;
-		unsigned at = 0;
-		switch (m_wave_bank)
+		u16 *const socket_a = m_wave + 0x100000;
+		u16 *const socket_b = m_wave + 0x900000;
+		unsigned const size_a = m_simms[0]->read(), size_b = m_simms[1]->read();
+		bool const sel = BIT(m_wave_bank, 1), cnt = BIT(m_wave_bank, 0);
+		auto place = [&](unsigned at, u16 *mem, unsigned count) { map(at, mem, count); };
+		if (size_b == 16)
+			place(0x00, socket_b, 0x80);
+		else if (size_b == 8)
+			place(0x40, socket_b, 0x40);
+		if (size_a == 16 && !sel)
+			place(0x80, socket_a, 0x80);
+		else if (size_a == 16)
 		{
-		case 1:
-			map(at, socket1, size1);
-			map(at, socket2, size2);
-			break;
-		case 2:
-			map(at, internal, 0x10);
-			map(at, socket1, size1);
-			break;
-		case 0:
-			map(at, socket1, size1);
-			at = std::max(at, 0x70U);
-			if (at < 0x80)
-				map(at, internal + (at - 0x70) * words, 0x80 - at);
-			break;
+			place(0x80, socket_a, 0x10);
+			place(0xa0, socket_a + 0x600000, 0x10);
 		}
+		else if (size_a == 8 && sel)
+			place(0x80, socket_a, 0x40);
+		else if (size_a == 8)
+		{
+			place(0x80, socket_a, 0x10);
+			place(0xc0, socket_a + 0x200000, 0x10);
+		}
+		if (!cnt && !sel)
+			place(0x70, internal, 0x10);
+		else if (!cnt)
+			for (unsigned at = 0xc0; at != blocks; at += 0x10)
+				place(at, internal, 0x10);
 	}
 	else
 	{
@@ -1047,13 +1053,13 @@ static INPUT_PORTS_START(s760)
 	PORT_CONFSETTING(0x40, "Option ID 01")
 
 	PORT_START("SIMM1")
-	PORT_CONFNAME(0x1f, 0, "SIMM socket 1")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket A (IC88)")
 	PORT_CONFSETTING(0, DEF_STR(None))
 	PORT_CONFSETTING(8, "8 MB")
 	PORT_CONFSETTING(16, "16 MB")
 
 	PORT_START("SIMM2")
-	PORT_CONFNAME(0x1f, 0, "SIMM socket 2")
+	PORT_CONFNAME(0x1f, 0, "SIMM socket B (IC87)")
 	PORT_CONFSETTING(0, DEF_STR(None))
 	PORT_CONFSETTING(8, "8 MB")
 	PORT_CONFSETTING(16, "16 MB")
