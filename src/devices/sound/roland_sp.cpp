@@ -108,7 +108,7 @@ roland_sp_device::roland_sp_device(const machine_config &mconfig, const char *ta
 	m_state_port(0),
 	m_event_head(0), m_event_count(0), m_int_state(false),
 	m_wave_addr(0), m_wave_latch(0),
-	m_record_inputs(false), m_record_in{ 0, 0 }, m_record_history{ { 0 }, { 0 } }, m_input_filter(true), m_level_channel(0)
+	m_record_inputs(false), m_record_in{ 0, 0 }, m_record_history{ { 0 }, { 0 } }, m_level_channel(0)
 {
 	std::fill(std::begin(m_regs), std::end(m_regs), 0);
 	std::fill(std::begin(m_blocks), std::end(m_blocks), nullptr);
@@ -516,8 +516,6 @@ s32 roland_sp_device::filtered(int c)
 	s32 *const h = m_record_history[c];
 	std::copy(h + 1, h + 5, h);
 	h[4] = m_record_in[c];
-	if (!m_input_filter)
-		return h[4];
 	s64 const a = s8(m_regs[REG_INPUT] >> 8), b = s8(m_regs[REG_INPUT]), m = s8(m_regs[REG_INPUT_TAP]);
 	s64 const y = (b * (s64(h[0]) + h[4]) + a * (s64(h[1]) + h[3]) + m * h[2]) >> 6;
 	return s32(std::clamp<s64>(y, -0x800000, 0x7fffff));
