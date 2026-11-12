@@ -87,7 +87,6 @@ public:
 		, m_keyscan(*this, "keyscan")
 		, m_velocity(*this, "VELOCITY")
 		, m_wave_mem(*this, "WAVE_MEM")
-		, m_sp_input(*this, "SP_INPUT")
 		, m_simms(*this, "SIMM%u", 1U)
 		, m_boot(*this, "boot")
 		, m_dram(*this, "dram", 0x100000, ENDIANNESS_LITTLE)
@@ -223,7 +222,6 @@ private:
 	optional_device<ssc1000_device> m_keyscan;
 	optional_ioport m_velocity;
 	optional_ioport m_wave_mem;
-	optional_ioport m_sp_input;
 	optional_ioport_array<2> m_simms;
 	required_region_ptr<u16> m_boot;
 	memory_share_creator<u16> m_dram;
@@ -398,7 +396,6 @@ void roland_s770_state::machine_reset()
 
 	m_wave_bank = 0;
 	wave_map();
-	m_sp->set_input_filter(!m_sp_input || (m_sp_input->read() & 1));
 	m_monitor = false;
 	monitor_update();
 
@@ -1006,15 +1003,7 @@ void roland_s770_state::t6963c_map(address_map &map)
 	map(0x0000, 0x1fff).mirror(0x6000).ram();
 }
 
-static INPUT_PORTS_START(sp_input)
-	PORT_START("SP_INPUT")
-	PORT_CONFNAME(0x01, 0x01, "Sampler input filter")
-	PORT_CONFSETTING(0x00, DEF_STR(Off))
-	PORT_CONFSETTING(0x01, DEF_STR(On))
-INPUT_PORTS_END
-
 static INPUT_PORTS_START(s760)
-	PORT_INCLUDE(sp_input)
 	PORT_START("ROW0")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Command") PORT_CODE(KEYCODE_C)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("S1/Dec") PORT_CODE(KEYCODE_MINUS)
@@ -1112,7 +1101,6 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START(s770)
 	PORT_INCLUDE(s770_panel)
-	PORT_INCLUDE(sp_input)
 
 	PORT_START("WAVE_MEM")
 	PORT_CONFNAME(0x3f, 2, "Wave memory")
@@ -1128,7 +1116,6 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START(s750)
 	PORT_INCLUDE(s770_panel)
-	PORT_INCLUDE(sp_input)
 
 	PORT_START("WAVE_MEM")
 	PORT_CONFNAME(0x3f, 2, "Wave memory")
@@ -1273,7 +1260,6 @@ INPUT_PORTS_END
 static INPUT_PORTS_START(dj70)
 	PORT_INCLUDE(dj70_panel)
 	PORT_INCLUDE(dj70_controls)
-	PORT_INCLUDE(sp_input)
 
 	PORT_START("WAVE_MEM")
 	PORT_CONFNAME(0x3f, 2, "Wave memory")
@@ -1284,7 +1270,6 @@ INPUT_PORTS_END
 static INPUT_PORTS_START(dj70mk2)
 	PORT_INCLUDE(dj70_panel)
 	PORT_INCLUDE(dj70_controls)
-	PORT_INCLUDE(sp_input)
 
 	PORT_START("SIMM1")
 	PORT_CONFNAME(0x1f, 0, "SIMM socket 1")
