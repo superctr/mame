@@ -1,5 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:superctr
+// thanks-to: giulioz
 /***************************************************************************
 
     Roland SP-AG / SP-IP (Fujitsu MB87422 / MB87423A) sampler pair, the

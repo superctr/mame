@@ -1,5 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:superctr
+// thanks-to: giulioz
 #ifndef MAME_SOUND_ROLAND_SP_H
 #define MAME_SOUND_ROLAND_SP_H
 
