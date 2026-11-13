@@ -18,7 +18,6 @@ public:
 	static constexpr u32 SAMPLE_RATE = 44100;
 	static constexpr u32 ADDRESS_MASK = 0x00ffffff;
 	static constexpr u32 PAGE_MASK = 0x000fffff;
-	static constexpr int SAMPLE_BITS = 17;
 
 	// the 64 words of the window
 	enum register_word

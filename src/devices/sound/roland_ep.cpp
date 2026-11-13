@@ -7,7 +7,9 @@
 
     TODO:
     - the chip's own output stage, and its unity pitch in samples a second
-    - the gate word, and the registers the firmware writes at boot
+    - the gate word's bits 13-12, taken as a gain in eighths of the
+      interpolator's sum (only 3 is ever written), and the registers the
+      firmware writes at boot
 
 ***************************************************************************/
 
@@ -240,7 +242,7 @@ s32 roland_ep_device::run_voice(int n)
 		advance(v, address, backward, c);
 		sum += tap(interp_weights[i][v.phase >> 9], c);
 	}
-	const s32 sample = wrap20(sum >> 2);
+	const s32 sample = wrap20((sum * BIT(v.regs[GATE], 12, 2)) >> 3);
 
 	const u32 accumulated = u32(v.phase) + (u32(v.regs[PITCH]) << 2);
 	v.phase = accumulated & 0xffff;
@@ -256,5 +258,5 @@ void roland_ep_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 		for (int n = 0; n < VOICES; n++)
-			stream.put_int_clamp(n, i, run_voice(n), 1 << (SAMPLE_BITS - 1));
+			stream.put_int(n, i, run_voice(n), 1 << 17);
 }
