@@ -220,14 +220,14 @@ std::pair<s32, s32> roland_tvf_device::pair(int n, s32 first, s32 second)
 
 	case PAIR_RING_THEN_FILTERS:
 	{
-		const s64 ring = rounded_shift(6 * s64(amplify(a, first)) * second, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? second : 0);
+		const s64 ring = rounded_shift(8 * s64(amplify(a, first)) * second, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? second : 0);
 		return { 0, amplify(b, filter(b, filter(a, ring))) };
 	}
 
 	case PAIR_FILTERS_THEN_RING:
 	{
 		const s32 filtered = filter(b, second);
-		const s64 ring = rounded_shift(6 * s64(amplify(a, filter(a, first))) * filtered, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? filtered : 0);
+		const s64 ring = rounded_shift(8 * s64(amplify(a, filter(a, first))) * filtered, SAMPLE_FRACTION_BITS) + (mixes_second(a) ? filtered : 0);
 		return { 0, amplify(b, ring) };
 	}
 

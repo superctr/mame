@@ -13,7 +13,7 @@ public:
 	static constexpr int VOICES = 32;
 	static constexpr int SAMPLE_FRACTION_BITS = 28;
 	static constexpr s32 SAMPLE_ONE = 1 << SAMPLE_FRACTION_BITS;
-	static constexpr s32 FULL_SCALE = (s64(13355) * SAMPLE_ONE + 5000) / 10000;
+	static constexpr s32 FULL_SCALE = SAMPLE_ONE;
 	static constexpr int COEFFICIENT_FRACTION_BITS = 28;
 
 	// the 64 words of the window
