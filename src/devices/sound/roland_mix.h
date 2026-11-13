@@ -22,7 +22,7 @@ public:
 
 	roland_mix_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// the serial output's words, 24 bits, left (offset 0) then right
+	// the serial output's words as they leave, 24 bits: right (offset 0), then left
 	auto serial_callback() { return m_serial_cb.bind(); }
 
 	u16 read(offs_t offset);

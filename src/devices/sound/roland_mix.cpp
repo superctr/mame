@@ -106,13 +106,15 @@ void roland_mix_device::sound_stream_update(sound_stream &stream)
 			word[o] = s32(std::clamp<s64>(out[o] >> 6, -FULL_SCALE - 1, FULL_SCALE));
 			stream.put_int(o, i, word[o], FULL_SCALE + 1);
 		}
+		s32 serial[2];
 		for (int c = 0; c != 2; c++)
 		{
-			s32 const serial = (control & CONTROL_THROUGH)
+			serial[c] = (control & CONTROL_THROUGH)
 					? std::clamp(s32(stream.get(INPUT_SERIAL + c, i) * 0x800000), -0x800000, 0x7fffff)
 					: word[OUTPUT_LEFT + c] << 4;
-			stream.put_int(OUTPUT_SERIAL + c, i, serial, 0x800000);
-			m_serial_cb(c, u32(serial) & 0xffffff);
+			stream.put_int(OUTPUT_SERIAL + c, i, serial[c], 0x800000);
 		}
+		m_serial_cb(0, u32(serial[1]) & 0xffffff);
+		m_serial_cb(1, u32(serial[0]) & 0xffffff);
 	}
 }
