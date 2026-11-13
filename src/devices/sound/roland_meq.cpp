@@ -1,5 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:superctr
+// thanks-to: giulioz
 /***************************************************************************
 
     Roland MEQ (Toshiba TC24SC220AF-007), the mixer, EQ and effects DSP of
