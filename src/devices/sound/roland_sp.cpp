@@ -335,8 +335,6 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 		return m_event_count ? m_events[m_event_head] : 0;
 	case REG_RECORD: // write only
 		return m_regs[REG_RECORD];
-	case REG_UNKNOWN_06: // 0060 during set-up, 0064 after; playback needs 0064
-		return m_regs[REG_UNKNOWN_06];
 	case REG_WAVE_STORE: // reads FFFF
 		return 0xffff;
 	case REG_WAVE_DATA: // the fetched word, then the next word fetched
@@ -363,8 +361,6 @@ u16 roland_sp_device::read(offs_t offset, u16 mem_mask)
 			m_int_timer->adjust(attotime::zero);
 		}
 		return 0;
-	case REG_UNKNOWN_18: // no firmware uses it; writes change nothing audible
-		return m_regs[REG_UNKNOWN_18];
 	case REG_LEVEL:
 		return m_sel_block == BLOCK_LEVEL ? level_r(m_voices[m_sel_voice], m_sel_word) : 0;
 	case REG_INPUT: // the recorders' input words in turn, the top 13 bits
