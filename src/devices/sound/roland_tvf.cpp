@@ -242,8 +242,8 @@ void roland_tvf_device::sound_stream_update(sound_stream &stream)
 	{
 		for (int n = 0; n < VOICES; n += 2)
 		{
-			const s32 input_a = s32(std::clamp(stream.get(n, i), -2.0f, 2.0f) * SAMPLE_ONE);
-			const s32 input_b = s32(std::clamp(stream.get(n + 1, i), -2.0f, 2.0f) * SAMPLE_ONE);
+			const s32 input_a = s32(std::clamp(stream.get(n, i), -1.0f, 1.0f) * SAMPLE_ONE);
+			const s32 input_b = s32(std::clamp(stream.get(n + 1, i), -1.0f, 1.0f) * SAMPLE_ONE);
 			const auto [first, second] = pair(n, input_a, input_b);
 			stream.put_int(n, i, first, SAMPLE_ONE);
 			stream.put_int(n + 1, i, second, SAMPLE_ONE);
