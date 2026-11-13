@@ -1417,7 +1417,8 @@ void roland_s770_state::s760(machine_config &config)
 
 	// SDO1's latches in step order: DIGITAL OUT 1 L, STEREO OUT 1 R, DIGITAL OUT 1 R, STEREO OUT 1 L;
 	// SDO2's likewise for the second pair
-	m_meq->port3_callback().set(m_sp, FUNC(roland_sp_device::record_w));
+	// the third port's latches at steps 21 (left) and 61 (right); the sampler takes the right word first
+	m_meq->port3_callback().set([this](offs_t offset, u32 data) { m_sp->record_w(offset ^ 1, data); });
 	m_meq->set_synchronous(true);
 	SPEAKER(config, "out2", 2).front();
 	m_meq->add_route(roland_meq_device::output(0, 3), "speaker", 1.0, 0);
@@ -1540,8 +1541,8 @@ void roland_s770_state::s770(machine_config &config)
 	m_sp->set_record_inputs();
 	auto &adc(MICROPHONE(config, "adc", 2).front());
 	// the A/D's left word reaches the recorder of voice 20, the right voice 4's
-	adc.add_route(0, m_sp, 1.0, 1);
-	adc.add_route(1, m_sp, 1.0, 0);
+	adc.add_route(0, m_sp, 1.0, 0);
+	adc.add_route(1, m_sp, 1.0, 1);
 	adc.add_route(0, "speaker", 0.0, 0);
 	adc.add_route(1, "speaker", 0.0, 1);
 	auto &digital_in(MICROPHONE(config, "digital_in", 2).front());
