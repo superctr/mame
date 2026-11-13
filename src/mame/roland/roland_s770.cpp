@@ -1405,7 +1405,7 @@ void roland_s770_state::common(machine_config &config)
 	ROLAND_MEQ(config, m_meq, 44100);
 	// TVF WO0-17 drive MEQ WB5-22
 	for (int n = 0; n != roland_meq_device::VOICES; n++)
-		m_tvf->add_route(n, m_meq, 0.25, n);
+		m_tvf->add_route(n, m_meq, 0.5, n);
 }
 
 void roland_s770_state::s760(machine_config &config)
@@ -1535,7 +1535,7 @@ void roland_s770_state::s770(machine_config &config)
 	ROLAND_MIX(config, m_mix, 44100);
 	// TVF WO0-19 drive MIX DI0-19
 	for (int n = 0; n != roland_mix_device::VOICES; n++)
-		m_tvf->add_route(n, m_mix, 0.125, n);
+		m_tvf->add_route(n, m_mix, 0.25, n);
 	m_mix->add_route(roland_mix_device::OUTPUT_LEFT, "speaker", 2.0, 0);
 	m_mix->add_route(roland_mix_device::OUTPUT_RIGHT, "speaker", 2.0, 1);
 	m_sp->set_record_inputs();
