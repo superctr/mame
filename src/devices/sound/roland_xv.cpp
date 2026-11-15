@@ -43,7 +43,8 @@
     and floor; stores clamp to 24 bits.
 
     TODO:
-    - the filter's update order and precision with moving integrators
+    - which of the filter's integrators moves first, and types 0-6 and
+      the saturation with moving integrators
     - format 0, loop mode 3, word 0x60 bits 9:8 and 6, words 0x72-0x7f
       beside the phase and pitch, the DPCM history at a relaunch; the
       cache's twentieth bit; where the seam probe falls in the sample
@@ -1524,9 +1525,10 @@ s32 roland_xv_device::source(int n, int gain)
 
 //-------------------------------------------------
 //  the filter: the XP's state-variable structure, the cutoff and resonance
-//  coefficients Q15 words, the type the output tap; types 4-7 add to the
-//  input, OFF being type 7 with both coefficients at zero.  The two
-//  integrators and the output read back at words 0xb0-0xb5
+//  coefficients Q15 words, the type the output tap; types 5-7 damp the loop
+//  at unity and add the resonance times a tap to the input, OFF being type
+//  7 with both coefficients at zero.  The two integrators and the output
+//  read back at words 0xb0-0xb5
 //-------------------------------------------------
 
 s32 roland_xv_device::filter(int n, int type, s32 sample)
@@ -1546,7 +1548,7 @@ s32 roland_xv_device::filter(int n, int type, s32 sample)
 	}
 	else if (type < FILTER_HIGH_POLE)
 	{
-		const s32 damping = s32((s64(q) * band) >> 15);
+		const s32 damping = type < FILTER_LOW_SHELF ? s32((s64(q) * band) >> 15) : band;
 		const s32 low = clamp24(v.filter_low + ((s64(f) * band) >> 15));
 		const s32 high = clamp24(s64(sample) - low - damping);
 		v.filter_low = low;
@@ -1561,7 +1563,7 @@ s32 roland_xv_device::filter(int n, int type, s32 sample)
 		case FILTER_NOTCH: out = clamp24(s64(sample) - damping); break;
 		case FILTER_LOW_SHELF: out = clamp24(sample + ((s64(q) * low) >> 14)); break;
 		case FILTER_PEAK: out = clamp24(sample + ((s64(q) * v.filter_band) >> 14)); break;
-		default: out = clamp24(sample + ((q * (s64(sample) - low - v.filter_band)) >> 14)); break;
+		default: out = clamp24(sample + ((q * (s64(sample) - low - band)) >> 14)); break;
 		}
 	}
 	set_long(n, FILTER_BAND, u32(v.filter_band) & 0xffffff);
