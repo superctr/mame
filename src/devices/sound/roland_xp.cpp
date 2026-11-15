@@ -14,7 +14,7 @@
  *  bus: it loads the readback latch, masked to the register's width, which 0x3912/0x3910
  *  return. A voice is launched by a read of the run mask: a write only shadows a newly set
  *  bit, and a read of any of the four words commits every shadowed bit; a cleared bit parks
- *  the voice on the write. CONTROL bit 15 enables the voice's marker and mute interrupts.
+ *  the voice on the write. CONTROL bit 15 enables the voice's marker interrupt.
  *
  *  Voice: every piece of a voice's runtime is one of its pages, and this device keeps it
  *  there - the read pointer (01), the exponent cache (04), the DPCM accumulator (0C), the
@@ -27,21 +27,25 @@
  *  PITCH), gated by the control word's hold divider against a chip-global clock: the linear
  *  law walks a double-resolution step register, the exponential law recomputes its step from
  *  the distance every service, the fade-to-zero steers a velocity, RESO steps in quanta of
- *  four, and a target's bit 0 is the chip's acknowledge of a host write. PITCH and TVF are
- *  decoded on their service slot into pages 0D and 22 and held flat; only the amplitude is
- *  smoothed, by the one-pole filter in page 27. The reader is a DPCM decoder with forward,
- *  alternate and reverse loops over 1 MB ROM regions into an 18-bit accumulator; a one-shot
- *  parks its pointer at END and a backward one at LOOP, the marker interrupt fires on every
- *  advance at or past LOOP in the direction of travel (the two-stage latch in CONTROL bits
- *  17/16 limits it to two reports), and no other event comes from the reader. The 4-tap
+ *  four, and a linear ramp's target bit 0 is the chip's acknowledge of a host write. PITCH
+ *  and TVF are decoded on their service slots into pages 0D and 22 and held flat; only the
+ *  amplitude is smoothed, by the one-pole filter in page 27. The reader is a DPCM decoder
+ *  with forward, alternate and reverse loops over 1 MB ROM regions into an 18-bit
+ *  accumulator; a one-shot parks its pointer at END and a backward one at LOOP, the marker
+ *  interrupt fires on every advance at or past LOOP in the direction of travel, a whole word
+ *  at a time on a 16-bit wave bus and never on an alternate loop that selects reason 6 (the
+ *  two-stage latch in CONTROL bits 17/16 limits it to two reports), and no other event comes
+ *  from the reader. The 4-tap
  *  128-phase interpolator forms four times the accumulator plus the weighted deltas, wraps
  *  at 20 bits and shifts by the wave gain (page 10); the Chamberlin state-variable filter
- *  runs with Q19 coefficients and every line saturated at 24 bits; the smoothed amplitude
- *  multiplies the result into page 2A, from which the four sends (10-bit level, 0x200 =
- *  unity, 6-bit destination) deposit on the voice's own four DSP slots into the mixer bank,
- *  the first send to name a word clearing it - for every voice up to the highest, a parked
- *  voice depositing zero. An even voice with FILTER bit 4 and a structure of 1 to 9 pairs
- *  with the next one: the two samples go through one of nine arrangements of the two
+ *  runs on the top 16 bits of its Q19 coefficients, its states saturated at 24 bits and its
+ *  highpass node symmetrically, and a halted or muted voice filters the sample held at its
+ *  frozen position; the smoothed amplitude multiplies the result into page 2A, from which
+ *  the four sends (10-bit level, 0x200 = unity, 6-bit destination) deposit on the voice's
+ *  own four DSP slots into the mixer bank, the first send to name a word clearing it and a
+ *  third send to the fourth's word adding nothing - for every voice up to the highest, a
+ *  parked voice depositing zero. An even voice with FILTER bit 4 and a structure of 1 to 9
+ *  pairs with the next one: the two samples go through one of nine arrangements of the two
  *  filters, a booster shift and a ring modulator, the booster and the ring's modulator
  *  saturating at 16 bits and the sums at 24, and the pair's output lands in the owner's
  *  page 2A and zero in the partner's. Every product in the voice path divides towards zero.
@@ -151,7 +155,8 @@ constexpr s16 interp_weights[3][128] = {
 };
 
 constexpr u32 hold_masks[4] = { 0, 7, 31, 127 };
-constexpr u8 phase_dither[4] = { 3, 0, 2, 1 };
+constexpr u8 hold_shifts[4] = { 0, 3, 5, 7 };
+constexpr u8 phase_dither[4] = { 0, 2, 1, 3 };
 constexpr u8 shift_select[4] = { 0, 1, 2, 4 };
 
 // the readback latch takes a page at its own width
@@ -341,7 +346,8 @@ void roland_xp_device::device_start()
 	save_item(STRUCT_MEMBER(m_voices, phase));
 	save_item(STRUCT_MEMBER(m_voices, format));
 	save_item(STRUCT_MEMBER(m_voices, fade_entry));
-	save_item(STRUCT_MEMBER(m_voices, launched));
+	save_item(STRUCT_MEMBER(m_voices, preloaded));
+	save_item(STRUCT_MEMBER(m_voices, advanced));
 	save_item(STRUCT_MEMBER(m_voices, sample));
 }
 
@@ -547,10 +553,17 @@ void roland_xp_device::write(offs_t offset, u16 data, u16 mem_mask)
 			m_write_latch = data;
 		else
 		{
-			m_regs[(address >> 1) & ~1] = m_write_latch;
-			m_regs[address >> 1] = data;
-			if ((address >> 8) == TVA1_CONTROL)
-				m_voices[(address >> 2) & 0x3f].fade_entry = 1;
+			const int n = (address >> 2) & 0x3f;
+			const int index = address >> 8;
+			u32 value = (u32(m_write_latch) << 16) | data;
+			if (index == CONTROL && m_voices[n].phase == RUNNING && !BIT(value, 10))
+				value |= page(n, CONTROL) & 0x20080;
+			else if (index == TVA1_CONTROL && ((value >> 14) & 3) == 2)
+			{
+				value |= 0x4000;
+				m_voices[n].fade_entry = 1;
+			}
+			set_page(n, index, value);
 		}
 	}
 	else if (address < IRAM_BASE)
@@ -638,10 +651,7 @@ void roland_xp_device::commit_run_mask()
 	m_run_pending = 0;
 	for (int n = 0; n < MAX_VOICES; n++)
 		if (BIT(launched, n))
-		{
 			m_voices[n].phase = PRELOAD;
-			m_voices[n].launched = 1;
-		}
 }
 
 
@@ -649,15 +659,27 @@ void roland_xp_device::commit_run_mask()
 //  ramps
 //-------------------------------------------------
 
+s32 roland_xp_device::exp_sum(s32 value) const
+{
+	const int index = (value >> 6) & 0xff;
+	const int fraction = value & 0x3f;
+	return (((64 - fraction) * m_exp_table[index]) >> 2) + ((fraction * m_exp_table[index + 1]) >> 2);
+}
+
 s32 roland_xp_device::exp_decode(s32 value) const
 {
 	if (value == 0)
 		return 0;
 
-	const int index = (value >> 6) & 0xff;
-	const int fraction = value & 0x3f;
-	const s32 v = (((64 - fraction) * m_exp_table[index]) >> 2) + ((fraction * m_exp_table[index + 1]) >> 2);
-	return (v >> 1) >> (15 - ((value >> 14) & 15));
+	return (exp_sum(value) >> 1) >> (15 - ((value >> 14) & 15));
+}
+
+s32 roland_xp_device::cutoff_decode(s32 value) const
+{
+	if (value == 0)
+		return 0;
+
+	return ((exp_sum(value) << 1) >> (15 - ((value >> 14) & 15))) & 0xffffe;
 }
 
 bool roland_xp_device::linear_law(int index, u32 control)
@@ -680,90 +702,33 @@ bool roland_xp_device::s_curve_law(int index, u32 control)
 	return index == RAMP_TVA1 && ((control >> 14) & 3) >= 2;
 }
 
-void roland_xp_device::service_ramp(int n, int k, bool launching)
+void roland_xp_device::offer_terminal(int n, const ramp_pages &rp, u32 control)
 {
-	const ramp_pages &rp = RAMPS[k];
-	u32 control = page(n, rp.control);
-	if (BIT(control, 17))
-		return;
+	if (BIT(control, 16) && BIT(m_regs[IRQ_STATUS >> 1], rp.reason) && offer_irq(n, rp.reason))
+		set_page(n, rp.control, control | 0x20000);
+}
 
-	const int curve = (control >> 14) & 3;
-	const bool linear = linear_law(k, control);
-	const bool s_curve = s_curve_law(k, control);
-	const int rate = control & 0xfff;
+roland_xp_device::ramp_clock roland_xp_device::ramp_clock_of(int index, u32 control) const
+{
+	const u32 clock = (index == RAMP_TVA1) ? (m_frame_counter >> 1) : (m_frame_counter >> 3);
+	const int divider = (control >> 12) & 3;
+	return ramp_clock{ !(clock & hold_masks[divider]), (index == RAMP_RESO) ? 0 : s32(((clock >> hold_shifts[divider]) & 1) ^ 1) };
+}
+
+s32 roland_xp_device::step_ramp(int n, int k, u32 control, s32 current, s32 target, s32 step, s32 parity)
+{
 	const bool reso = k == RAMP_RESO;
-	const u32 tpage = page(n, rp.target);
-	const s32 target = s_curve ? 0 : reso ? (s32(tpage & 0x3fffe) << 2) : s32(tpage & 0x3fffe);
-	s32 current = s32(page(n, rp.current) & (reso ? 0xfffff : 0x3ffff));
-	s32 step = rp.step ? wrap20(s32(page(n, rp.step))) : 0;
-
-	const bool fresh = k == RAMP_TVA1 && m_voices[n].fade_entry;
-	if (k == RAMP_TVA1)
-		m_voices[n].fade_entry = 0;
-
-	if (launching)
-	{
-		if (linear)
-			step = linear_step(target, current, rate);
-	}
-	else if (s_curve)
-	{
-		if (curve == 2 && (!BIT(tpage, 0) || fresh))
-		{
-			set_page(n, rp.target, (u32(current) >> 1) | 1);
-			set_page(n, rp.step, 0);
-			return;
-		}
-	}
-	else if (!BIT(tpage, 0))
-	{
-		set_page(n, rp.target, tpage | 1);
-		if (linear)
-		{
-			set_page(n, rp.step, u32(linear_step(target, current, rate)) & 0xfffff);
-			return;
-		}
-	}
-
-	const u32 tick = (k == RAMP_TVA1) ? (m_frame_counter >> 1) : (m_frame_counter >> 3);
-	if (tick & hold_masks[(control >> 12) & 3])
-		return;
-	s32 parity;
-	switch (k)
-	{
-	case RAMP_TVA1: parity = BIT(page(n, SERVICE), 1); break;
-	case RAMP_TVA2: parity = BIT(m_frame_counter, 3); break;
-	case RAMP_RESO: parity = 0; break;
-	default: parity = BIT(~m_frame_counter, 3); break;
-	}
-
-	if (s_curve)
-	{
-		const s32 previous = current;
-		const s32 next = current + ((step + parity) >> 1);
-		current = (next < 0 || next > 0x3ffff) ? 0 : next;
-		const s32 threshold = s32(tpage & 0x3fffe);
-		set_page(n, rp.step, u32(step + ((previous > threshold) ? -rate : rate)) & 0xfffff);
-		set_page(n, rp.current, u32(current));
-		if (previous && !current)
-		{
-			control |= 0x4000;
-			if (BIT(control, 16) && offer_irq(n, rp.reason))
-				control |= 0x20000;
-			set_page(n, rp.control, control);
-		}
-		return;
-	}
-	else if (linear)
+	if (linear_law(k, control))
 	{
 		if (current != target)
 		{
-			const s32 moved = current + ((step + parity) >> 1);
+			const s32 moved = current + ((step + ((current < target) ? parity : 0)) >> 1);
 			current = (target > current) ? std::min(moved, target) : std::max(moved, target);
 		}
 	}
 	else
 	{
+		const int rate = control & 0xfff;
 		const s32 diff = target - current;
 		const int quantum = reso ? 4 : 1;
 		s32 s = ((((diff / quantum) >> 3) * rate) >> 10) * quantum;
@@ -771,14 +736,113 @@ void roland_xp_device::service_ramp(int n, int k, bool launching)
 			s += reso ? 2 : parity;
 		current = std::max(current + s, 0) & (reso ? 0xffffe : 0x3ffff);
 	}
-	set_page(n, rp.current, u32(current));
+	set_page(n, RAMPS[k].current, u32(current));
+	return current;
+}
 
-	if (current == target)
+s32 roland_xp_device::ramp_target(int n, int k) const
+{
+	const s32 target = s32(page(n, RAMPS[k].target) & 0x3fffe);
+	return (k == RAMP_RESO) ? (target << 2) : target;
+}
+
+s32 roland_xp_device::ramp_current(int n, int k) const
+{
+	return s32(page(n, RAMPS[k].current) & ((k == RAMP_RESO) ? 0xfffff : 0x3ffff));
+}
+
+void roland_xp_device::launch_ramp(int n, int k)
+{
+	const ramp_pages &rp = RAMPS[k];
+	const u32 control = page(n, rp.control);
+	if (BIT(control, 17))
+		return;
+
+	const ramp_clock clock = ramp_clock_of(k, control);
+	if (!clock.service)
+		return;
+
+	const s32 target = ramp_target(n, k);
+	const s32 current = ramp_current(n, k);
+	const s32 step = linear_law(k, control) ? linear_step(target, current, control & 0xfff) : 0;
+	if (step_ramp(n, k, control, current, target, step, clock.parity) == target)
+		offer_terminal(n, rp, control);
+}
+
+void roland_xp_device::fade_ramp(int n, u32 control, const ramp_clock &clock)
+{
+	const ramp_pages &rp = RAMPS[RAMP_TVA1];
+	if (BIT(control, 17))
+		return;
+
+	const s32 previous = ramp_current(n, RAMP_TVA1);
+	if (!(previous >> 1))
+		offer_terminal(n, rp, control);
+	if (!clock.service)
+		return;
+
+	const int rate = control & 0xfff;
+	const s32 velocity = wrap20(s32(page(n, rp.step)));
+	const s32 next = previous + ((velocity + clock.parity) >> 1);
+	set_page(n, rp.current, u32((next < 0 || next > 0x3ffff) ? 0 : next));
+
+	s32 steer;
+	if (!(previous >> 1))
+		steer = (velocity < 0) ? (velocity + rate) : -1;
+	else
+		steer = (previous > ramp_target(n, RAMP_TVA1)) ? (velocity - rate) : (velocity + rate);
+	set_page(n, rp.step, u32(std::min(steer, -1)) & 0xfffff);
+}
+
+void roland_xp_device::service_ramp(int n, int k)
+{
+	const ramp_pages &rp = RAMPS[k];
+	const u32 control = page(n, rp.control);
+	const ramp_clock clock = ramp_clock_of(k, control);
+
+	if (k == RAMP_TVA1 && m_voices[n].fade_entry)
 	{
-		if (BIT(control, 16) && offer_irq(n, rp.reason))
-			control |= 0x20000;
-		set_page(n, rp.control, control);
+		m_voices[n].fade_entry = 0;
+		set_page(n, rp.target, ((u32(ramp_current(n, k)) >> 3) << 2) | 1);
+		if (!BIT(control, 17) && clock.service)
+			set_page(n, rp.step, 0);
+		return;
 	}
+
+	if (s_curve_law(k, control))
+	{
+		fade_ramp(n, control, clock);
+		return;
+	}
+
+	const bool linear = linear_law(k, control);
+	const u32 tpage = page(n, rp.target);
+	const s32 target = ramp_target(n, k);
+	const s32 current = ramp_current(n, k);
+
+	if (linear && !BIT(tpage, 0))
+	{
+		set_page(n, rp.target, tpage | 1);
+		set_page(n, rp.step, u32(linear_step(target, current, control & 0xfff)) & 0xfffff);
+		return;
+	}
+
+	if (BIT(control, 17))
+		return;
+
+	const bool reports_on_service = linear && (k == RAMP_TVF || k == RAMP_TVA1);
+	if (!reports_on_service && current == target)
+	{
+		offer_terminal(n, rp, control);
+		return;
+	}
+
+	if (!clock.service)
+		return;
+
+	const s32 step = linear ? wrap20(s32(page(n, rp.step))) : 0;
+	if (step_ramp(n, k, control, current, target, step, clock.parity) == target && reports_on_service)
+		offer_terminal(n, rp, control);
 }
 
 void roland_xp_device::update_amplitude(int n)
@@ -833,6 +897,11 @@ void roland_xp_device::launch(int n)
 	u32 control = page(n, CONTROL);
 
 	v.format = (BIT(control, 9) << 1) | BIT(control, 7);
+	v.advanced = 0;
+	v.preloaded = !(BIT(control, 19) && !BIT(control, 18));
+	if (!v.preloaded)
+		return;
+
 	set_page(n, CONTROL, control | 0x80);
 
 	const u32 address = page(n, ADDRESS) & 0xfffff;
@@ -865,16 +934,23 @@ roland_xp_device::address_step roland_xp_device::advance(int n, u32 control, add
 	return { s.address - 1, true };
 }
 
+bool roland_xp_device::wide_bus(u32 control) const
+{
+	const unsigned select = (control >> 4) & 7;
+	return BIT(m_regs[(ROM_SELECT >> 1) + (select >> 1)] >> (BIT(select, 0) ? 8 : 0), 0);
+}
+
 bool roland_xp_device::at_marker(int n, u32 control, address_step s) const
 {
 	const u32 loop = page(n, LOOP) & 0xfffff;
-	return s.backward ? (s.address <= loop) : (s.address >= loop);
+	const u32 pair = wide_bus(control) ? 1 : 0;
+	return s.backward ? ((s.address & ~pair) <= loop) : ((s.address | pair) >= loop);
 }
 
 void roland_xp_device::marker_reached(int n)
 {
 	const u32 control = page(n, CONTROL);
-	if (BIT(control, 16))
+	if (BIT(control, 16) || (BIT(control, 12) && BIT(control, 14)))
 		return;
 	if (BIT(control, 15) && !offer_irq(n, BIT(control, 14) ? IRQ_LOOP_ALTERNATE : IRQ_LOOP_REACHED))
 		return;
@@ -887,7 +963,12 @@ void roland_xp_device::update_mute(int n)
 	const u32 control = page(n, CONTROL);
 	if (BIT(control, 19) == BIT(control, 18))
 		return;
-	if (BIT(control, 15) && !offer_irq(n, IRQ_MUTE_CHANGED))
+	if (BIT(control, 19))
+	{
+		if (!BIT(m_regs[IRQ_STATUS >> 1], IRQ_MUTE_CHANGED) || !offer_irq(n, IRQ_MUTE_CHANGED))
+			return;
+	}
+	else if (BIT(control, 15) && !offer_irq(n, IRQ_MUTE_CHANGED))
 		return;
 
 	set_page(n, CONTROL, control ^ 0x40000);
@@ -909,8 +990,58 @@ void roland_xp_device::deposit(int n, int bank)
 		m_bus_written |= u64(1) << word;
 		m_iram[c] = 0;
 	}
+	if (bank == 2 && word == (send(n, 3) & 63))
+		return;
 	const s32 output = running(n) ? wrap24(s32(page(n, OUTPUT))) : 0;
 	m_iram[c] = clamp24(m_iram[c] + (s64(output) * (s >> 6)) / 512);
+}
+
+s32 roland_xp_device::interpolate(int n, u32 control, u32 service)
+{
+	const u32 phase = (page(n, PHASE) >> 4) & 0x3fff;
+	address_step s{ page(n, ADDRESS) & 0xfffff, bool(BIT(control, 11) ^ BIT(control, 13)) };
+	s32 sum = 4 * wrap18(s32(page(n, PREDICTOR)));
+	for (int i = 0; i < 3; i++)
+	{
+		sum += tap(interp_weights[i][phase >> 7], cell_at(n, control, s.address));
+		s = advance(n, control, s);
+	}
+	return wrap20(sum) >> (3 - ((service >> 3) & 3));
+}
+
+void roland_xp_device::read_wave(int n, u32 control)
+{
+	const u32 packed = page(n, PHASE);
+	u32 phase = (packed >> 4) & 0x3fff;
+	const u32 address = page(n, ADDRESS) & 0xfffff;
+	s32 predictor = wrap18(s32(page(n, PREDICTOR)));
+
+	const u32 increment = page(n, INCREMENT) & 0x3ffff;
+	const u32 span = address >> 6;
+	const u32 accumulated = phase + (increment >> 2) + (((increment & 3) > phase_dither[m_frame_counter & 3]) ? 1 : 0);
+	phase = accumulated & 0x3fff;
+	address_step current{ address, bool(BIT(control, 11) ^ BIT(control, 13)) };
+	for (u32 carry = accumulated >> 14; carry; carry--)
+	{
+		predictor = wrap18(predictor + delta_of(cell_at(n, control, current.address)));
+		if (at_marker(n, control, current))
+			marker_reached(n);
+		const address_step next = advance(n, control, current);
+		if (next.backward != current.backward)
+		{
+			control = page(n, CONTROL) ^ 0x2000;
+			set_page(n, CONTROL, control);
+		}
+		current = next;
+	}
+	if ((current.address >> 6) != span)
+	{
+		const u32 exponents = (current.address >> 5) & ~1;
+		set_page(n, EXPONENTS, rom_byte(control, exponents) | (u32(rom_byte(control, exponents + 1)) << 8));
+	}
+	set_page(n, PHASE, (phase << 4) | ((packed + (accumulated >> 14)) & 15));
+	set_page(n, ADDRESS, current.address);
+	set_page(n, PREDICTOR, u32(predictor) & 0x3ffff);
 }
 
 void roland_xp_device::run_voice(int n)
@@ -919,20 +1050,16 @@ void roland_xp_device::run_voice(int n)
 
 	if (!running(n))
 	{
-		const s32 smooth = page(n, SMOOTH) & 0xffff;
-		if (smooth && v.launched)
-			set_page(n, SMOOTH, u32(std::max((smooth * 7) >> 3, 1)));
 		set_page(n, FILTER_BAND, 0);
 		set_page(n, FILTER_LOW, 0);
 		set_page(n, OUTPUT, 0);
 		return;
 	}
 
-	s32 smooth = page(n, SMOOTH) & 0xffff;
 	if (v.phase == STARTING || v.phase == RUNNING)
 	{
-		smooth = std::clamp<s32>((7 * smooth + s32((page(n, AMPLITUDE) & 0xfffff) >> 4) + 3) >> 3, 0, 0xffff);
-		set_page(n, SMOOTH, u32(smooth));
+		const s32 smooth = page(n, SMOOTH) & 0xffff;
+		set_page(n, SMOOTH, u32(std::clamp<s32>((7 * smooth + s32((page(n, AMPLITUDE) & 0xfffff) >> 4) + 3) >> 3, 0, 0xffff)));
 	}
 
 	update_mute(n);
@@ -946,14 +1073,14 @@ void roland_xp_device::run_voice(int n)
 
 	case INITIALIZE:
 		set_page(n, INCREMENT, u32(exp_decode(page(n, PITCH_SEED) & 0x3ffff)) & 0x3ffff);
-		set_page(n, CUTOFF, u32(exp_decode(page(n, TVF_SEED) & 0x3ffff) << 2) & 0xfffff);
-		service_ramp(n, RAMP_PITCH, true);
+		set_page(n, CUTOFF, u32(cutoff_decode(page(n, TVF_SEED) & 0x3ffff)));
+		launch_ramp(n, RAMP_PITCH);
 		set_page(n, SERVICE, (page(n, SERVICE) & 0x1f) | 0x10000);
 		v.phase = STARTING;
 		return;
 
 	case STARTING:
-		service_ramp(n, RAMP_TVF, true);
+		launch_ramp(n, RAMP_TVF);
 		set_page(n, SERVICE, (page(n, SERVICE) & 0x1f) | 0x30000);
 		v.phase = RUNNING;
 		return;
@@ -966,91 +1093,47 @@ void roland_xp_device::run_voice(int n)
 	const int counter = (service + 1) & 7;
 	set_page(n, SERVICE, (service & ~7) | counter);
 
-	u32 control = page(n, CONTROL);
-	const bool halted = BIT(control, 10);
+	const u32 control = page(n, CONTROL);
+	const bool sounding = sounds(control);
 	s32 sample = 0;
-	if (!halted)
+	if (v.preloaded && !BIT(control, 10) && !(control & 0xc0000))
 	{
-		const u32 packed = page(n, PHASE);
-		u32 phase = (packed >> 4) & 0x3fff;
-		u32 address = page(n, ADDRESS) & 0xfffff;
-		s32 predictor = wrap18(s32(page(n, PREDICTOR)));
-		const bool backward = BIT(control, 11) ^ BIT(control, 13);
-
-		address_step s{ address, backward };
-		s32 sum = 4 * predictor;
-		for (int i = 0; i < 3; i++)
-		{
-			sum += tap(interp_weights[i][phase >> 7], cell_at(n, control, s.address));
-			s = advance(n, control, s);
-		}
-		sample = wrap20(sum) >> (3 - ((service >> 3) & 3));
-
-		const u32 increment = page(n, INCREMENT) & 0x3ffff;
-		const u32 span = address >> 6;
-		u32 accumulated = phase + (increment >> 2) + (((increment & 3) > phase_dither[m_frame_counter & 3]) ? 1 : 0);
-		phase = accumulated & 0x3fff;
-		address_step current{ address, backward };
-		for (u32 carry = accumulated >> 14; carry; carry--)
-		{
-			predictor = wrap18(predictor + delta_of(cell_at(n, control, current.address)));
-			if (at_marker(n, control, current))
-				marker_reached(n);
-			const address_step next = advance(n, control, current);
-			if (next.backward != current.backward)
-			{
-				control ^= 0x2000;
-				set_page(n, CONTROL, control);
-			}
-			current = next;
-		}
-		if ((current.address >> 6) != span)
-		{
-			const u32 exponents = (current.address >> 5) & ~1;
-			set_page(n, EXPONENTS, rom_byte(control, exponents) | (u32(rom_byte(control, exponents + 1)) << 8));
-		}
-		set_page(n, PHASE, (phase << 4) | ((packed + (accumulated >> 14)) & 15));
-		set_page(n, ADDRESS, current.address);
-		set_page(n, PREDICTOR, u32(predictor) & 0x3ffff);
+		sample = interpolate(n, control, service);
+		read_wave(n, control);
+		v.advanced = 1;
 	}
+	else if (sounding && v.advanced)
+		sample = interpolate(n, control, service);
 
 	if (counter == 6)
-	{
 		set_page(n, INCREMENT, u32(exp_decode(page(n, PITCH_SEED) & 0x3ffff)) & 0x3ffff);
-		set_page(n, CUTOFF, u32(exp_decode(page(n, TVF_SEED) & 0x3ffff) << 2) & 0xfffff);
-	}
 
 	if (counter & 1)
 	{
 		update_amplitude(n);
-		service_ramp(n, RAMP_TVA1, false);
+		service_ramp(n, RAMP_TVA1);
 	}
 	else
 	{
 		switch (counter)
 		{
 		case 0:
-			service_ramp(n, RAMP_TVA2, false);
+			service_ramp(n, RAMP_TVA2);
 			break;
 		case 2:
-			service_ramp(n, RAMP_RESO, false);
+			service_ramp(n, RAMP_RESO);
 			break;
 		case 4:
-		{
-			const u32 tpage = page(n, TVF_TARGET);
-			const u32 cutoff = page(n, TVF_SEED) & 0x3ffff;
-			if (!BIT(tpage, 0) || cutoff != (tpage & 0x3fffe))
-				set_page(n, CUTOFF, u32(exp_decode(s32(cutoff)) << 2) & 0xfffff);
-			service_ramp(n, RAMP_TVF, false);
+			set_page(n, CUTOFF, u32(cutoff_decode(page(n, TVF_SEED) & 0x3ffff)));
+			service_ramp(n, RAMP_TVF);
 			break;
-		}
 		default:
-			service_ramp(n, RAMP_PITCH, false);
+			service_ramp(n, RAMP_PITCH);
 			break;
 		}
 	}
 
-	if (halted)
+	if (!sounding)
 		return;
 
 	if (pairs(n & ~1))
@@ -1064,12 +1147,12 @@ void roland_xp_device::run_voice(int n)
 
 s32 roland_xp_device::filter(int n, int mode, s32 in)
 {
-	const s32 f = page(n, CUTOFF) & 0xfffff;
-	const s32 q = page(n, RESO_SEED) & 0xfffff;
+	const s32 f = page(n, CUTOFF) & 0xffff0;
+	const s32 q = page(n, RESO_SEED) & 0xffff0;
 	s32 low = wrap24(s32(page(n, FILTER_LOW)));
 	s32 band = wrap24(s32(page(n, FILTER_BAND)));
 	low = clamp24(low + (s64(f) * band) / (1 << 19));
-	const s32 high = clamp24(in - (s32((s64(q) * band) / (1 << 19)) + low));
+	const s32 high = s32(std::clamp<s64>(in - (s32((s64(q) * band) / (1 << 19)) + low), -0x7fffff, 0x7fffff));
 	band = clamp24(band + (s64(f) * high) / (1 << 19));
 	set_page(n, FILTER_LOW, u32(low) & 0xffffff);
 	set_page(n, FILTER_BAND, u32(band) & 0xffffff);
@@ -1097,7 +1180,7 @@ bool roland_xp_device::pairs(int n) const
 void roland_xp_device::run_pair(int n)
 {
 	const int m = n + 1;
-	const auto sounding = [this] (int k) { return running(k) && m_voices[k].phase == RUNNING && !BIT(page(k, CONTROL), 10); };
+	const auto sounding = [this] (int k) { return running(k) && m_voices[k].phase == RUNNING && sounds(page(k, CONTROL)); };
 	const bool sounding1 = sounding(n);
 	const bool sounding2 = sounding(m);
 	if (!sounding1 && !sounding2)

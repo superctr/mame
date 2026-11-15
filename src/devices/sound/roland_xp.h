@@ -104,13 +104,21 @@ protected:
 		u8 reason;
 	};
 
+	// whether a visit is a service, and the parity bit its step takes
+	struct ramp_clock
+	{
+		bool service;
+		s32 parity;
+	};
+
 	// what a voice keeps outside its pages
 	struct voice
 	{
 		u8 phase = IDLE;
 		u8 format = 0;
 		u8 fade_entry = 0;
-		u8 launched = 0;
+		u8 preloaded = 0;
+		u8 advanced = 0;
 		s32 sample = 0;
 	};
 
@@ -193,7 +201,9 @@ protected:
 	virtual u16 xpd_cram_r(offs_t address) const override { return m_regs[(CRAM_BASE >> 1) + (address % DSP_SLOTS)]; }
 	virtual int xpd_ramp_base() const override { return ramp_base(); }
 
+	s32 exp_sum(s32 value) const;
 	s32 exp_decode(s32 value) const;
+	s32 cutoff_decode(s32 value) const;
 
 	int voice_count() const { return (m_regs[HIGHEST_VOICE >> 1] & 0x3f) + 1; }
 	int slot_count() const { return voice_count() * 4; }
@@ -217,14 +227,25 @@ protected:
 	static bool linear_law(int index, u32 control);
 	static s32 linear_step(s32 target, s32 current, int rate);
 	static bool s_curve_law(int index, u32 control);
-	void service_ramp(int voice, int index, bool launching);
+	void offer_terminal(int voice, const ramp_pages &rp, u32 control);
+	ramp_clock ramp_clock_of(int index, u32 control) const;
+	s32 ramp_target(int voice, int index) const;
+	s32 ramp_current(int voice, int index) const;
+	s32 step_ramp(int voice, int index, u32 control, s32 current, s32 target, s32 step, s32 parity);
+	void launch_ramp(int voice, int index);
+	void fade_ramp(int voice, u32 control, const ramp_clock &clock);
+	void service_ramp(int voice, int index);
 	void update_amplitude(int voice);
 
 	u8 rom_byte(int region, u32 offset) { return m_wave_cache.read_byte((u32(region & 0x7f) << 20) | (offset & 0xfffff)); }
 	wave_cell cell_at(int voice, u32 control, u32 address);
+	bool wide_bus(u32 control) const;
 	static s32 delta_of(wave_cell c);
 	static s32 tap(s32 weight, wave_cell c);
 	void launch(int voice);
+	static bool sounds(u32 control) { return BIT(control, 10) || BIT(control, 18) || !BIT(control, 19); }
+	s32 interpolate(int voice, u32 control, u32 service);
+	void read_wave(int voice, u32 control);
 	address_step advance(int voice, u32 control, address_step s) const;
 	bool at_marker(int voice, u32 control, address_step s) const;
 	void deposit(int voice, int bank);
