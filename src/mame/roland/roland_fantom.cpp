@@ -79,7 +79,11 @@
     chip by manufacturer code before it will program it.  It reads the
     flash's ready line on PTE1 before every erase and program and gives
     up while it reads busy; the flash here finishes each command at once,
-    so the line reads ready.
+    so the line reads ready.  Every store raises PTE3 first and ends in the
+    sector protect of all 71 sectors, then lowers it: PTE3 is taken as the
+    flash's RESET# at the high voltage, under which the protected sectors
+    are writable and the protect cycle is taken.  PTE2, raised around an
+    erase or program of the two lowest sectors only, is left unconnected.
 
     The value encoder is polled on port F every millisecond, a count per
     whole quadrature cycle.  The A/D converter reads the bender, the
@@ -361,6 +365,7 @@ private:
 	void portc_w(u64 data);
 	void portd_w(u64 data);
 	u64 porte_r();
+	void porte_w(u64 data);
 	u64 portf_r();
 	void porth_w(u64 data);
 	void fdc_drq_w(int state);
@@ -517,6 +522,11 @@ u64 fantom_state::porte_r()
 	return 0x02;
 }
 
+void fantom_state::porte_w(u64 data)
+{
+	m_flash->vid_w(BIT(data, 3));
+}
+
 u64 fantom_state::portf_r()
 {
 	// ENCA, ENCB through a turn from rest: 11, 01, 00, 10
@@ -661,7 +671,7 @@ void fantom_state::fantom_io_map(address_map &map)
 {
 	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(fantom_state::portc_r), FUNC(fantom_state::portc_w));
 	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(fantom_state::portd_w));
-	map(SH3_PORT_E, SH3_PORT_E + 7).r(FUNC(fantom_state::porte_r));
+	map(SH3_PORT_E, SH3_PORT_E + 7).rw(FUNC(fantom_state::porte_r), FUNC(fantom_state::porte_w));
 	map(SH3_PORT_F, SH3_PORT_F + 7).r(FUNC(fantom_state::portf_r));
 	map(SH3_PORT_H, SH3_PORT_H + 7).w(FUNC(fantom_state::porth_w));
 }
