@@ -7,6 +7,8 @@
 
     TODO:
     - the chip's own output stage, and its unity pitch in samples a second
+    - the interrupt, taken as raised once a launch at the voice's first
+      pass through its end
     - the gate word's bits 13-12, taken as a gain in eighths of the
       interpolator's sum (only 3 is ever written), and the registers the
       firmware writes at boot
@@ -15,6 +17,8 @@
 
 #include "emu.h"
 #include "roland_ep.h"
+
+#include <bit>
 
 #define LOG_REGS  (1U << 1)
 
@@ -68,6 +72,7 @@ roland_ep_device::roland_ep_device(const machine_config &mconfig, const char *ta
 	, device_sound_interface(mconfig, *this)
 	, m_wave_config("wave", ENDIANNESS_LITTLE, 8, 24, 0)
 	, m_stream(nullptr)
+	, m_irq_cb(*this)
 {
 }
 
@@ -83,20 +88,24 @@ void roland_ep_device::device_start()
 
 	save_item(NAME(m_regs));
 	save_item(NAME(m_key_mask));
+	save_item(NAME(m_irq_pending));
 	save_item(STRUCT_MEMBER(m_voices, regs));
 	save_item(STRUCT_MEMBER(m_voices, address));
 	save_item(STRUCT_MEMBER(m_voices, phase));
 	save_item(STRUCT_MEMBER(m_voices, predictor));
 	save_item(STRUCT_MEMBER(m_voices, backward));
 	save_item(STRUCT_MEMBER(m_voices, running));
+	save_item(STRUCT_MEMBER(m_voices, wrapped));
 }
 
 void roland_ep_device::device_reset()
 {
 	std::fill(std::begin(m_regs), std::end(m_regs), 0);
 	m_key_mask = 0;
+	m_irq_pending = 0;
 	for (voice &v : m_voices)
 		v = voice();
+	m_irq_cb(CLEAR_LINE);
 }
 
 
@@ -113,7 +122,25 @@ u16 roland_ep_device::read(offs_t offset)
 		const u32 address = ((u32(m_regs[READ_HIGH]) << 16) | m_regs[READ_LOW]) >> 8;
 		return m_wave.read_byte(address & ADDRESS_MASK);
 	}
+	if (word == IRQ_VOICE)
+	{
+		m_stream->update();
+		if (!m_irq_pending)
+			return 0;
+		const int n = std::countr_zero(m_irq_pending);
+		if (!machine().side_effects_disabled())
+		{
+			m_irq_pending &= ~(1U << n);
+			irq_update();
+		}
+		return n;
+	}
 	return 0;
+}
+
+void roland_ep_device::irq_update()
+{
+	m_irq_cb(m_irq_pending ? ASSERT_LINE : CLEAR_LINE);
 }
 
 void roland_ep_device::write(offs_t offset, u16 data)
@@ -179,7 +206,7 @@ u32 roland_ep_device::address_of(const voice &v, int high) const
 	return (page << 20) | (u32(v.regs[high + 1]) << 4) | (v.regs[high] >> 12);
 }
 
-void roland_ep_device::advance(const voice &v, u32 &address, bool &backward, wave_cell &c)
+bool roland_ep_device::advance(const voice &v, u32 &address, bool &backward, wave_cell &c)
 {
 	if (backward && address <= loop_of(v))
 		backward = false;
@@ -199,8 +226,10 @@ void roland_ep_device::advance(const voice &v, u32 &address, bool &backward, wav
 				backward = true;
 			else
 				address = loop_of(v);
+			return true;
 		}
 	}
+	return false;
 }
 
 roland_ep_device::wave_cell roland_ep_device::cell_at(u32 address)
@@ -225,6 +254,12 @@ void roland_ep_device::launch(int n)
 	v.predictor = 0;
 	v.backward = false;
 	v.running = true;
+	v.wrapped = false;
+	if (BIT(m_irq_pending, n))
+	{
+		m_irq_pending &= ~(1U << n);
+		irq_update();
+	}
 }
 
 s32 roland_ep_device::run_voice(int n)
@@ -248,7 +283,12 @@ s32 roland_ep_device::run_voice(int n)
 	v.phase = accumulated & 0xffff;
 	for (u32 carry = accumulated >> 16; carry; carry--)
 	{
-		advance(v, v.address, v.backward, c);
+		if (advance(v, v.address, v.backward, c) && !v.wrapped)
+		{
+			v.wrapped = true;
+			m_irq_pending |= 1U << n;
+			irq_update();
+		}
 		v.predictor = wrap20(v.predictor + (c.mantissa << c.exponent));
 	}
 	return sample;

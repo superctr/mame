@@ -22,7 +22,7 @@ public:
 	// the 64 words of the window
 	enum register_word
 	{
-		CONFIG = 0x00, VOICES_IN_USE = 0x01, READ_DATA = 0x02,
+		CONFIG = 0x00, VOICES_IN_USE = 0x01, READ_DATA = 0x02, IRQ_VOICE = 0x04,
 		STOP_HIGH = 0x06, STOP_LOW = 0x07, END_HIGH = 0x08, END_LOW = 0x09, LOOP_HIGH = 0x0a, LOOP_LOW = 0x0b,
 		START_HIGH = 0x0c, START_LOW = 0x0d, KEY_LOW = 0x0e, KEY_HIGH = 0x0f,
 		PITCH = 0x17, GATE = 0x19, WAVE = 0x1d, READ_LOW = 0x1e, READ_HIGH = 0x1f,
@@ -31,6 +31,9 @@ public:
 	};
 
 	roland_ep_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	// a voice's first pass through its end
+	auto irq_cb() { return m_irq_cb.bind(); }
 
 	// the window, a word at a time
 	u16 read(offs_t offset);
@@ -59,6 +62,7 @@ private:
 		s32 predictor = 0;
 		bool backward = false;
 		bool running = false;
+		bool wrapped = false;
 	};
 
 	struct wave_cell
@@ -71,21 +75,24 @@ private:
 	u32 loop_of(const voice &v) const { return address_of(v, LOOP_HIGH); }
 	u32 end_of(const voice &v) const { return address_of(v, END_HIGH); }
 	wave_cell cell_at(u32 address);
-	void advance(const voice &v, u32 &address, bool &backward, wave_cell &c);
+	bool advance(const voice &v, u32 &address, bool &backward, wave_cell &c);
 	static s32 tap(s32 weight, wave_cell c);
 	void key_w(int word, u16 data);
 	void launch(int n);
 	s32 run_voice(int n);
+	void irq_update();
 
 	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
 
 	address_space_config m_wave_config;
 	memory_access<24, 0, 0, ENDIANNESS_LITTLE>::specific m_wave;
 	sound_stream *m_stream;
+	devcb_write_line m_irq_cb;
 
 	u16 m_regs[WORDS];
 	voice m_voices[VOICES];
 	u32 m_key_mask;
+	u32 m_irq_pending;
 };
 
 DECLARE_DEVICE_TYPE(ROLAND_EP, roland_ep_device)
