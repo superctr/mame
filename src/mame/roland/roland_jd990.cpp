@@ -18,7 +18,8 @@
     The CPU's ISP sub-processor scans the panel, reads the encoder and
     keeps the firmware's tick and active-sensing timers; its program is in
     the part, so the driver models what it does.  So far: the tick, at a
-    guessed 1 ms; the display transfer, in which the CPU sets the
+    guessed 1 ms, and on the same tick ISF4 while it is enabled, which the
+    ROM Play's song player counts after raising it once itself; the display transfer, in which the CPU sets the
     controller's cursor, puts a work-RAM source address in DR7 and a byte
     count in DR10 and clears DR6H bit 0, and the ISP streams the bytes
     into the controller; the mailbox byte the ISP answers with ISF0; the
@@ -341,6 +342,8 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	address_space &space = m_maincpu->space(AS_PROGRAM);
 
 	m_maincpu->isp_raise(9);
+	if (BIT(m_maincpu->isp_ief(), 4))
+		m_maincpu->isp_raise(4);
 	if (space.read_byte(0x87e85))
 		m_maincpu->isp_raise(0);
 
