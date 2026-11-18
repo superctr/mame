@@ -372,6 +372,12 @@ public:
 	tc58fvb321_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 };
 
+class sharp_lh28f160bje_device : public intelfsh16_device
+{
+public:
+	sharp_lh28f160bje_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+};
+
 class sharp_lh28f320bf_device : public intelfsh16_device
 {
 public:
@@ -500,6 +506,7 @@ DECLARE_DEVICE_TYPE(INTEL_TE28F160,          intel_te28f160_device)
 DECLARE_DEVICE_TYPE(SHARP_LH28F160S3,        sharp_lh28f160s3_device)
 DECLARE_DEVICE_TYPE(INTEL_TE28F320,          intel_te28f320_device)
 DECLARE_DEVICE_TYPE(SPANSION_S29GL064S,      spansion_s29gl064s_device)
+DECLARE_DEVICE_TYPE(SHARP_LH28F160BJE,       sharp_lh28f160bje_device)
 DECLARE_DEVICE_TYPE(SHARP_LH28F320BF,        sharp_lh28f320bf_device)
 DECLARE_DEVICE_TYPE(INTEL_28F320J3D,         intel_28f320j3d_device)
 DECLARE_DEVICE_TYPE(INTEL_28F320J5,          intel_28f320j5_device)

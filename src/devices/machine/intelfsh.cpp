@@ -138,6 +138,7 @@ DEFINE_DEVICE_TYPE(INTEL_E28F008SA,          intel_e28f008sa_device,          "i
 DEFINE_DEVICE_TYPE(INTEL_TE28F160,           intel_te28f160_device,           "intel_te28f160",           "Intel TE28F160 Flash")
 DEFINE_DEVICE_TYPE(SHARP_LH28F160S3,         sharp_lh28f160s3_device,         "sharp_lh28f160s3",         "Sharp LH28F160S3 Flash")
 DEFINE_DEVICE_TYPE(INTEL_TE28F320,           intel_te28f320_device,           "intel_te28f320",           "Intel TE28F320 Flash")
+DEFINE_DEVICE_TYPE(SHARP_LH28F160BJE,        sharp_lh28f160bje_device,        "sharp_lh28f160bje",        "Sharp LH28F160BJE-BTL Flash")
 DEFINE_DEVICE_TYPE(SHARP_LH28F320BF,         sharp_lh28f320bf_device,         "sharp_lh28f320bf",         "Sharp LH28F320BFHE-PBTL Flash")
 DEFINE_DEVICE_TYPE(INTEL_28F320J3D,          intel_28f320j3d_device,          "intel_28f320j3d",          "Intel 28F320J3D Flash")
 DEFINE_DEVICE_TYPE(SPANSION_S29GL064S,       spansion_s29gl064s_device,       "spansion_s29gl064s",       "Spansion / Cypress S29GL064S Flash")
@@ -346,6 +347,9 @@ spansion_s29gl064s_device::spansion_s29gl064s_device(const machine_config &mconf
 
 intel_e28f400b_device::intel_e28f400b_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, INTEL_E28F400B, tag, owner, clock, 0x80000, MFG_INTEL, 0x4471) { m_has_reset_pin = true; }
+
+sharp_lh28f160bje_device::sharp_lh28f160bje_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: intelfsh16_device(mconfig, SHARP_LH28F160BJE, tag, owner, clock, 0x200000, MFG_SHARP, 0xe9) { m_has_reset_pin = true; m_bot_boot_sector = true; }
 
 sharp_lh28f320bf_device::sharp_lh28f320bf_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, SHARP_LH28F320BF, tag, owner, clock, 0x400000, MFG_SHARP, 0xb5) { m_has_reset_pin = true; m_bot_boot_sector = true; }
