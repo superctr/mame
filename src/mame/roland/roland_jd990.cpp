@@ -565,6 +565,7 @@ void roland_jd990_state::jd990(machine_config &config)
 
 	ROLAND_EP(config, m_ep, 44100);
 	m_ep->set_addrmap(roland_ep_device::AS_WAVE, &roland_jd990_state::wave_map);
+	m_ep->irq_cb().set_inputline(m_maincpu, 0);
 	ROLAND_TVF(config, m_tvf, 44100);
 	for (int n = 0; n < roland_ep_device::VOICES; n++)
 		m_ep->add_route(n, m_tvf, 1.0, n);
