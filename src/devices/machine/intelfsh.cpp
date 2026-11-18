@@ -52,6 +52,7 @@ enum
 	FM_WRITEBUFFER2, // part 2 of write to buffer sequence
 	FM_FAST_RESET,
 	FM_WRITEPAGEWINBOND,
+	FM_READPROTECT,
 };
 
 
@@ -183,6 +184,7 @@ intelfsh_device::intelfsh_device(const machine_config &mconfig, device_type type
 		m_page_size(0),
 		m_page_timeout_usec(0),
 		m_has_reset_pin(false),
+		m_has_sector_protect(false),
 		m_status(0x80),
 		m_erase_sector(0),
 		m_flash_mode(FM_NORMAL),
@@ -192,7 +194,9 @@ intelfsh_device::intelfsh_device(const machine_config &mconfig, device_type type
 		m_byte_count(0),
 		m_sdp(false),
 		m_page_address(0),
-		m_fast_mode(false)
+		m_fast_mode(false),
+		m_vid(false),
+		m_protecting(false)
 {
 	assert(bits == 8 || bits == 16);
 	assert(size != 0);
@@ -379,7 +383,7 @@ tc58fvt800_device::tc58fvt800_device(const machine_config &mconfig, const char *
 	: intelfsh16_device(mconfig, TC58FVT800, tag, owner, clock, 0x100000, MFG_TOSHIBA, 0x4f) { m_top_boot_sector = true; m_has_reset_pin = true; }
 
 tc58fvb321_device::tc58fvb321_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: intelfsh16_device(mconfig, TC58FVB321, tag, owner, clock, 0x400000, MFG_TOSHIBA, 0x57) { m_bot_boot_sector = true; }
+	: intelfsh16_device(mconfig, TC58FVB321, tag, owner, clock, 0x400000, MFG_TOSHIBA, 0x57) { m_bot_boot_sector = true; m_has_sector_protect = true; }
 
 winbond_w29c020c_device::winbond_w29c020c_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: intelfsh16_device(mconfig, WINBOND_W29C020C, tag, owner, clock, 0x40000, MFG_WINBOND, 0x45) {
@@ -418,6 +422,14 @@ void intelfsh_device::device_start()
 	if (m_page_size > 0)
 		save_pointer( NAME(m_page_buffer), page_bytes );
 	save_pointer( &m_data[0], "m_data", m_size);
+
+	if (m_has_sector_protect)
+	{
+		m_protect.resize(protect_sector(m_size / ((m_bits == 16) ? 2 : 1) - 1) + 1, 0);
+		save_item( NAME(m_vid) );
+		save_item( NAME(m_protecting) );
+		save_item( NAME(m_protect) );
+	}
 }
 
 void intelfsh_device::device_reset()
@@ -439,6 +451,60 @@ void intelfsh_device::device_reset()
 bool intelfsh_device::is_ready()
 {
 	return (m_status & 0x80) ? true : false;
+}
+
+//-------------------------------------------------
+//  vid_w - RESET# at the high voltage, on parts
+//          whose sectors can be protected
+//-------------------------------------------------
+
+void intelfsh_device::vid_w(int state)
+{
+	m_vid = state;
+	if (!state)
+		m_protecting = false;
+}
+
+uint32_t intelfsh_device::protect_sector(uint32_t address) const
+{
+	uint32_t const base = address * ((m_bits == 16) ? 2 : 1);
+	if (m_bot_boot_sector)
+		return (base < 0x10000) ? (base >> 13) : (8 + ((base - 0x10000) >> 16));
+	if (m_top_boot_sector && base >= m_size - 0x10000)
+		return ((m_size - 0x10000) >> 16) + ((base - (m_size - 0x10000)) >> 13);
+	return base >> 16;
+}
+
+bool intelfsh_device::sector_locked(uint32_t address) const
+{
+	return m_has_sector_protect && !m_vid && m_protect[protect_sector(address)];
+}
+
+bool intelfsh_device::protect_command(uint32_t address, uint8_t command)
+{
+	uint32_t const word = (m_bits == 16) ? address : (address >> 1);
+	if (!m_protecting)
+	{
+		if (command != 0x60)
+			return false;
+		m_protecting = true;
+		return true;
+	}
+	switch (command)
+	{
+	case 0x60:
+		if ((word & 0x43) == 0x02)
+			m_protect[protect_sector(address)] = 1;
+		m_flash_mode = FM_NORMAL;
+		return true;
+	case 0x40:
+		if ((word & 0x03) == 0x02)
+			m_flash_mode = FM_READPROTECT;
+		return true;
+	default:
+		m_protecting = false;
+		return false;
+	}
 }
 
 //-------------------------------------------------
@@ -616,9 +682,12 @@ uint32_t intelfsh_device::read_full(uint32_t address)
 			{
 				case 0: data = m_maker_id; break;
 				case 1: data = m_device_id; break;
-				case 2: data = 0; break;
+				case 2: data = m_has_sector_protect ? m_protect[protect_sector(address)] : 0; break;
 			}
 		}
+		break;
+	case FM_READPROTECT:
+		data = m_protect[protect_sector(address)];
 		break;
 	case FM_READID:
 		if (m_maker_id == MFG_INTEL && m_device_id == 0x16)
@@ -705,6 +774,9 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 	case FM_READSTATUS:
 	case FM_READID:
 	case FM_READAMDID3:
+	case FM_READPROTECT:
+		if (m_has_sector_protect && m_vid && !m_fast_mode && protect_command(address, data & 0xff))
+			break;
 		switch( data & 0xff )
 		{
 		case 0xf0:
@@ -956,6 +1028,12 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 				memset(&m_data[0], 0xff, 0x3A000);
 				memset(&m_data[0x3C000], 0xff, 0x04000);
 			}
+			else if (m_has_sector_protect)
+			{
+				for (uint32_t base = 0; base < m_size; base++)
+					if (!sector_locked(base / ((m_bits == 16) ? 2 : 1)))
+						m_data[base] = 0xff;
+			}
 			else
 				memset(&m_data[0], 0xff, m_size);
 
@@ -974,6 +1052,10 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 			{
 				m_timer->adjust( attotime::from_seconds( 16 ) );
 			}
+		}
+		else if( ( data & 0xff ) == 0x30 && sector_locked(address) )
+		{
+			m_flash_mode = FM_NORMAL;
 		}
 		else if( ( data & 0xff ) == 0x30 )
 		{
@@ -1095,14 +1177,17 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 				if (address < 0x3a000 || address >= 0x3c000)
 					m_data[address] &= data;
 			}
-			else
+			else if (!sector_locked(address))
 			{
 				m_data[address] &= data;
 			}
 			break;
 		case 16: // senbbs test mode requires this, note, flash type is guessed there based on manufacturer + device ident as markings were erased
-			m_data[address*2] &= data >> 8;
-			m_data[address*2+1] &= data;
+			if (!sector_locked(address))
+			{
+				m_data[address*2] &= data >> 8;
+				m_data[address*2+1] &= data;
+			}
 			break;
 		default:
 			logerror( "FM_BYTEPROGRAM not supported when m_bits == %d (address %08x data %04x)\n", m_bits, address, data );

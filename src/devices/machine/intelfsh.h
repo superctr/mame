@@ -17,6 +17,8 @@ public:
 
 	bool is_ready();
 
+	void vid_w(int state);
+
 protected:
 	// construction/destruction
 	intelfsh_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, uint8_t bits, uint32_t size, uint8_t maker_id, uint16_t device_id);
@@ -35,6 +37,9 @@ protected:
 	void write_full(uint32_t offset, uint32_t data);
 	void page_load_start();
 	void complete_page_write();
+	uint32_t protect_sector(uint32_t address) const;
+	bool sector_locked(uint32_t address) const;
+	bool protect_command(uint32_t address, uint8_t command);
 
 	TIMER_CALLBACK_MEMBER(delay_tick);
 
@@ -58,6 +63,9 @@ protected:
 	// whether the device has a hardware reset pin
 	bool                     m_has_reset_pin;
 
+	// whether the device's sectors can be protected with RESET# at the high voltage
+	bool                     m_has_sector_protect;
+
 	// internal state
 	std::unique_ptr<uint8_t[]> m_data;
 	uint8_t                  m_status;
@@ -76,6 +84,10 @@ protected:
 	std::unique_ptr<uint8_t[]> m_page_buffer;
 
 	bool                     m_fast_mode;
+
+	bool                     m_vid;
+	bool                     m_protecting;
+	std::vector<uint8_t>     m_protect;
 };
 
 
