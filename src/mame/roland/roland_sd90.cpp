@@ -230,7 +230,7 @@ void sd90_state::machine_reset()
 	// USB mode, where MIDI IN goes to the computer; a fresh flash is given
 	// the record SYSTEM writes when MIDI Start Up is saved as MIDI, so the
 	// MIDI inputs play parts A and B
-	if (m_flash)
+	if (m_mr3)
 	{
 		static const u8 midi_startup[0x28] = {
 				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf,
@@ -490,7 +490,7 @@ void sd90_state::usb_w(offs_t offset, u8 data)
 
 void sd90_state::sd80_map(address_map &map)
 {
-	map(0x00000000, 0x001fffff).rom().region("progrom", 0);         // area 0, IC3
+	map(0x00000000, 0x001fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));    // area 0, IC3
 	map(0x08000000, 0x083fffff).ram();                              // area 2, IC4 and IC6
 //  map(0x0c000000, 0x0fffffff)                                     // area 3, declared SDRAM and unpopulated
 //  map(0x10000000, 0x13ffffff)                                     // area 4, which nothing reaches
@@ -573,6 +573,9 @@ void sd90_state::sd80(machine_config &config)
 {
 	common(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
+
+	// the firmware saves its settings into the flash with Sharp's command set
+	SHARP_LH28F160BJE(config, m_flash);
 
 	// the controller's announcement: an untagged aa, then one byte more
 	ROLAND_UIPC(config, m_uipc);
@@ -766,7 +769,7 @@ INPUT_PORTS_END
 
 ROM_START(sd80)
 	// the flash read off IC3, the two bytes of every word exchanged
-	ROM_REGION64_BE(0x200000, "progrom", 0)
+	ROM_REGION16_BE(0x200000, "flash", 0)
 	ROM_LOAD16_WORD_SWAP("sd80_v1.01.ic3", 0x000000, 0x200000, CRC(e0cfce2e) SHA1(8fcf6df19cf0c32bc07e464fdc77fd31a02e6c32))
 
 	ROM_WAVEROM
