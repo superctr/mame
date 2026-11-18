@@ -49,6 +49,7 @@ public:
 	void isp_set_iof(u32 iof);
 	u8 isp_ipr() const { return m_ipr; }
 	u16 isp_icf() const { return m_icf; }
+	u16 isp_ief() const { return m_ief; }
 	bool isp_reset_held() const { return BIT(m_icsr, 5); }
 	u8 dr_r(offs_t offset) { return m_dr[offset]; }
 	void dr_w(offs_t offset, u8 data);
