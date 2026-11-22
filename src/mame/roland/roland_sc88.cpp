@@ -1160,7 +1160,7 @@ ROM_START(sc88)
 	ROM_LOAD16_WORD_BIOS(2, "roland_sc88-control-1.04.ic17", 0x00000, 0x80000, CRC(979b6c09) SHA1(3bc9a68703bd09459283b6b45d01d08feaffb744)) // dumper comment: original chip was a 27C4096
 
 	ROM_REGION(0x2000, "subcpu", 0)
-	ROM_LOAD("subcpu.ic11", 0x0000, 0x2000, NO_DUMP)
+	ROM_LOAD("roland-r00232667-m38881m2-150gp.ic11", 0x0000, 0x2000, NO_DUMP)
 
 	ROM_REGION(0x800000, "waverom", 0)
 	ROM_LOAD("sc88-pcm-ic-325.ic14", 0x000000, 0x200000, CRC(f9dd9e49) SHA1(860dcd9804ded4cd46aab38bfc3764a1ad7a6b65))
@@ -1195,7 +1195,7 @@ ROM_START(sc88pro)
 	ROM_LOAD16_WORD_BIOS(1, "roland_sc88pro-1.04.ic26", 0x00000, 0x100000, CRC(820824d2) SHA1(6d06f00a1f8195a76b3af600ca708003f9a3abdc))
 
 	ROM_REGION(0x2000, "subcpu", 0)
-	ROM_LOAD("subcpu.ic10", 0x0000, 0x2000, NO_DUMP)
+	ROM_LOAD("roland-r00232667-m38881m2-150gp.ic10", 0x0000, 0x2000, NO_DUMP)
 
 	ROM_REGION(0x1400000, "waverom", 0)
 	// Wave ROM reconstructed from vegspro (same sample data, wider chips)
