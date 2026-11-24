@@ -78,7 +78,11 @@
     of page 0E, with the RAM's upper half again above them (the voice
     service clears flags in its voice records through that page); the
     two CSPs, the LCD controller (0F:A000 data, 0F:A002 command) and the
-    CPU's own top-page mirror in page 0F.
+    CPU's own top-page mirror in page 0F.  While CTRL5 is high the gate
+    array puts IC10 in the CSPs' place: the DATA card's 32 KB at 0F:0000
+    and, with A15 high, IC10's status byte, the card's sense line in bit 1
+    and its protect switch in bit 0, high while the card can be written.
+    The card's cell is A/D channel 1.
 
 ****************************************************************************/
 
@@ -86,6 +90,7 @@
 
 #include "bus/midi/midi.h"
 #include "cpu/h8500/h8570.h"
+#include "datacard.h"
 #include "machine/nvram.h"
 #include "sound/roland_ep.h"
 #include "sound/roland_csp.h"
@@ -167,11 +172,14 @@ public:
 		, m_ifcs(*this, "ifcs")
 		, m_exp(*this, "exp")
 		, m_card(*this, "card")
+		, m_datacard(*this, "datacard")
 		, m_waverom(*this, "waverom")
 		, m_ram(*this, "nvram")
 		, m_rambank(*this, "rambank")
+		, m_page_f(*this, "page_f")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
+		, m_card_battery(*this, "CARDBAT")
 		, m_leds(*this, "led%u", 0U)
 	{
 	}
@@ -185,6 +193,7 @@ private:
 	u8 port9_r();
 	u8 port11_r();
 	void port6_w(u8 data);
+	u8 card_status_r();
 
 	void isp_reset_w(int state);
 	void isp_dr_w(offs_t offset, u8 data);
@@ -209,11 +218,14 @@ private:
 	required_device<jd990_ifcs_device> m_ifcs;
 	required_device<roland_srjv80_slot_device> m_exp;
 	required_device<roland_sopcm1_slot_device> m_card;
+	required_device<roland_datacard_device> m_datacard;
 	required_region_ptr<u8> m_waverom;
 	required_shared_ptr<u16> m_ram;
 	required_memory_bank m_rambank;
+	memory_view m_page_f;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
+	required_ioport m_card_battery;
 	output_finder<20> m_leds;
 
 	static constexpr int FXM_VOICES = 24;
@@ -243,6 +255,7 @@ void roland_jd990_state::machine_start()
 	roland_srjv80_slot_device::descramble_rom(m_wave.get(), size);
 	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
 	m_rambank->set_base(&m_ram[0x4000]);
+	m_page_f.select(0);
 
 	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
 	m_isp_fxm = timer_alloc(FUNC(roland_jd990_state::isp_fxm), this);
@@ -280,6 +293,12 @@ void roland_jd990_state::port6_w(u8 data)
 		m_resume_ticks = 2;
 	}
 	m_scan_held = held;
+	m_page_f.select(held ? 1 : 0);
+}
+
+u8 roland_jd990_state::card_status_r()
+{
+	return (m_datacard->sense_r() ? 0x02 : 0x00) | ((m_datacard->sense_r() && !m_datacard->protect_r()) ? 0x01 : 0x00);
 }
 
 void roland_jd990_state::isp_dr_w(offs_t offset, u8 data)
@@ -442,8 +461,11 @@ void roland_jd990_state::mem_map(address_map &map)
 	map(0xe0000, 0xe007f).rw(m_ep, FUNC(roland_ep_device::read), FUNC(roland_ep_device::write));
 	map(0xe4000, 0xe407f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xe8000, 0xeffff).bankrw(m_rambank);
-	map(0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
-	map(0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
+	map(0xf0000, 0xf9fff).view(m_page_f);
+	m_page_f[0](0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
+	m_page_f[0](0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
+	m_page_f[1](0xf0000, 0xf7fff).rw(m_datacard, FUNC(roland_datacard_device::read), FUNC(roland_datacard_device::write));
+	m_page_f[1](0xf8000, 0xf9fff).r(FUNC(roland_jd990_state::card_status_r)).nopw();
 	map(0xfa000, 0xfa000).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::data_w));
 	map(0xfa002, 0xfa002).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
 }
@@ -530,6 +552,11 @@ static INPUT_PORTS_START(jd990)
 
 	PORT_START("ENCODER")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_SENSITIVITY(25) PORT_KEYDELTA(1) PORT_NAME("Value")
+
+	PORT_START("CARDBAT")
+	PORT_CONFNAME(0x01, 0x01, "DATA card battery")
+	PORT_CONFSETTING(0x00, "None")
+	PORT_CONFSETTING(0x01, "Fitted")
 INPUT_PORTS_END
 
 void roland_jd990_state::jd990(machine_config &config)
@@ -541,13 +568,15 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->isp_dr_write_cb().set(FUNC(roland_jd990_state::isp_dr_w));
 	// the internal and the DATA card battery, 3.0 V against the 5 V reference
 	m_maincpu->read_adc<0>().set_constant(0x266);
-	m_maincpu->read_adc<1>().set_constant(0x266);
+	m_maincpu->read_adc<1>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 0x266 : 0; });
 	// the card and board sense lines in bit 7, low with an empty slot
 	m_maincpu->read_port<h8570_device::PORT_9>().set(FUNC(roland_jd990_state::port9_r));
 	m_maincpu->read_port<h8570_device::PORT_11>().set(FUNC(roland_jd990_state::port11_r));
 	m_maincpu->write_port6().set(FUNC(roland_jd990_state::port6_w));
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	ROLAND_DATACARD(config, m_datacard);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
