@@ -13,8 +13,9 @@
  * CRAM in bits 47:32. The data space also exposes CRAM independently.
  * Host accesses use the JD-990's most-significant-byte-first strap.
  *
- * Unverified: sample budget, jump timing, bit 18, SC channel order,
- * configuration bits and physical external-memory transfers.
+ * Unverified: sample budget, jump timing, the accB jump conditions,
+ * bit 18, SC channel order, configuration bits and physical
+ * external-memory transfers.
  */
 
 #include "emu.h"
@@ -232,15 +233,15 @@ s32 roland_csp_device::store(unsigned mode, unsigned offset, u16 coefficient)
 		return m_iram[address] = value;
 	}
 	const bool special = mode < 4;
-	const unsigned acc = special ? ((offset >= 0x188 && offset <= 0x18f) || (offset >= 0x1d0 && offset <= 0x1ef)) : (mode & 1);
+	const unsigned acc = special ? ((offset >= 0x178 && offset <= 0x17f) || (offset >= 0x188 && offset <= 0x18f) || (offset >= 0x1d0 && offset <= 0x1ef)) : (mode & 1);
 	const s32 raw = m_history[acc][2];
 	s32 value = (mode == 3 || mode >= 6) ? saturate(raw) : narrow(raw);
 	if (!special)
 		return m_iram[address] = value;
-	if (offset >= 0x172 && offset <= 0x177)
+	if (offset >= 0x170 && offset <= 0x17f)
 	{
-		const bool condition[] = { true, value > 0, raw < -0x800000 || raw > 0x7fffff, value < 0, value == 0, value >= 0 };
-		if (condition[offset - 0x172])
+		const bool condition[] = { false, false, true, value > 0, raw < -0x800000 || raw > 0x7fffff, value < 0, value == 0, value >= 0 };
+		if (condition[offset & 7])
 			m_pc = coefficient;
 	}
 	else if (offset >= 0x180 && offset <= 0x18f)
