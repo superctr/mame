@@ -3710,6 +3710,8 @@ if BUSES["MSX_CTRL"] then
 		MAME_DIR .. "src/devices/bus/msx/ctrl/magickey.h",
 		MAME_DIR .. "src/devices/bus/msx/ctrl/mouse.cpp",
 		MAME_DIR .. "src/devices/bus/msx/ctrl/mouse.h",
+		MAME_DIR .. "src/devices/bus/msx/ctrl/rc100.cpp",
+		MAME_DIR .. "src/devices/bus/msx/ctrl/rc100.h",
 		MAME_DIR .. "src/devices/bus/msx/ctrl/sgadapt.cpp",
 		MAME_DIR .. "src/devices/bus/msx/ctrl/sgadapt.h",
 		MAME_DIR .. "src/devices/bus/msx/ctrl/towns6b.cpp",
@@ -5208,19 +5210,6 @@ if BUSES["ROLAND_EXT"] then
 		MAME_DIR .. "src/devices/bus/roland/mouse.h",
 	}
 end
-
----------------------------------------------------
---
---@src/devices/bus/roland/rc100.h,BUSES["ROLAND_RC100"] = true
----------------------------------------------------
-
-if (BUSES["ROLAND_RC100"]~=null) then
-	files {
-		MAME_DIR .. "src/devices/bus/roland/rc100.cpp",
-		MAME_DIR .. "src/devices/bus/roland/rc100.h",
-	}
-end
-
 
 ---------------------------------------------------
 --

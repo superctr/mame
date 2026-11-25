@@ -34,7 +34,7 @@
 #include "bus/nscsi/devices.h"
 #include "bus/msx/ctrl/ctrl.h"
 #include "bus/msx/ctrl/mouse.h"
-#include "bus/roland/rc100.h"
+#include "bus/msx/ctrl/rc100.h"
 #include "video/rf5c16.h"
 #include "video/sed1330.h"
 #include "video/t6963c.h"

@@ -40,23 +40,30 @@ private:
 	required_ioport m_dial;
 	output_finder<16> m_leds;
 
+	u8 m_host_lines;
 	u8 m_lines;
 	u8 m_p1;
 	u8 m_p3;
+	u8 m_out;
+	u8 m_host_out;
 	u8 m_led[4];
-	u8 m_ga_mode;
 	u8 m_col;
 	u8 m_dial_last;
 
 	void program_map(address_map &map) ATTR_COLD;
 	void xdata_map(address_map &map) ATTR_COLD;
-	u8 ga_r(offs_t offset);
-	void ga_w(offs_t offset, u8 data);
+	template <int N> void led_w(u8 data);
+	u8 dial_r();
+	u8 keys_r();
+	void keys_w(u8 data);
 	u8 p1_r();
 	void p1_w(u8 data);
 	u8 p3_r();
 	void p3_w(u8 data);
+	bool lines_w(u8 lines);
 	void lines_sync(s32 param);
+	void out_update();
+	void out_sync(s32 param);
 	void update_leds();
 };
 
@@ -138,10 +145,12 @@ roland_rc100_device::roland_rc100_device(const machine_config &mconfig, const ch
 	, m_sw(*this, "SW")
 	, m_dial(*this, "DIAL")
 	, m_leds(*this, "rc100_led%u", 0U)
+	, m_host_lines(LINE_CLK1 | LINE_CLK2 | LINE_DATA2)
 	, m_lines(LINE_CLK1 | LINE_CLK2 | LINE_DATA2)
 	, m_p1(0xff)
 	, m_p3(0xff)
-	, m_ga_mode(0)
+	, m_out(0x02)
+	, m_host_out(0x02)
 	, m_col(0)
 	, m_dial_last(0)
 {
@@ -172,17 +181,24 @@ void roland_rc100_device::program_map(address_map &map)
 
 void roland_rc100_device::xdata_map(address_map &map)
 {
-	map(0x0000, 0xffff).rw(FUNC(roland_rc100_device::ga_r), FUNC(roland_rc100_device::ga_w));
+	map.unmap_value_high();
+	map(0x0000, 0x1fff).w(FUNC(roland_rc100_device::led_w<0>));
+	map(0x2000, 0x3fff).r(FUNC(roland_rc100_device::dial_r)).nopw();
+	map(0x4000, 0x5fff).w(FUNC(roland_rc100_device::led_w<2>));
+	map(0x8000, 0x9fff).w(FUNC(roland_rc100_device::led_w<1>));
+	map(0xa000, 0xbfff).rw(FUNC(roland_rc100_device::keys_r), FUNC(roland_rc100_device::keys_w));
+	map(0xc000, 0xdfff).w(FUNC(roland_rc100_device::led_w<3>));
 }
 
 void roland_rc100_device::device_start()
 {
-
+	save_item(NAME(m_host_lines));
 	save_item(NAME(m_lines));
 	save_item(NAME(m_p1));
 	save_item(NAME(m_p3));
+	save_item(NAME(m_out));
+	save_item(NAME(m_host_out));
 	save_item(NAME(m_led));
-	save_item(NAME(m_ga_mode));
 	save_item(NAME(m_col));
 	save_item(NAME(m_dial_last));
 }
@@ -193,7 +209,7 @@ void roland_rc100_device::device_reset()
 	m_col = 0;
 	m_dial_last = m_dial->read();
 	update_leds();
-	lines_sync(m_lines);
+	lines_sync(m_host_lines);
 }
 
 INPUT_CHANGED_MEMBER(roland_rc100_device::reset_changed)
@@ -201,49 +217,32 @@ INPUT_CHANGED_MEMBER(roland_rc100_device::reset_changed)
 	m_mcu->set_input_line(INPUT_LINE_RESET, newval ? ASSERT_LINE : CLEAR_LINE);
 }
 
-u8 roland_rc100_device::ga_r(offs_t offset)
+template <int N> void roland_rc100_device::led_w(u8 data)
 {
-	u8 const reg = BIT(offset, 15) | (BIT(offset, 14) << 1) | (BIT(offset, 13) << 2);
-	switch (reg)
-	{
-	case 4:
-	{
-		u8 const now = m_dial->read();
-		u8 const delta = now - m_dial_last;
-		if (!machine().side_effects_disabled())
-			m_dial_last = now;
-		return delta;
-	}
-	case 5:
-	{
-		u8 const data = m_cols[m_col & 3]->read();
-		if (!machine().side_effects_disabled())
-			m_col = (m_col + 1) & 3;
-		return data;
-	}
-	default:
-		return 0xff;
-	}
+	m_led[N] = data;
+	update_leds();
 }
 
-void roland_rc100_device::ga_w(offs_t offset, u8 data)
+u8 roland_rc100_device::dial_r()
 {
-	u8 const reg = BIT(offset, 15) | (BIT(offset, 14) << 1) | (BIT(offset, 13) << 2);
-	switch (reg)
-	{
-	case 0: case 1: case 2: case 3:
-		m_led[reg] = data;
-		update_leds();
-		break;
-	case 4:
-		m_ga_mode = data;
-		break;
-	case 5:
-		m_col = 0;
-		break;
-	default:
-		break;
-	}
+	u8 const now = m_dial->read();
+	u8 const delta = now - m_dial_last;
+	if (!machine().side_effects_disabled())
+		m_dial_last = now;
+	return delta;
+}
+
+u8 roland_rc100_device::keys_r()
+{
+	u8 const data = m_cols[m_col & 3]->read();
+	if (!machine().side_effects_disabled())
+		m_col = (m_col + 1) & 3;
+	return data;
+}
+
+void roland_rc100_device::keys_w(u8 data)
+{
+	m_col = 0;
 }
 
 void roland_rc100_device::update_leds()
@@ -264,61 +263,71 @@ void roland_rc100_device::p1_w(u8 data)
 	m_ext->pin_6_w(BIT(data, 4));
 	m_ext->pin_7_w(BIT(data, 5));
 	m_ext->pin_8_w(BIT(data, 6));
+	out_update();
 }
 
 u8 roland_rc100_device::p3_r()
 {
-	return (m_sw->read() & 0x30) | (m_lines & LINE_DATA2 ? 0xce : 0xcf);
+	return (m_sw->read() & 0x30) | ((m_lines & LINE_DATA2) ? 0xce : 0xcf);
 }
 
 void roland_rc100_device::p3_w(u8 data)
 {
 	m_p3 = data;
+	out_update();
+}
+
+void roland_rc100_device::out_update()
+{
+	u8 const out = (BIT(m_p1, 7) << 1) | (BIT(m_p3, 1) ? 0 : 1);
+	if (out != m_out)
+	{
+		m_out = out;
+		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::out_sync), this), out);
+	}
+}
+
+void roland_rc100_device::out_sync(s32 param)
+{
+	m_host_out = param;
 }
 
 u8 roland_rc100_device::read()
 {
-	return 0xc0 | (m_lines & LINE_CLK1 ? 0x10 : 0) | (m_lines & LINE_CLK2 ? 0x20 : 0)
-		| (BIT(m_p1, 7) << 1) | (BIT(m_p3, 1) ? 0 : 1);
+	return 0xc0 | ((m_host_lines & LINE_CLK1) ? 0x10 : 0) | ((m_host_lines & LINE_CLK2) ? 0x20 : 0) | m_host_out;
 }
 
 void roland_rc100_device::lines_sync(s32 param)
 {
 	m_lines = param;
-	m_mcu->set_input_line(MCS51_INT1_LINE, param & LINE_CLK1 ? ASSERT_LINE : CLEAR_LINE);
-	m_mcu->set_input_line(MCS51_INT0_LINE, param & LINE_CLK2 ? ASSERT_LINE : CLEAR_LINE);
+	m_mcu->set_input_line(MCS51_INT1_LINE, (param & LINE_CLK1) ? ASSERT_LINE : CLEAR_LINE);
+	m_mcu->set_input_line(MCS51_INT0_LINE, (param & LINE_CLK2) ? ASSERT_LINE : CLEAR_LINE);
+}
+
+bool roland_rc100_device::lines_w(u8 lines)
+{
+	if (lines == m_host_lines)
+		return false;
+	m_host_lines = lines;
+	machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
+	return true;
 }
 
 void roland_rc100_device::pin_6_w(int state)
 {
-	u8 const lines = state ? (m_lines | LINE_CLK1) : (m_lines & ~LINE_CLK1);
-	if (lines != m_lines)
-	{
-		m_lines = lines;
-		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
+	if (lines_w(state ? (m_host_lines | LINE_CLK1) : (m_host_lines & ~LINE_CLK1)))
 		machine().scheduler().perfect_quantum(attotime::from_usec(200));
-	}
 }
 
 void roland_rc100_device::pin_7_w(int state)
 {
-	u8 const lines = state ? (m_lines | LINE_CLK2) : (m_lines & ~LINE_CLK2);
-	if (lines != m_lines)
-	{
-		m_lines = lines;
-		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
+	if (lines_w(state ? (m_host_lines | LINE_CLK2) : (m_host_lines & ~LINE_CLK2)))
 		machine().scheduler().perfect_quantum(attotime::from_usec(200));
-	}
 }
 
 void roland_rc100_device::pin_8_w(int state)
 {
-	u8 const lines = state ? (m_lines | LINE_DATA2) : (m_lines & ~LINE_DATA2);
-	if (lines != m_lines)
-	{
-		m_lines = lines;
-		machine().scheduler().synchronize(timer_expired_delegate(FUNC(roland_rc100_device::lines_sync), this), lines);
-	}
+	lines_w(state ? (m_host_lines | LINE_DATA2) : (m_host_lines & ~LINE_DATA2));
 }
 
 } // anonymous namespace
