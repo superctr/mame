@@ -4,13 +4,14 @@
 
     Ricoh RF5C16A / RP5C16 CRT controller
 
-    64K words of DRAM behind a transfer register and an auto-incrementing
-    address counter; 80x25 or 40x25 text, 640x200 or 320x200 four-plane
-    graphics, a 40x25 text plane over the 40-column modes, a fixed
-    16-colour palette from R, G, B and light/dark, and a crosshair cursor.
+    - 64K words of DRAM behind a transfer register and an address counter
+    - 80x25 or 40x25 text, 640x200 or 320x200 four-plane graphics
+    - a 40x25 text plane over the 40-column modes
+    - fixed 16-colour palette (R, G, B, light/dark), crosshair cursor
 
-    Not emulated: DMA, the dot-clock timing of transfers, master/slave
-    sync, the three-level output and the cell attributes' inversions.
+    TODO:
+    - DMA, the dot-clock timing of transfers, master/slave sync
+    - the three-level output, the cell attributes' inversions
 
 ***************************************************************************/
 
@@ -19,7 +20,7 @@
 
 #include "screen.h"
 
-#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 DEFINE_DEVICE_TYPE(RF5C16, rf5c16_device, "rf5c16", "Ricoh RF5C16A CRT controller")
@@ -46,6 +47,7 @@ rf5c16_device::rf5c16_device(const machine_config &mconfig, const char *tag, dev
 	device_video_interface(mconfig, *this),
 	m_int_cb(*this),
 	m_middle(0xaa),
+	m_int_state(false),
 	m_vblank_timer(nullptr),
 	m_tr(0), m_addr(0), m_imask(0), m_iflag(0), m_mode(0),
 	m_cursor_x(0), m_cursor_y(0), m_bcg(0), m_bcg_cursor(0), m_bfg(0), m_bbg(0),
@@ -55,12 +57,12 @@ rf5c16_device::rf5c16_device(const machine_config &mconfig, const char *tag, dev
 
 void rf5c16_device::device_start()
 {
-	m_vram = std::make_unique<u16[]>(0x10000);
-	std::fill_n(m_vram.get(), 0x10000, 0);
+	m_vram = make_unique_clear<u16[]>(0x10000);
 
 	m_vblank_timer = timer_alloc(FUNC(rf5c16_device::vblank_tick), this);
 
 	save_pointer(NAME(m_vram), 0x10000);
+	save_item(NAME(m_int_state));
 	save_item(NAME(m_tr));
 	save_item(NAME(m_addr));
 	save_item(NAME(m_imask));
@@ -96,7 +98,12 @@ TIMER_CALLBACK_MEMBER(rf5c16_device::vblank_tick)
 
 void rf5c16_device::update_int()
 {
-	m_int_cb((m_imask & 0xe0) & ((m_iflag & 0x0e) << 4) ? 1 : 0);
+	const bool state = (m_imask & 0xe0) & ((m_iflag & 0x0e) << 4);
+	if (state != m_int_state)
+	{
+		m_int_state = state;
+		m_int_cb(state ? 1 : 0);
+	}
 }
 
 void rf5c16_device::transfer_write()

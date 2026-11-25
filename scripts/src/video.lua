@@ -1460,6 +1460,17 @@ if VIDEOS["RAMDAC"] then
 	}
 end
 
+--------------------------------------------------
+--
+--@src/devices/video/rf5c16.h,VIDEOS["RF5C16"] = true
+--------------------------------------------------
+if VIDEOS["RF5C16"] then
+	files {
+		MAME_DIR .. "src/devices/video/rf5c16.cpp",
+		MAME_DIR .. "src/devices/video/rf5c16.h",
+	}
+end
+
 ---------------------------------------------------
 --
 --@src/devices/video/roc10937.h,VIDEOS["ROC10937"] = true
@@ -1538,17 +1549,6 @@ if VIDEOS["SED1200"] then
 	files {
 		MAME_DIR .. "src/devices/video/sed1200.cpp",
 		MAME_DIR .. "src/devices/video/sed1200.h",
-	}
-end
-
---------------------------------------------------
---
---@src/devices/video/rf5c16.h,VIDEOS["RF5C16"] = true
---------------------------------------------------
-if VIDEOS["RF5C16"] then
-	files {
-		MAME_DIR .. "src/devices/video/rf5c16.cpp",
-		MAME_DIR .. "src/devices/video/rf5c16.h",
 	}
 end
 

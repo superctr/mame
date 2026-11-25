@@ -14,6 +14,8 @@
 class rf5c16_device : public device_t, public device_video_interface
 {
 public:
+	static constexpr feature_type imperfect_features() { return feature::GRAPHICS; }
+
 	rf5c16_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_cb.bind(); }
@@ -24,8 +26,6 @@ public:
 
 	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
-	static constexpr feature_type imperfect_features() { return feature::GRAPHICS; }
-
 protected:
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -35,6 +35,7 @@ protected:
 private:
 	devcb_write_line m_int_cb;
 	u8 m_middle;
+	bool m_int_state;
 
 	std::unique_ptr<u16[]> m_vram;
 	emu_timer *m_vblank_timer;
