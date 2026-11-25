@@ -10,8 +10,6 @@ class roland_ep_device : public device_t, public device_memory_interface, public
 public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
-	// the wave ROMs, one byte a sample, 24 bits of address: the internal module,
-	// the card and the expansion board at the bases the firmware probes
 	enum { AS_WAVE = 0 };
 
 	static constexpr int VOICES = 32;
@@ -19,7 +17,6 @@ public:
 	static constexpr u32 ADDRESS_MASK = 0x00ffffff;
 	static constexpr u32 PAGE_MASK = 0x000fffff;
 
-	// the 64 words of the window
 	enum register_word
 	{
 		CONFIG = 0x00, VOICES_IN_USE = 0x01, READ_DATA = 0x02, IRQ_VOICE = 0x04,
@@ -32,14 +29,11 @@ public:
 
 	roland_ep_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// a voice's first pass through its end
 	auto irq_cb() { return m_irq_cb.bind(); }
 
-	// the window, a word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
 
-	// a voice's pitch word from a second bus master, the select left alone
 	void voice_pitch_w(int voice, u16 data);
 
 protected:
@@ -48,7 +42,7 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 	// device_memory_interface implementation
-	virtual space_config_vector memory_space_config() const override;
+	virtual space_config_vector memory_space_config() const override ATTR_COLD;
 
 	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;

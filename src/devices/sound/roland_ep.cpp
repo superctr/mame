@@ -18,51 +18,15 @@
 #include "emu.h"
 #include "roland_ep.h"
 
+#include "roland_pcm_interp.h"
+
+#include <algorithm>
 #include <bit>
 
 #define LOG_REGS  (1U << 1)
 
 #define VERBOSE (0)
 #include "logmacro.h"
-
-namespace {
-
-// the resampling kernel: three weights on the deltas after the sample, by
-// the phase's top seven bits, in 1/4096
-const s16 interp_weights[3][128] = {
-	{
-		3385, 3401, 3417, 3432, 3448, 3463, 3478, 3492, 3506, 3521, 3535, 3548, 3562, 3575, 3588, 3601,
-		3614, 3626, 3638, 3650, 3662, 3673, 3685, 3696, 3707, 3718, 3728, 3739, 3749, 3759, 3768, 3778,
-		3787, 3796, 3805, 3814, 3823, 3831, 3839, 3847, 3855, 3863, 3870, 3878, 3885, 3892, 3899, 3905,
-		3912, 3918, 3924, 3930, 3936, 3942, 3948, 3953, 3958, 3963, 3968, 3973, 3978, 3983, 3987, 3991,
-		3995, 4000, 4004, 4007, 4011, 4015, 4018, 4022, 4025, 4028, 4031, 4034, 4037, 4040, 4042, 4045,
-		4047, 4050, 4052, 4054, 4057, 4059, 4061, 4063, 4064, 4066, 4068, 4070, 4071, 4073, 4074, 4076,
-		4077, 4078, 4079, 4081, 4082, 4083, 4084, 4085, 4086, 4086, 4087, 4088, 4089, 4089, 4090, 4091,
-		4091, 4092, 4092, 4093, 4093, 4094, 4094, 4094, 4094, 4095, 4095, 4095, 4095, 4095, 4095, 4095,
-	},
-	{
-		 710,  726,  742,  758,  775,  792,  809,  826,  844,  861,  879,  897,  915,  933,  952,  971,
-		 990, 1009, 1028, 1047, 1067, 1087, 1106, 1126, 1147, 1167, 1188, 1208, 1229, 1250, 1271, 1292,
-		1314, 1335, 1357, 1379, 1400, 1423, 1445, 1467, 1489, 1512, 1534, 1557, 1580, 1602, 1625, 1648,
-		1671, 1695, 1718, 1741, 1764, 1788, 1811, 1835, 1858, 1882, 1906, 1929, 1953, 1977, 2000, 2024,
-		2048, 2071, 2095, 2119, 2143, 2166, 2190, 2214, 2237, 2261, 2284, 2308, 2331, 2355, 2378, 2401,
-		2425, 2448, 2471, 2494, 2517, 2539, 2562, 2585, 2607, 2630, 2652, 2674, 2696, 2718, 2740, 2762,
-		2783, 2805, 2826, 2847, 2868, 2889, 2910, 2931, 2951, 2971, 2991, 3011, 3031, 3051, 3070, 3089,
-		3108, 3127, 3146, 3164, 3182, 3200, 3218, 3236, 3253, 3271, 3288, 3304, 3321, 3338, 3354, 3370,
-	},
-	{
-		   0,    0,    0,    1,    1,    1,    2,    2,    3,    3,    3,    4,    4,    5,    5,    6,
-		   6,    7,    8,    8,    9,   10,   10,   11,   12,   13,   14,   15,   16,   17,   18,   19,
-		  20,   22,   23,   24,   26,   27,   29,   30,   32,   34,   36,   38,   40,   42,   44,   46,
-		  49,   51,   53,   56,   59,   62,   65,   68,   71,   74,   77,   81,   84,   88,   92,   96,
-		 100,  104,  109,  113,  118,  122,  127,  132,  137,  143,  148,  154,  160,  165,  171,  178,
-		 184,  191,  197,  204,  211,  219,  226,  234,  241,  249,  257,  266,  274,  283,  292,  301,
-		 310,  319,  329,  339,  349,  359,  369,  380,  391,  402,  413,  424,  436,  448,  460,  472,
-		 484,  497,  510,  523,  536,  549,  563,  577,  591,  605,  619,  634,  648,  663,  679,  694,
-	},
-};
-
-} // anonymous namespace
 
 DEFINE_DEVICE_TYPE(ROLAND_EP, roland_ep_device, "roland_ep", "Roland EP")
 
@@ -108,12 +72,6 @@ void roland_ep_device::device_reset()
 	m_irq_cb(CLEAR_LINE);
 }
 
-
-//-------------------------------------------------
-//  the window: the globals, the read-through and, behind the select, a
-//  voice's own words
-//-------------------------------------------------
-
 u16 roland_ep_device::read(offs_t offset)
 {
 	const int word = offset & (WORDS - 1);
@@ -124,7 +82,8 @@ u16 roland_ep_device::read(offs_t offset)
 	}
 	if (word == IRQ_VOICE)
 	{
-		m_stream->update();
+		if (!machine().side_effects_disabled())
+			m_stream->update();
 		if (!m_irq_pending)
 			return 0;
 		const int n = std::countr_zero(m_irq_pending);
@@ -193,13 +152,6 @@ void roland_ep_device::key_w(int word, u16 data)
 	}
 }
 
-
-//-------------------------------------------------
-//  the wave: a pair holds the sample address times 4096 with the
-//  overflowed top nibble in the wave-select word; the deltas from the
-//  data area, their exponents from the region's nibble table
-//-------------------------------------------------
-
 u32 roland_ep_device::address_of(const voice &v, int high) const
 {
 	const u32 page = (v.regs[WAVE] >> 4) & 0xf;
@@ -243,7 +195,7 @@ roland_ep_device::wave_cell roland_ep_device::cell_at(u32 address)
 s32 roland_ep_device::tap(s32 weight, wave_cell c)
 {
 	const s32 p = (weight * c.mantissa) & ~3;
-	return p >> (10 - c.exponent);
+	return (c.exponent > 10) ? 0 : (p >> (10 - c.exponent));
 }
 
 void roland_ep_device::launch(int n)
@@ -275,7 +227,7 @@ s32 roland_ep_device::run_voice(int n)
 	for (int i = 0; i < 3; i++)
 	{
 		advance(v, address, backward, c);
-		sum += tap(interp_weights[i][v.phase >> 9], c);
+		sum += tap(roland_pcm_interp::WEIGHTS[i][v.phase >> 9], c);
 	}
 	const s32 sample = wrap20((sum * BIT(v.regs[GATE], 12, 2)) >> 3);
 
@@ -297,6 +249,8 @@ s32 roland_ep_device::run_voice(int n)
 void roland_ep_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
+	{
 		for (int n = 0; n < VOICES; n++)
 			stream.put_int(n, i, run_voice(n), 1 << 17);
+	}
 }
