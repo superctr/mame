@@ -53,7 +53,7 @@ t6a04_device::t6a04_device(const machine_config &mconfig, const char *tag, devic
 
 void t6a04_device::device_start()
 {
-	m_lcd_ram = std::make_unique<uint8_t[]>(64 * m_ram_width);
+	m_lcd_ram = make_unique_clear<uint8_t[]>(64 * m_ram_width);
 
 	save_item(NAME(m_busy_flag));
 	save_item(NAME(m_display_on));
@@ -200,11 +200,13 @@ void t6a04_device::data_write(uint8_t data)
 		data = data<<0x02;
 		uint8_t start_bit = m_ypos * 6;
 		uint8_t pos_bit = start_bit & 0x07;
-		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*m_ram_width)+(start_bit>>3)];
+		int const byte = start_bit >> 3;
+		uint8_t *ti82_video = &m_lcd_ram[m_xpos*m_ram_width];
 
-		ti82_video[0] = (ti82_video[0] & ~(0xFC>>pos_bit)) | (data>>pos_bit);
-		if(pos_bit>0x02)
-			ti82_video[1] = (ti82_video[1] & ~(0xFC<<(8-pos_bit))) | (data<<(8-pos_bit));
+		if (byte < m_ram_width)
+			ti82_video[byte] = (ti82_video[byte] & ~(0xFC>>pos_bit)) | (data>>pos_bit);
+		if (pos_bit>0x02 && byte + 1 < m_ram_width)
+			ti82_video[byte + 1] = (ti82_video[byte + 1] & ~(0xFC<<(8-pos_bit))) | (data<<(8-pos_bit));
 	}
 
 	if (m_active_counter)
@@ -229,9 +231,12 @@ uint8_t t6a04_device::data_read()
 		//6bit mode
 		uint8_t start_bit = m_ypos * 6;
 		uint8_t pos_bit = start_bit & 7;
-		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*m_ram_width)+(start_bit>>3)];
+		int const byte = start_bit >> 3;
+		uint8_t const *ti82_video = &m_lcd_ram[m_xpos*m_ram_width];
+		uint8_t const high = (byte < m_ram_width) ? ti82_video[byte] : 0;
+		uint8_t const low = (byte + 1 < m_ram_width) ? ti82_video[byte + 1] : 0;
 
-		output_reg = ((((*ti82_video)<<8)+ti82_video[1])>>(10-pos_bit));
+		output_reg = (((high<<8)+low)>>(10-pos_bit));
 	}
 
 	if (!machine().side_effects_disabled())

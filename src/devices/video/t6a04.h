@@ -29,7 +29,6 @@ public:
 		m_height = h;
 	}
 
-	// bytes per line of display RAM: 15 on the T6A04 itself (120 columns)
 	void set_ram_width(int bytes) { m_ram_width = bytes; }
 
 	uint8_t ram_r(int line, int column) const { return m_lcd_ram[(line & 0x3f) * m_ram_width + column]; }
