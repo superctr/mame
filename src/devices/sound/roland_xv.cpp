@@ -115,6 +115,8 @@ roland_xv_device::roland_xv_device(const machine_config &mconfig, const char *ta
 {
 }
 
+roland_xv_device::dsp_recompiler::~dsp_recompiler() = default;
+
 device_memory_interface::space_config_vector roland_xv_device::memory_space_config() const
 {
 	return space_config_vector { std::make_pair(AS_WAVE, &m_wave_config) };

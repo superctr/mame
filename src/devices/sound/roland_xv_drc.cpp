@@ -5,12 +5,17 @@
 #include "emu.h"
 #include "roland_xv.h"
 
-#include "emuopts.h"
-
 #include "cpu/drcuml.h"
 #include "cpu/drcumlsh.h"
 
+#include "emuopts.h"
+
+#include <algorithm>
+#include <bitset>
 #include <cstdlib>
+#include <memory>
+#include <new>
+#include <vector>
 
 
 namespace {
@@ -20,11 +25,10 @@ using namespace uml;
 constexpr int PAGE = 64;
 constexpr int MODES = 2;
 constexpr size_t CACHE_SIZE = 16 * 1024 * 1024;
-constexpr u32 MAX_INSTRUCTIONS = 32768;
+constexpr u32 MAX_INSTRUCTIONS = 32'768;
 
 enum { EXECUTE_DONE = 0, EXECUTE_MISSING_CODE = 1, EXECUTE_INTERPRET = 2 };
 
-// the row's temporaries and the accumulators for the sample; the product and latches stay in the state block
 const parameter REG_T = I0;
 const parameter REG_X = I1;
 const parameter REG_Y = I2;
@@ -34,9 +38,8 @@ const parameter REG_B = I4;
 constexpr u32 LABEL_ROW = 1;
 constexpr u32 LABEL_LOCAL = 0x1000;
 
-constexpr s64 MASK29 = 0x1fffffff;
+constexpr s64 MASK29 = 0x1fff'ffff;
 
-// a block that may be absent: the first pass over a page only looks
 struct sink
 {
 	drcuml_block *block;
@@ -47,10 +50,10 @@ struct sink
 } // anonymous namespace
 
 
-class roland_xv_dsp_recompiler : public roland_xv_device::dsp_recompiler
+class roland_xv_device::dsp_recompiler_impl : public roland_xv_device::dsp_recompiler
 {
 public:
-	roland_xv_dsp_recompiler(roland_xv_device &device);
+	dsp_recompiler_impl(roland_xv_device &device);
 
 	virtual void *alloc_near(size_t bytes, size_t align) override { return m_cache.alloc_near(bytes, std::align_val_t(align)); }
 	virtual void reset() override;
@@ -67,8 +70,6 @@ private:
 	static constexpr int PAGES = ROWS / PAGE;
 	static constexpr int LAST_ROW = dev::DSP_ROWS_MAPPED - 1;
 
-	// what the code reads and writes beside the device's state: the operand values, the results
-	// a later condition wants, the latch reads a row defers, and the hand-over words
 	struct near_state
 	{
 		u32 pc;
@@ -83,7 +84,6 @@ private:
 		u32 carry[ROWS];
 	};
 
-	// a value of the flag chain as the compiler knows it: some row's result, or what memory holds
 	struct chain_value
 	{
 		enum kind_t : u8 { ROW, IN_FLAG, IN_LAST };
@@ -95,7 +95,6 @@ private:
 	enum { HOLD_CLEAR = 0, HOLD_SET = 1, HOLD_DYNAMIC = 2 };
 	enum { DYNAMIC = -1 };
 
-	// what the compiler knows between two hand-overs; at a hash entry, only that memory holds it
 	struct context
 	{
 		chain_value flag = { chain_value::IN_FLAG, 0 };
@@ -105,13 +104,12 @@ private:
 		bool narrow[2] = { false, false };
 	};
 
-	// a clamp's rare ends, emitted after the page's code
 	struct clamp_stub
 	{
-		u32 high_label;
-		u32 low_label;
-		u32 back;
-		parameter reg;
+		code_label high_label;
+		code_label low_label;
+		code_label back;
+		uml::parameter reg;
 		s64 low;
 		s64 high;
 	};
@@ -127,7 +125,7 @@ private:
 	void emit_alternative(sink &b, const context &c, const dsp_row &r, int bus_mode, u8 consumed, u8 &deferred);
 	void emit_cell_read(sink &b, u16 address, int bus_mode);
 	void emit_cell_write(sink &b, u16 address, int bus_mode);
-	void emit_clamp(sink &b, parameter reg, s64 low, s64 high);
+	void emit_clamp(sink &b, uml::parameter reg, s64 low, s64 high);
 	void emit_stubs(sink &b);
 	condition_t emit_condition(sink &b, const context &c, int code);
 	void emit_merge(sink &b, context &c);
@@ -172,11 +170,11 @@ private:
 	std::vector<u32> m_segment_start;
 	std::vector<u32> m_segment_length;
 	std::vector<clamp_stub> m_stubs;
-	std::vector<bool> m_entry;
-	std::vector<u64> m_code;
+	std::bitset<ROWS> m_entry;
+	u64 m_code[ROWS];
 	int m_rows_end;
-	std::vector<bool> m_demand_raw;
-	std::vector<bool> m_demand_carry;
+	std::bitset<ROWS> m_demand_raw;
+	std::bitset<ROWS> m_demand_carry;
 	u64 m_signature[MODES][PAGES];
 	bool m_compiled[MODES][PAGES];
 };
@@ -186,10 +184,10 @@ std::unique_ptr<roland_xv_device::dsp_recompiler> roland_xv_device::dsp_recompil
 {
 	if (!device.machine().options().drc())
 		return nullptr;
-	return std::make_unique<roland_xv_dsp_recompiler>(device);
+	return std::make_unique<dsp_recompiler_impl>(device);
 }
 
-roland_xv_dsp_recompiler::roland_xv_dsp_recompiler(roland_xv_device &device)
+roland_xv_device::dsp_recompiler_impl::dsp_recompiler_impl(roland_xv_device &device)
 	: m_device(device)
 	, m_cache(CACHE_SIZE)
 	, m_entry_handle(nullptr)
@@ -203,11 +201,8 @@ roland_xv_dsp_recompiler::roland_xv_dsp_recompiler(roland_xv_device &device)
 	, m_steps_pending(0)
 	, m_counted(0)
 	, m_segment(-1)
-	, m_entry(ROWS, false)
-	, m_code(ROWS, 0)
+	, m_code{ 0 }
 	, m_rows_end(-1)
-	, m_demand_raw(ROWS, false)
-	, m_demand_carry(ROWS, false)
 {
 	m_cache.allocate_cache(device.mconfig().options().drc_rwx());
 	m_near = static_cast<near_state *>(m_cache.alloc_near(sizeof(near_state), std::align_val_t(alignof(near_state))));
@@ -217,20 +212,17 @@ roland_xv_dsp_recompiler::roland_xv_dsp_recompiler(roland_xv_device &device)
 	std::fill(&m_signature[0][0], &m_signature[0][0] + MODES * PAGES, 0);
 }
 
-void roland_xv_dsp_recompiler::reset()
+void roland_xv_device::dsp_recompiler_impl::reset()
 {
 	m_dirty = true;
 	flush();
 }
 
 //-------------------------------------------------
-//  the static code: the entry loads the accumulators and jumps to the row
-//  the sample is at in the work bank's mode; a miss stores them and asks
-//  for the page; a hand-over stores them and has the interpreter go on
-//  from a row; the exit stores them and ends the sample
+//  the static code
 //-------------------------------------------------
 
-void roland_xv_dsp_recompiler::flush()
+void roland_xv_device::dsp_recompiler_impl::flush()
 {
 	m_drcuml->reset();
 	std::fill(&m_compiled[0][0], &m_compiled[0][0] + MODES * PAGES, false);
@@ -280,14 +272,14 @@ void roland_xv_dsp_recompiler::flush()
 	}
 }
 
-void roland_xv_dsp_recompiler::load_registers(sink &b)
+void roland_xv_device::dsp_recompiler_impl::load_registers(sink &b)
 {
 	dsp_state &s = *m_device.m_dsp;
 	UML_DSEXT(b, REG_A, mem(&s.acc[0]), SIZE_DWORD);
 	UML_DSEXT(b, REG_B, mem(&s.acc[1]), SIZE_DWORD);
 }
 
-void roland_xv_dsp_recompiler::save_registers(sink &b)
+void roland_xv_device::dsp_recompiler_impl::save_registers(sink &b)
 {
 	dsp_state &s = *m_device.m_dsp;
 	UML_MOV(b, mem(&s.acc[0]), REG_A);
@@ -298,7 +290,7 @@ void roland_xv_dsp_recompiler::save_registers(sink &b)
 //  the sample
 //-------------------------------------------------
 
-void roland_xv_dsp_recompiler::run()
+void roland_xv_device::dsp_recompiler_impl::run()
 {
 	if (m_dirty)
 		refresh();
@@ -308,7 +300,7 @@ void roland_xv_dsp_recompiler::run()
 		execute();
 }
 
-void roland_xv_dsp_recompiler::execute()
+void roland_xv_device::dsp_recompiler_impl::execute()
 {
 	dsp_state &s = *m_device.m_dsp;
 	s.steps = 0;
@@ -328,13 +320,12 @@ void roland_xv_dsp_recompiler::execute()
 	}
 }
 
-// a row the code leaves to the interpreter, exactly as interpret() runs one that is no branch
-void roland_xv_dsp_recompiler::run_row_callback(void *param)
+void roland_xv_device::dsp_recompiler_impl::run_row_callback(void *param)
 {
-	static_cast<roland_xv_dsp_recompiler *>(param)->run_row();
+	static_cast<dsp_recompiler_impl *>(param)->run_row();
 }
 
-void roland_xv_dsp_recompiler::run_row()
+void roland_xv_device::dsp_recompiler_impl::run_row()
 {
 	roland_xv_device &d = m_device;
 	const dsp_row &row = d.m_rows[m_near->row];
@@ -343,8 +334,7 @@ void roland_xv_dsp_recompiler::run_row()
 	d.m_dsp->steps++;
 }
 
-// the interpreter on a copy of the state, then the code on the state, and every difference is fatal
-void roland_xv_dsp_recompiler::verify()
+void roland_xv_device::dsp_recompiler_impl::verify()
 {
 	roland_xv_device &d = m_device;
 	dsp_state &s = *d.m_dsp;
@@ -376,41 +366,65 @@ void roland_xv_dsp_recompiler::verify()
 				d.tag(), what, index, got, want, d.m_rows_end, before.cursor, before.work_phase);
 	};
 	for (int n = 0; n < dev::IBUS_IRAM_END; n++)
+	{
 		if (d.m_iram[n] != iram_expected[n])
 			fail("IRAM cell", n, d.m_iram[n], iram_expected[n]);
+	}
 	for (int n = 0; n < WORK; n++)
+	{
 		if (d.m_work[n] != work_expected[n])
 			fail("work cell", n, d.m_work[n], work_expected[n]);
-	if (s.acc[0] != expected.acc[0]) fail("A", 0, s.acc[0], expected.acc[0]);
-	if (s.acc[1] != expected.acc[1]) fail("B", 0, s.acc[1], expected.acc[1]);
-	if (s.product != expected.product) fail("P", 0, s.product, expected.product);
-	if (s.product_shift != expected.product_shift) fail("product shift", 0, s.product_shift, expected.product_shift);
+	}
+	if (s.acc[0] != expected.acc[0])
+		fail("A", 0, s.acc[0], expected.acc[0]);
+	if (s.acc[1] != expected.acc[1])
+		fail("B", 0, s.acc[1], expected.acc[1]);
+	if (s.product != expected.product)
+		fail("P", 0, s.product, expected.product);
+	if (s.product_shift != expected.product_shift)
+		fail("product shift", 0, s.product_shift, expected.product_shift);
 	for (int n = 0; n < 4; n++)
+	{
 		if (s.latch[n] != expected.latch[n])
 			fail("latch", n, s.latch[n], expected.latch[n]);
-	if (s.flag != expected.flag) fail("flag", 0, s.flag, expected.flag);
-	if (s.flag_carry != expected.flag_carry) fail("flag carry", 0, s.flag_carry, expected.flag_carry);
-	if (s.last_hold != expected.last_hold) fail("hold", 0, s.last_hold, expected.last_hold);
-	if (!s.last_hold && s.last != expected.last) fail("last", 0, s.last, expected.last);
-	if (!s.last_hold && s.last_carry != expected.last_carry) fail("last carry", 0, s.last_carry, expected.last_carry);
-	if (s.steps != expected.steps) fail("steps", 0, s.steps, expected.steps);
-	if (s.cursor != expected.cursor) fail("cursor", 0, s.cursor, expected.cursor);
-	if (s.work_phase != expected.work_phase) fail("work phase", 0, s.work_phase, expected.work_phase);
-	if (s.tap_count != expected.tap_count) fail("tap count", 0, s.tap_count, expected.tap_count);
+	}
+	if (s.flag != expected.flag)
+		fail("flag", 0, s.flag, expected.flag);
+	if (s.flag_carry != expected.flag_carry)
+		fail("flag carry", 0, s.flag_carry, expected.flag_carry);
+	if (s.last_hold != expected.last_hold)
+		fail("hold", 0, s.last_hold, expected.last_hold);
+	if (!s.last_hold && s.last != expected.last)
+		fail("last", 0, s.last, expected.last);
+	if (!s.last_hold && s.last_carry != expected.last_carry)
+		fail("last carry", 0, s.last_carry, expected.last_carry);
+	if (s.steps != expected.steps)
+		fail("steps", 0, s.steps, expected.steps);
+	if (s.cursor != expected.cursor)
+		fail("cursor", 0, s.cursor, expected.cursor);
+	if (s.work_phase != expected.work_phase)
+		fail("work phase", 0, s.work_phase, expected.work_phase);
+	if (s.tap_count != expected.tap_count)
+		fail("tap count", 0, s.tap_count, expected.tap_count);
 	for (u32 n = 0; n < s.tap_count; n++)
 	{
-		if (d.m_tap_cell[n] != tap_cell_expected[n]) fail("tap cell", n, d.m_tap_cell[n], tap_cell_expected[n]);
-		if (d.m_tap_delay[n] != tap_delay_expected[n]) fail("tap delay", n, d.m_tap_delay[n], tap_delay_expected[n]);
-		if (d.m_tap_slot[n] != tap_slot_expected[n]) fail("tap slot", n, d.m_tap_slot[n], tap_slot_expected[n]);
+		if (d.m_tap_cell[n] != tap_cell_expected[n])
+			fail("tap cell", n, d.m_tap_cell[n], tap_cell_expected[n]);
+		if (d.m_tap_delay[n] != tap_delay_expected[n])
+			fail("tap delay", n, d.m_tap_delay[n], tap_delay_expected[n]);
+		if (d.m_tap_slot[n] != tap_slot_expected[n])
+			fail("tap slot", n, d.m_tap_slot[n], tap_slot_expected[n]);
 	}
-	if (s.late_count != expected.late_count) fail("late count", 0, s.late_count, expected.late_count);
+	if (s.late_count != expected.late_count)
+		fail("late count", 0, s.late_count, expected.late_count);
 	for (u32 n = 0; n < s.late_count; n++)
+	{
 		if (d.m_late_cell[n] != late_expected[n])
 			fail("late cell", n, d.m_late_cell[n], late_expected[n]);
+	}
 }
 
-// the program as loaded, for a failure report: each row's words, and whether code can land on it
-void roland_xv_dsp_recompiler::dump_program()
+void roland_xv_device::dsp_recompiler_impl::dump_program()
 {
 	FILE *f = fopen("xv_dsp_fail.txt", "w");
 	if (!f)
@@ -422,20 +436,16 @@ void roland_xv_dsp_recompiler::dump_program()
 }
 
 //-------------------------------------------------
-//  what a page is compiled from.  The entries are the page starts, every
-//  branch's target, and the row after a branch whose delay slot is an
-//  entry or the next page's first row.  A row's code is its words and the
-//  memory operation its third word carries; the operand values are data.
+//  what a page is compiled from
 //-------------------------------------------------
 
-u64 roland_xv_dsp_recompiler::code_key(int n) const
+u64 roland_xv_device::dsp_recompiler_impl::code_key(int n) const
 {
 	const dsp_row &r = m_device.m_rows[n];
 	return u64(r.w0) | (u64(r.w1) << 16) | (u64(r.mode2) << 32) | (u64(r.address2) << 35) | (u64(r.second) << 45);
 }
 
-// a row's operand values go straight to the code's table; only a change to its code or to the live rows recompiles
-void roland_xv_dsp_recompiler::touched(int n)
+void roland_xv_device::dsp_recompiler_impl::touched(int n)
 {
 	const dsp_row &r = m_device.m_rows[n];
 	m_near->immediate[n][0] = r.fields[0].immediate;
@@ -445,19 +455,19 @@ void roland_xv_dsp_recompiler::touched(int n)
 		m_dirty = true;
 }
 
-u64 roland_xv_dsp_recompiler::signature(int page) const
+u64 roland_xv_device::dsp_recompiler_impl::signature(int page) const
 {
-	u64 hash = 0xcbf29ce484222325;
+	u64 hash = 0xcbf2'9ce4'8422'2325ULL;
 	for (int n = page * PAGE; n <= page * PAGE + PAGE && n < ROWS; n++)
 	{
 		const u64 key = m_code[n] | (u64(n <= m_rows_end) << 46) | (u64(m_entry[n]) << 47);
 		for (int byte = 0; byte < 8; byte++)
-			hash = (hash ^ ((key >> (8 * byte)) & 0xff)) * 0x100000001b3;
+			hash = (hash ^ ((key >> (8 * byte)) & 0xff)) * 0x100'0000'01b3ULL;
 	}
 	return hash;
 }
 
-void roland_xv_dsp_recompiler::refresh()
+void roland_xv_device::dsp_recompiler_impl::refresh()
 {
 	roland_xv_device &d = m_device;
 	m_dirty = false;
@@ -471,7 +481,7 @@ void roland_xv_dsp_recompiler::refresh()
 		m_code[n] = code_key(n);
 	}
 
-	std::fill(m_entry.begin(), m_entry.end(), false);
+	m_entry.reset();
 	for (int n = 0; n < ROWS; n += PAGE)
 		m_entry[n] = true;
 	for (int n = 0; n <= d.m_rows_end && n < ROWS; n++)
@@ -503,7 +513,7 @@ void roland_xv_dsp_recompiler::refresh()
 	}
 }
 
-void roland_xv_dsp_recompiler::compile(int page, int mode)
+void roland_xv_device::dsp_recompiler_impl::compile(int page, int mode)
 {
 	if (m_compiled[mode][page])
 	{
@@ -514,8 +524,8 @@ void roland_xv_dsp_recompiler::compile(int page, int mode)
 	{
 		try
 		{
-			std::fill(m_demand_raw.begin(), m_demand_raw.end(), false);
-			std::fill(m_demand_carry.begin(), m_demand_carry.end(), false);
+			m_demand_raw.reset();
+			m_demand_carry.reset();
 			m_segment_start.clear();
 			m_segment_length.clear();
 			m_dry = true;
@@ -539,14 +549,10 @@ void roland_xv_dsp_recompiler::compile(int page, int mode)
 }
 
 //-------------------------------------------------
-//  a page.  Without a block this only finds which rows' results are
-//  wanted and how long each straight run is; with one it emits the code.
-//  Rows run in order to a branch, whose delay slot runs before the jump.
-//  A straight run starts by checking that it ends short of the budget's
-//  last slot, and hands the sample to the interpreter otherwise.
+//  a page
 //-------------------------------------------------
 
-void roland_xv_dsp_recompiler::walk(int page, int mode, drcuml_block *block)
+void roland_xv_device::dsp_recompiler_impl::walk(int page, int mode, drcuml_block *block)
 {
 	sink b{ block, &m_dummy };
 	const int start = page * PAGE;
@@ -584,7 +590,6 @@ void roland_xv_dsp_recompiler::walk(int page, int mode, drcuml_block *block)
 
 		if (n > rows_end)
 		{
-			// the drain, and the rows left to the fetch bound counted as spent
 			emit_merge(b, c);
 			c.last_hold = HOLD_SET;
 			emit_materialize(b, c);
@@ -632,8 +637,7 @@ void roland_xv_dsp_recompiler::walk(int page, int mode, drcuml_block *block)
 	emit_stubs(b);
 }
 
-// a straight run's budget: when its rows would reach the last slot, the interpreter takes the sample from here
-void roland_xv_dsp_recompiler::open_segment(sink &b, const context &c, int n)
+void roland_xv_device::dsp_recompiler_impl::open_segment(sink &b, const context &c, int n)
 {
 	close_segment();
 	m_segment = m_dry ? int(m_segment_start.size()) : m_segment + 1;
@@ -646,7 +650,7 @@ void roland_xv_dsp_recompiler::open_segment(sink &b, const context &c, int n)
 	if (m_dry || length)
 	{
 		dsp_state &s = *m_device.m_dsp;
-		const u32 ok = m_label++;
+		const code_label ok = m_label++;
 		UML_CMP(b, mem(&s.steps), dev::DSP_ROW_BUDGET - 1 - length);
 		UML_JMPc(b, COND_BE, ok);
 		emit_materialize(b, c);
@@ -655,7 +659,7 @@ void roland_xv_dsp_recompiler::open_segment(sink &b, const context &c, int n)
 	}
 }
 
-void roland_xv_dsp_recompiler::close_segment()
+void roland_xv_device::dsp_recompiler_impl::close_segment()
 {
 	if (m_dry && m_segment >= 0)
 		m_segment_length[m_segment] = m_counted - m_segment_start[m_segment];
@@ -663,15 +667,13 @@ void roland_xv_dsp_recompiler::close_segment()
 		m_segment = -1;
 }
 
-// a branch and its delay slot; returns the row the walk goes on from
-int roland_xv_dsp_recompiler::emit_branch(sink &b, context &c, int n, int mode, int start, int end, bool &reachable)
+int roland_xv_device::dsp_recompiler_impl::emit_branch(sink &b, context &c, int n, int mode, int start, int end, bool &reachable)
 {
 	roland_xv_device &d = m_device;
 	dsp_state &s = *d.m_dsp;
 	const dsp_row &r = d.m_rows[n];
 	const int slot = n + 1;
 
-	// a slot at the fetch bound, or a slot that redirects the fetch again: the interpreter's
 	if (slot >= LAST_ROW || d.m_rows[slot].kind == dev::ROW_BRANCH || d.m_rows[slot].kind == dev::ROW_JUMP)
 	{
 		emit_handback(b, c, n);
@@ -687,11 +689,10 @@ int roland_xv_dsp_recompiler::emit_branch(sink &b, context &c, int n, int mode, 
 		UML_SETc(b, cond, mem(&m_near->taken));
 	}
 
-	// a branch to itself over an inert slot, with nothing left to fold in, ends the sample
 	const dsp_row &slot_row = d.m_rows[slot];
 	if (r.inert && target == n && slot_row.inert && slot_row.kind == dev::ROW_PLAIN && c.last_hold != HOLD_CLEAR)
 	{
-		const u32 go = m_label++;
+		const code_label go = m_label++;
 		if (dynamic)
 		{
 			UML_TEST(b, mem(&m_near->taken), 1);
@@ -721,7 +722,7 @@ int roland_xv_dsp_recompiler::emit_branch(sink &b, context &c, int n, int mode, 
 	emit_any_row(b, c, slot, mode);
 	emit_charge(b);
 
-	const u32 fall = m_label++;
+	const code_label fall = m_label++;
 	if (dynamic)
 	{
 		UML_TEST(b, mem(&m_near->taken), 1);
@@ -736,7 +737,6 @@ int roland_xv_dsp_recompiler::emit_branch(sink &b, context &c, int n, int mode, 
 	}
 	UML_LABEL(b, fall);
 
-	// a slot code can land on runs again from its own entry, so the way past it goes to the row after
 	if (slot >= end || m_entry[slot])
 	{
 		emit_materialize(b, c);
@@ -747,8 +747,7 @@ int roland_xv_dsp_recompiler::emit_branch(sink &b, context &c, int n, int mode, 
 	return slot + 1;
 }
 
-// a row that is no branch: compiled in one body, in two when the predicate picks its fields, or run through the interpreter
-void roland_xv_dsp_recompiler::emit_any_row(sink &b, context &c, int n, int mode)
+void roland_xv_device::dsp_recompiler_impl::emit_any_row(sink &b, context &c, int n, int mode)
 {
 	const dsp_row &r = m_device.m_rows[n];
 	if (r.kind == dev::ROW_PREDICATED && r.special)
@@ -768,8 +767,8 @@ void roland_xv_dsp_recompiler::emit_any_row(sink &b, context &c, int n, int mode
 		emit_row(b, c, n, mode, r.kind != dev::ROW_PREDICATED || r.condition == 1, 1);
 	else if (!same_fields(r.fields[0], r.fields[1]))
 	{
-		const u32 other = m_label++;
-		const u32 join = m_label++;
+		const code_label other = m_label++;
+		const code_label join = m_label++;
 		const condition_t cond = emit_condition(b, c, r.condition ^ 1);
 		UML_JMPc(b, cond, other);
 		context taken = c;
@@ -793,15 +792,14 @@ void roland_xv_dsp_recompiler::emit_any_row(sink &b, context &c, int n, int mode
 	m_counted++;
 }
 
-bool roland_xv_dsp_recompiler::same_fields(const dsp_fields &a, const dsp_fields &b)
+bool roland_xv_device::dsp_recompiler_impl::same_fields(const dsp_fields &a, const dsp_fields &b)
 {
 	return a.left == b.left && a.right == b.right && a.source == b.source && a.shift == b.shift
 			&& a.negate_left == b.negate_left && a.negate_right == b.negate_right && a.clamp == b.clamp
 			&& a.multiply == b.multiply && a.cell_coefficient == b.cell_coefficient;
 }
 
-// the latches a row's ALU and multiplier read as it was entered, so a read into one of them lands after
-u8 roland_xv_dsp_recompiler::consumed_latches(const dsp_row &r, const dsp_fields &f) const
+u8 roland_xv_device::dsp_recompiler_impl::consumed_latches(const dsp_row &r, const dsp_fields &f) const
 {
 	u8 consumed = 0;
 	if (!r.hold)
@@ -820,14 +818,10 @@ u8 roland_xv_dsp_recompiler::consumed_latches(const dsp_row &r, const dsp_fields
 }
 
 //-------------------------------------------------
-//  a row, in the order execute() takes it: the memory operations, then the
-//  ALU from the operands the row was entered with, the multiplier, the
-//  accumulator, the reads that wait for the row's end, and the flag chain.
-//  commit and predicate are 0 or 1, or DYNAMIC for a predicate that is
-//  tested here and picks the commit and the parameter-bank alternative.
+//  a row, in the order execute() takes it
 //-------------------------------------------------
 
-void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, int commit, int predicate)
+void roland_xv_device::dsp_recompiler_impl::emit_row(sink &b, context &c, int n, int mode, int commit, int predicate)
 {
 	roland_xv_device &d = m_device;
 	dsp_state &s = *d.m_dsp;
@@ -848,7 +842,6 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		UML_SETc(b, cond, mem(&m_near->commit));
 	}
 
-	// the memory operations
 	const u8 consumed = consumed_latches(r, f);
 	u8 deferred = 0;
 	if (r.mode != dev::MEM_NONE || r.address)
@@ -865,10 +858,12 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		{
 			const u8 maybe = consumed & ((r.mode2 >= dev::MEM_READ_R) ? (1 << (r.mode2 - dev::MEM_READ_R)) : 0);
 			for (int latch = 0; latch < 4; latch++)
+			{
 				if (BIT(maybe, latch) && !BIT(deferred, latch))
 					UML_MOV(b, mem(&m_near->scratch[latch]), mem(&s.latch[latch]));
-			const u32 other = m_label++;
-			const u32 join = m_label++;
+			}
+			const code_label other = m_label++;
+			const code_label join = m_label++;
 			UML_TEST(b, mem(&m_near->commit), 1);
 			UML_JMPc(b, COND_Z, other);
 			emit_access(b, c, r.mode2, r.address2, mode, consumed, deferred);
@@ -879,7 +874,6 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		}
 	}
 
-	// the ALU into REG_T: the left operand in REG_X, the right in REG_Y
 	if (!r.hold)
 	{
 		bool have_left = true, have_right = true;
@@ -898,12 +892,12 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		case dev::LEFT_B:
 			UML_DMOV(b, REG_X, f.left == dev::LEFT_A ? REG_A : REG_B);
 			if (!c.narrow[f.left - dev::LEFT_A])
-				emit_clamp(b, REG_X, -0x8000000, 0x7ffffff);
+				emit_clamp(b, REG_X, -0x800'0000, 0x7ff'ffff);
 			break;
 		default:
 			UML_DMOV(b, REG_X, f.left == dev::LEFT_MAG_A ? REG_A : REG_B);
 			if (!c.narrow[f.left - dev::LEFT_MAG_A])
-				emit_clamp(b, REG_X, -0x8000000, 0x7ffffff);
+				emit_clamp(b, REG_X, -0x800'0000, 0x7ff'ffff);
 			UML_DSAR(b, REG_T, REG_X, 63);
 			UML_DXOR(b, REG_X, REG_X, REG_T);
 			UML_DSUB(b, REG_X, REG_X, REG_T);
@@ -918,7 +912,7 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		case dev::RIGHT_B:
 			UML_DMOV(b, REG_Y, f.right == dev::RIGHT_A ? REG_A : REG_B);
 			if (!c.narrow[f.right - dev::RIGHT_A])
-				emit_clamp(b, REG_Y, -0x8000000, 0x7ffffff);
+				emit_clamp(b, REG_Y, -0x800'0000, 0x7ff'ffff);
 			break;
 		case dev::RIGHT_R:
 			UML_DSEXT(b, REG_Y, mem(&s.latch[0]), SIZE_DWORD);
@@ -926,7 +920,7 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 			break;
 		case dev::RIGHT_P:
 			UML_DMOV(b, REG_Y, mem(&s.product));
-			emit_clamp(b, REG_Y, -0x8000000, 0x7ffffff);
+			emit_clamp(b, REG_Y, -0x800'0000, 0x7ff'ffff);
 			if (c.product_shift == DYNAMIC)
 			{
 				UML_LOAD(b, REG_T, &s.product_shift, 0, SIZE_BYTE, SCALE_x1);
@@ -970,8 +964,7 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		}
 		else
 			UML_DMOV(b, REG_T, 0);
-		UML_DSHL(b, REG_T, REG_T, 35);
-		UML_DSAR(b, REG_T, REG_T, 35);
+		UML_DBFXS(b, REG_T, REG_T, 0, 29);
 		if (m_demand_raw[n])
 			UML_MOV(b, mem(&m_near->raw[n]), REG_T);
 
@@ -998,7 +991,7 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 				UML_MOV(b, mem(&m_near->carry[n]), constant > MASK29 ? 1 : 0);
 			else
 			{
-				const parameter sum = have_left ? REG_X : REG_Y;
+				const uml::parameter sum = have_left ? REG_X : REG_Y;
 				if (have_left && have_right)
 					UML_DADD(b, REG_X, REG_X, REG_Y);
 				if (constant)
@@ -1010,14 +1003,12 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 
 		if (r.wrap)
 		{
-			UML_DSHL(b, REG_T, REG_T, 36);
-			UML_DSAR(b, REG_T, REG_T, 36);
+			UML_DBFXS(b, REG_T, REG_T, 0, 28);
 		}
 		else if (f.clamp)
-			emit_clamp(b, REG_T, -0x8000000, 0x7ffffff);
+			emit_clamp(b, REG_T, -0x800'0000, 0x7ff'ffff);
 	}
 
-	// the multiplier: the operand in REG_X, the coefficient in REG_Y
 	enum { COEFFICIENT_NONE, COEFFICIENT_LOW, COEFFICIENT_OPERAND, COEFFICIENT_CELL, COEFFICIENT_A, COEFFICIENT_S } coefficient;
 	if (f.multiply)
 		coefficient = f.cell_coefficient ? COEFFICIENT_LOW : COEFFICIENT_OPERAND;
@@ -1047,13 +1038,13 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 			case dev::SOURCE_B:
 				UML_DSAR(b, REG_X, f.source == dev::SOURCE_A ? REG_A : REG_B, 4);
 				if (!c.narrow[f.source - dev::SOURCE_A])
-					emit_clamp(b, REG_X, -0x800000, 0x7fffff);
+					emit_clamp(b, REG_X, -0x80'0000, 0x7f'ffff);
 				break;
 			default:
 				UML_DMOV(b, REG_X, mem(&s.product));
 				UML_DSAR(b, REG_X, REG_X, 4);
 				UML_DSEXT(b, REG_X, REG_X, SIZE_DWORD);
-				emit_clamp(b, REG_X, -0x800000, 0x7fffff);
+				emit_clamp(b, REG_X, -0x80'0000, 0x7f'ffff);
 				break;
 			}
 			switch (coefficient)
@@ -1068,15 +1059,13 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 				break;
 			case COEFFICIENT_CELL:
 				UML_DSEXT(b, REG_Y, mem(&s.latch[3]), SIZE_DWORD);
-				UML_DSAR(b, REG_Y, REG_Y, 8);
-				UML_DSHL(b, REG_Y, REG_Y, 8);
+				UML_DAND(b, REG_Y, REG_Y, ~u64(0xff));
 				break;
 			case COEFFICIENT_A:
 				UML_DSAR(b, REG_Y, REG_A, 4);
 				if (!c.narrow[0])
-					emit_clamp(b, REG_Y, -0x800000, 0x7fffff);
-				UML_DSAR(b, REG_Y, REG_Y, 8);
-				UML_DSHL(b, REG_Y, REG_Y, 8);
+					emit_clamp(b, REG_Y, -0x80'0000, 0x7f'ffff);
+				UML_DAND(b, REG_Y, REG_Y, ~u64(0xff));
 				break;
 			default:
 				UML_DSEXT(b, REG_Y, mem(&s.latch[3]), SIZE_DWORD);
@@ -1098,10 +1087,9 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 		}
 	}
 
-	// the accumulator, a gated row's only when its predicate holds
 	if (!r.hold)
 	{
-		const parameter acc = r.to_b ? REG_B : REG_A;
+		const uml::parameter acc = r.to_b ? REG_B : REG_A;
 		const bool narrow = r.wrap || f.clamp;
 		if (!r.gated || commit == 1)
 		{
@@ -1117,10 +1105,11 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 	}
 
 	for (int latch = 0; latch < 4; latch++)
+	{
 		if (BIT(deferred, latch))
 			UML_MOV(b, mem(&s.latch[latch]), mem(&m_near->scratch[latch]));
+	}
 
-	// the flag chain
 	emit_merge(b, c);
 	if (r.hold)
 		c.last_hold = HOLD_SET;
@@ -1141,8 +1130,7 @@ void roland_xv_dsp_recompiler::emit_row(sink &b, context &c, int n, int mode, in
 	}
 }
 
-// one memory operation; a read into a latch this row reads lands in its scratch until the row's end
-void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, u16 address, int bus_mode, u8 consumed, u8 &deferred)
+void roland_xv_device::dsp_recompiler_impl::emit_access(sink &b, const context &c, int mode, u16 address, int bus_mode, u8 consumed, u8 &deferred)
 {
 	roland_xv_device &d = m_device;
 	dsp_state &s = *d.m_dsp;
@@ -1151,7 +1139,7 @@ void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, 
 	case dev::MEM_NONE:
 		if (BIT(address, 9))
 		{
-			const u32 skip = m_label++;
+			const code_label skip = m_label++;
 			UML_MOV(b, REG_X, mem(&s.tap_count));
 			UML_CMP(b, REG_X, dev::TAPS);
 			UML_JMPc(b, COND_AE, skip);
@@ -1170,7 +1158,7 @@ void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, 
 			UML_DMOV(b, REG_X, mem(&s.product));
 			UML_DSAR(b, REG_X, REG_X, 4);
 			UML_DSEXT(b, REG_X, REG_X, SIZE_DWORD);
-			emit_clamp(b, REG_X, -0x800000, 0x7fffff);
+			emit_clamp(b, REG_X, -0x80'0000, 0x7f'ffff);
 			emit_cell_write(b, address, bus_mode);
 		}
 		break;
@@ -1180,7 +1168,7 @@ void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, 
 		{
 			UML_DSAR(b, REG_X, mode == dev::MEM_STORE_A ? REG_A : REG_B, 4);
 			if (!c.narrow[mode - dev::MEM_STORE_A])
-				emit_clamp(b, REG_X, -0x800000, 0x7fffff);
+				emit_clamp(b, REG_X, -0x80'0000, 0x7f'ffff);
 			emit_cell_write(b, address, bus_mode);
 		}
 		break;
@@ -1200,8 +1188,7 @@ void roland_xv_dsp_recompiler::emit_access(sink &b, const context &c, int mode, 
 	}
 }
 
-// a parameter-bank row's second operation when its predicate fails
-void roland_xv_dsp_recompiler::emit_alternative(sink &b, const context &c, const dsp_row &r, int bus_mode, u8 consumed, u8 &deferred)
+void roland_xv_device::dsp_recompiler_impl::emit_alternative(sink &b, const context &c, const dsp_row &r, int bus_mode, u8 consumed, u8 &deferred)
 {
 	if (r.mode2 >= dev::MEM_READ_R)
 		emit_access(b, c, r.mode2, dev::IBUS_BANK + r.argument, bus_mode, consumed, deferred);
@@ -1209,8 +1196,7 @@ void roland_xv_dsp_recompiler::emit_alternative(sink &b, const context &c, const
 		emit_access(b, c, r.mode2, r.address2, bus_mode, consumed, deferred);
 }
 
-// a cell into REG_X as a 32-bit value; the ring's index and the row count go through REG_Y
-void roland_xv_dsp_recompiler::emit_cell_read(sink &b, u16 address, int bus_mode)
+void roland_xv_device::dsp_recompiler_impl::emit_cell_read(sink &b, u16 address, int bus_mode)
 {
 	roland_xv_device &d = m_device;
 	if (address < dev::IBUS_STATIC)
@@ -1218,14 +1204,11 @@ void roland_xv_dsp_recompiler::emit_cell_read(sink &b, u16 address, int bus_mode
 		UML_ADD(b, REG_Y, mem(&d.m_dsp->cursor), address);
 		UML_AND(b, REG_Y, REG_Y, dev::RING_CELLS - 1);
 		UML_LOAD(b, REG_X, d.m_iram, REG_Y, SIZE_DWORD, SCALE_x4);
-		UML_SHL(b, REG_X, REG_X, 8);
-		UML_SAR(b, REG_X, REG_X, 8);
+		UML_BFXS(b, REG_X, REG_X, 0, 24);
 	}
 	else if (address < dev::IBUS_MIX)
 	{
-		UML_MOV(b, REG_X, mem(&d.m_iram[address]));
-		UML_SHL(b, REG_X, REG_X, 8);
-		UML_SAR(b, REG_X, REG_X, 8);
+		UML_BFXS(b, REG_X, mem(&d.m_iram[address]), 0, 24);
 	}
 	else if (address < dev::IBUS_BANK)
 		UML_MOV(b, REG_X, mem(&d.m_work[bus_mode * dev::WORK_CELLS + address - dev::IBUS_MIX]));
@@ -1241,8 +1224,7 @@ void roland_xv_dsp_recompiler::emit_cell_read(sink &b, u16 address, int bus_mode
 		UML_MOV(b, REG_X, 0);
 }
 
-// REG_X into a cell; the ring's index goes through REG_Y
-void roland_xv_dsp_recompiler::emit_cell_write(sink &b, u16 address, int bus_mode)
+void roland_xv_device::dsp_recompiler_impl::emit_cell_write(sink &b, u16 address, int bus_mode)
 {
 	roland_xv_device &d = m_device;
 	if (address < dev::IBUS_STATIC)
@@ -1257,8 +1239,7 @@ void roland_xv_dsp_recompiler::emit_cell_write(sink &b, u16 address, int bus_mod
 		UML_MOV(b, mem(&d.m_work[bus_mode * dev::WORK_CELLS + address - dev::IBUS_MIX]), REG_X);
 }
 
-// a register clamped: two compares that seldom branch, to ends emitted after the page
-void roland_xv_dsp_recompiler::emit_clamp(sink &b, parameter reg, s64 low, s64 high)
+void roland_xv_device::dsp_recompiler_impl::emit_clamp(sink &b, uml::parameter reg, s64 low, s64 high)
 {
 	const clamp_stub stub{ m_label++, m_label++, m_label++, reg, low, high };
 	UML_DCMP(b, reg, high);
@@ -1269,7 +1250,7 @@ void roland_xv_dsp_recompiler::emit_clamp(sink &b, parameter reg, s64 low, s64 h
 	m_stubs.push_back(stub);
 }
 
-void roland_xv_dsp_recompiler::emit_stubs(sink &b)
+void roland_xv_device::dsp_recompiler_impl::emit_stubs(sink &b)
 {
 	for (const clamp_stub &stub : m_stubs)
 	{
@@ -1284,19 +1265,14 @@ void roland_xv_dsp_recompiler::emit_stubs(sink &b)
 }
 
 //-------------------------------------------------
-//  the flag chain.  A condition reads the flag; at a row's end the last
-//  result becomes the flag unless it was held.  Along straight code the
-//  compiler knows which row's result each is, and that row stores it
-//  where it is wanted; at a hash entry they are whatever memory holds,
-//  and code that leaves for another entry writes memory first.
+//  the flag chain
 //-------------------------------------------------
 
-// a condition code of two or more against the flag, as the host condition that holds when it does; uses REG_X and REG_Y
-condition_t roland_xv_dsp_recompiler::emit_condition(sink &b, const context &c, int code)
+condition_t roland_xv_device::dsp_recompiler_impl::emit_condition(sink &b, const context &c, int code)
 {
 	dsp_state &s = *m_device.m_dsp;
 	const chain_value &v = c.flag;
-	const parameter value = v.kind == chain_value::ROW ? mem(&m_near->raw[v.row]) : v.kind == chain_value::IN_LAST ? mem(&s.last) : mem(&s.flag);
+	const uml::parameter value = v.kind == chain_value::ROW ? mem(&m_near->raw[v.row]) : v.kind == chain_value::IN_LAST ? mem(&s.last) : mem(&s.flag);
 	const bool wants_value = code != 4 && code != 5;
 	const bool wants_carry = code == 4 || code == 5 || code >= 0xc;
 	if (wants_value)
@@ -1311,14 +1287,14 @@ condition_t roland_xv_dsp_recompiler::emit_condition(sink &b, const context &c, 
 	}
 	switch (code)
 	{
-	case 0x2: UML_CMP(b, value, 0); return COND_E;
-	case 0x3: UML_CMP(b, value, 0); return COND_NE;
+	case 0x2: UML_TEST(b, value, 0xffff'ffff); return COND_Z;
+	case 0x3: UML_TEST(b, value, 0xffff'ffff); return COND_NZ;
 	case 0x4: UML_TEST(b, REG_X, 1); return COND_NZ;
 	case 0x5: UML_TEST(b, REG_X, 1); return COND_Z;
 	case 0x6:
 	case 0x7:
-		UML_ADD(b, REG_Y, value, 0x8000000);
-		UML_CMP(b, REG_Y, 0x10000000);
+		UML_ADD(b, REG_Y, value, 0x800'0000);
+		UML_CMP(b, REG_Y, 0x1000'0000);
 		return code == 0x6 ? COND_AE : COND_B;
 	case 0x8: UML_CMP(b, value, 0); return COND_GE;
 	case 0x9: UML_CMP(b, value, 0); return COND_L;
@@ -1340,8 +1316,7 @@ condition_t roland_xv_dsp_recompiler::emit_condition(sink &b, const context &c, 
 	}
 }
 
-// what every row does at its end before its own result: the last result becomes the flag unless it was held
-void roland_xv_dsp_recompiler::emit_merge(sink &b, context &c)
+void roland_xv_device::dsp_recompiler_impl::emit_merge(sink &b, context &c)
 {
 	dsp_state &s = *m_device.m_dsp;
 	if (c.last_hold == HOLD_CLEAR)
@@ -1351,7 +1326,7 @@ void roland_xv_dsp_recompiler::emit_merge(sink &b, context &c)
 		emit_store_flag(b, c);
 		demand_raw(c.last);
 		demand_carry(c.last);
-		const u32 skip = m_label++;
+		const code_label skip = m_label++;
 		UML_LOAD(b, REG_X, &s.last_hold, 0, SIZE_BYTE, SCALE_x1);
 		UML_TEST(b, REG_X, 1);
 		UML_JMPc(b, COND_NZ, skip);
@@ -1371,8 +1346,7 @@ void roland_xv_dsp_recompiler::emit_merge(sink &b, context &c)
 	}
 }
 
-// the chain into memory, for code that hands over; a held last result is never read again, so it stays where it is
-void roland_xv_dsp_recompiler::emit_materialize(sink &b, const context &c)
+void roland_xv_device::dsp_recompiler_impl::emit_materialize(sink &b, const context &c)
 {
 	dsp_state &s = *m_device.m_dsp;
 	emit_store_flag(b, c);
@@ -1388,7 +1362,7 @@ void roland_xv_dsp_recompiler::emit_materialize(sink &b, const context &c)
 		UML_STORE(b, &s.last_hold, 0, c.last_hold, SIZE_BYTE, SCALE_x1);
 }
 
-void roland_xv_dsp_recompiler::emit_store_flag(sink &b, const context &c)
+void roland_xv_device::dsp_recompiler_impl::emit_store_flag(sink &b, const context &c)
 {
 	dsp_state &s = *m_device.m_dsp;
 	if (c.flag.kind == chain_value::ROW)
@@ -1407,8 +1381,7 @@ void roland_xv_dsp_recompiler::emit_store_flag(sink &b, const context &c)
 	}
 }
 
-// the rows since the last charge onto the sample's count
-void roland_xv_dsp_recompiler::emit_charge(sink &b)
+void roland_xv_device::dsp_recompiler_impl::emit_charge(sink &b)
 {
 	if (!m_steps_pending)
 		return;
@@ -1417,8 +1390,7 @@ void roland_xv_dsp_recompiler::emit_charge(sink &b)
 	m_steps_pending = 0;
 }
 
-// to an entry: within the page directly, otherwise through the hash; past the mapped rows, the interpreter ends the sample
-void roland_xv_dsp_recompiler::emit_goto(sink &b, int target, int mode, int start, int end)
+void roland_xv_device::dsp_recompiler_impl::emit_goto(sink &b, int target, int mode, int start, int end)
 {
 	if (target > LAST_ROW)
 		UML_EXH(b, *m_handback, target);
@@ -1428,7 +1400,7 @@ void roland_xv_dsp_recompiler::emit_goto(sink &b, int target, int mode, int star
 		UML_HASHJMP(b, mode, target, *m_nocode);
 }
 
-void roland_xv_dsp_recompiler::emit_handback(sink &b, const context &c, int n)
+void roland_xv_device::dsp_recompiler_impl::emit_handback(sink &b, const context &c, int n)
 {
 	emit_charge(b);
 	emit_materialize(b, c);

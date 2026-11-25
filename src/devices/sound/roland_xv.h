@@ -10,8 +10,6 @@
 #include <utility>
 #include <vector>
 
-class roland_xv_dsp_recompiler;
-
 class roland_xv_device : public device_t, public device_memory_interface, public device_sound_interface
 {
 public:
@@ -164,7 +162,7 @@ public:
 	{
 	public:
 		static std::unique_ptr<dsp_recompiler> create(roland_xv_device &device);
-		virtual ~dsp_recompiler() = default;
+		virtual ~dsp_recompiler();
 
 		virtual void *alloc_near(size_t bytes, size_t align) = 0;
 		virtual void reset() = 0;
@@ -312,7 +310,7 @@ protected:
 	u8 m_ramp_phase;
 
 private:
-	friend class roland_xv_dsp_recompiler;
+	class dsp_recompiler_impl;
 
 	void *alloc_near(size_t bytes, size_t align);
 	u16 word_peek(int word);
