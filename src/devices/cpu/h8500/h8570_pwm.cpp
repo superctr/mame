@@ -55,8 +55,8 @@ void h8570_pwm_device::device_reset()
 
 int h8570_pwm_device::divider() const
 {
-	static const int div[4] = { 1, 4, 8, 16 };
-	return div[(m_tcr & TCR_CKS) >> 4];
+	static constexpr int DIVIDERS[4] = { 1, 4, 8, 16 };
+	return DIVIDERS[(m_tcr & TCR_CKS) >> 4];
 }
 
 u32 h8570_pwm_device::ticks_to_match() const

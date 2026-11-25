@@ -4,11 +4,11 @@
 
     Hitachi H8/570
 
-    An H8/500 with no on-chip ROM, 2 KB of RAM, one SCI, an A/D converter,
-    a watchdog, a PWM timer and the ISP, a microprogrammed sub-processor
-    whose program is fixed in the part.  The ISP itself is not emulated:
-    this device carries the registers the CPU shares with it, and the
-    board models what the sub-processor does with them.
+    - H8/500 core, no on-chip ROM, 2 KB of RAM
+    - one SCI, an A/D converter, a watchdog, a PWM timer, ports 1 and 5-12
+    - the ISP (intelligent sub-processor): a microprogrammed bus master whose
+      program is the customer's mask; this device carries the flag block and
+      the data registers, and the host models the program
 
 ***************************************************************************/
 
@@ -147,7 +147,15 @@ void h8570_device::register_field_map(address_map &map, offs_t base)
 	map(base + 0xfea6, base + 0xfeab).rw(m_pwm, FUNC(h8570_pwm_device::ocr_r), FUNC(h8570_pwm_device::ocr_w));
 	map(base + 0xfeac, base + 0xfead).rw(m_pwm, FUNC(h8570_pwm_device::tmr_r), FUNC(h8570_pwm_device::tmr_w));
 
-	map(base + 0xfeb0, base + 0xfebf).rw(FUNC(h8570_device::isp_r), FUNC(h8570_device::isp_w));
+	map(base + 0xfeb0, base + 0xfeb1).rw(FUNC(h8570_device::isf_r), FUNC(h8570_device::isf_w));
+	map(base + 0xfeb2, base + 0xfeb4).r(FUNC(h8570_device::iof_r));
+	map(base + 0xfeb5, base + 0xfeb5).r(FUNC(h8570_device::egf_r));
+	map(base + 0xfeb6, base + 0xfeb7).rw(FUNC(h8570_device::icf_r), FUNC(h8570_device::icf_w));
+	map(base + 0xfeb8, base + 0xfeb9).rw(FUNC(h8570_device::ief_r), FUNC(h8570_device::ief_w));
+	map(base + 0xfeba, base + 0xfebb).rw(FUNC(h8570_device::ioie_r), FUNC(h8570_device::ioie_w));
+	map(base + 0xfebc, base + 0xfebd).rw(FUNC(h8570_device::cle_r), FUNC(h8570_device::cle_w));
+	map(base + 0xfebe, base + 0xfebe).lr8(NAME([] () -> u8 { return 0xff; }));
+	map(base + 0xfebf, base + 0xfebf).rw(FUNC(h8570_device::ever_r), FUNC(h8570_device::ever_w));
 	map(base + 0xfec0, base + 0xfeff).rw(FUNC(h8570_device::dr_r), FUNC(h8570_device::dr_w));
 
 	map(base + 0xff18, base + 0xff19).rw(FUNC(h8570_device::isp_ctl_r), FUNC(h8570_device::isp_ctl_w));
@@ -172,7 +180,10 @@ void h8570_device::register_field_map(address_map &map, offs_t base)
 	map(base + 0xff46, base + 0xff46).rw(m_intc, FUNC(h8500_intc_device::dtec_r), FUNC(h8500_intc_device::dtec_w));
 	map(base + 0xff47, base + 0xff47).rw(m_intc, FUNC(h8500_intc_device::dted_r), FUNC(h8500_intc_device::dted_w));
 
-	map(base + 0xff48, base + 0xff4b).rw(FUNC(h8570_device::sysctl_r), FUNC(h8570_device::sysctl_w));
+	map(base + 0xff48, base + 0xff48).rw(FUNC(h8570_device::wsc_r), FUNC(h8570_device::wsc_w));
+	map(base + 0xff49, base + 0xff49).rw(FUNC(h8570_device::ramcr_r), FUNC(h8570_device::ramcr_w));
+	map(base + 0xff4a, base + 0xff4a).r(FUNC(h8570_device::mdcr_r));
+	map(base + 0xff4b, base + 0xff4b).rw(FUNC(h8570_device::sbycr_r), FUNC(h8570_device::sbycr_w));
 	map(base + 0xff4c, base + 0xff4c).rw(m_intc, FUNC(h8570_intc_device::syscr1_r), FUNC(h8570_intc_device::syscr1_w));
 	map(base + 0xff4e, base + 0xff4f).rw(m_watchdog, FUNC(h8_watchdog_device::rst_r), FUNC(h8_watchdog_device::rst_w));
 }
@@ -181,8 +192,10 @@ void h8570_device::isf_update(u16 before)
 {
 	const u16 rising = (m_isf & m_ief) & ~before;
 	for (int n = 0; n < 16; n++)
+	{
 		if (BIT(rising, n))
 			m_intc->internal_interrupt(40 + n);
+	}
 }
 
 void h8570_device::dr_w(offs_t offset, u8 data)
@@ -211,85 +224,90 @@ void h8570_device::isp_set_iof(u32 iof)
 	m_iof = iof & 0xffffff;
 }
 
-u8 h8570_device::isp_r(offs_t offset)
+u8 h8570_device::isf_r(offs_t offset)
 {
-	switch (offset)
+	return offset ? (m_isf & 0xff) : (m_isf >> 8);
+}
+
+void h8570_device::isf_w(offs_t offset, u8 data)
+{
+	const u16 before = m_isf & m_ief;
+	const u16 mask = offset ? 0x00ff : 0xff00;
+	const u16 value = offset ? data : (u16(data) << 8);
+	const u16 cleared = m_isf & ~value & mask;
+	m_isf = (m_isf & ~mask) | value;
+	isf_update(before);
+	for (int n = 0; n < 16; n++)
 	{
-	case 0x0: return m_isf >> 8;
-	case 0x1: return m_isf & 0xff;
-	case 0x2: return m_iof >> 16;
-	case 0x3: return (m_iof >> 8) & 0xff;
-	case 0x4: return m_iof & 0xff;
-	case 0x5: return m_egf;
-	case 0x6:
-	{
-		const u8 v = m_icf >> 8;
-		if (!machine().side_effects_disabled())
-			m_icf &= ~(m_cle & 0xff00);
-		return v;
-	}
-	case 0x7:
-	{
-		const u8 v = m_icf & 0xff;
-		if (!machine().side_effects_disabled())
-			m_icf &= ~(m_cle & 0x00ff);
-		return v;
-	}
-	case 0x8: return m_ief >> 8;
-	case 0x9: return m_ief & 0xff;
-	case 0xa: return m_ioie >> 8;
-	case 0xb: return m_ioie & 0xff;
-	case 0xc: return m_cle >> 8;
-	case 0xd: return m_cle & 0xff;
-	case 0xf: return m_ever;
-	default: return 0xff;
+		if (BIT(cleared, n))
+			m_isf_ack_cb(n);
 	}
 }
 
-void h8570_device::isp_w(offs_t offset, u8 data)
+u8 h8570_device::iof_r(offs_t offset)
+{
+	return m_iof >> (8 * (2 - offset));
+}
+
+u8 h8570_device::egf_r()
+{
+	return m_egf;
+}
+
+u8 h8570_device::icf_r(offs_t offset)
+{
+	const u16 mask = offset ? 0x00ff : 0xff00;
+	const u8 data = offset ? (m_icf & 0xff) : (m_icf >> 8);
+	if (!machine().side_effects_disabled())
+		m_icf &= ~(m_cle & mask);
+	return data;
+}
+
+void h8570_device::icf_w(offs_t offset, u8 data)
+{
+	m_icf = offset ? ((m_icf & 0xff00) | data) : ((m_icf & 0x00ff) | (u16(data) << 8));
+}
+
+u8 h8570_device::ief_r(offs_t offset)
+{
+	return offset ? (m_ief & 0xff) : (m_ief >> 8);
+}
+
+void h8570_device::ief_w(offs_t offset, u8 data)
 {
 	const u16 before = m_isf & m_ief;
-	const int shift = BIT(offset, 0) ? 0 : 8;
-	const u16 mask = 0xff << shift;
-	const u16 value = u16(data) << shift;
+	m_ief = offset ? ((m_ief & 0xff00) | data) : ((m_ief & 0x00ff) | (u16(data) << 8));
+	isf_update(before);
+}
 
-	switch (offset)
-	{
-	case 0x0:
-	case 0x1:
-	{
-		const u16 cleared = m_isf & ~value & mask;
-		m_isf = (m_isf & ~mask) | value;
-		isf_update(before);
-		for (int n = 0; n < 16; n++)
-			if (BIT(cleared, n))
-				m_isf_ack_cb(n);
-		break;
-	}
-	case 0x6:
-	case 0x7:
-		m_icf = (m_icf & ~mask) | value;
-		break;
-	case 0x8:
-	case 0x9:
-		m_ief = (m_ief & ~mask) | value;
-		isf_update(before);
-		break;
-	case 0xa:
-	case 0xb:
-		m_ioie = (m_ioie & ~mask) | value;
-		break;
-	case 0xc:
-	case 0xd:
-		m_cle = (m_cle & ~mask) | value;
-		break;
-	case 0xf:
-		m_ever = data & 0x07;
-		break;
-	default:
-		logerror("ISP register %04X = %02X\n", 0xfeb0 + offset, data);
-		break;
-	}
+u8 h8570_device::ioie_r(offs_t offset)
+{
+	return offset ? (m_ioie & 0xff) : (m_ioie >> 8);
+}
+
+void h8570_device::ioie_w(offs_t offset, u8 data)
+{
+	m_ioie = offset ? ((m_ioie & 0xff00) | data) : ((m_ioie & 0x00ff) | (u16(data) << 8));
+}
+
+u8 h8570_device::cle_r(offs_t offset)
+{
+	return offset ? (m_cle & 0xff) : (m_cle >> 8);
+}
+
+void h8570_device::cle_w(offs_t offset, u8 data)
+{
+	m_cle = offset ? ((m_cle & 0xff00) | data) : ((m_cle & 0x00ff) | (u16(data) << 8));
+}
+
+u8 h8570_device::ever_r()
+{
+	return m_ever;
+}
+
+void h8570_device::ever_w(u8 data)
+{
+	m_ever = data & 0x07;
 }
 
 u8 h8570_device::isp_ctl_r(offs_t offset)
@@ -330,38 +348,42 @@ void h8570_device::syscr_w(offs_t offset, u8 data)
 	m_syscr[offset] = data;
 }
 
-u8 h8570_device::sysctl_r(offs_t offset)
+u8 h8570_device::wsc_r()
 {
-	switch (offset)
-	{
-	case 0: return m_wsc;
-	case 1: return m_ramcr | 0x3f;
-	case 2: return 0xc0 | (mode_control() & 7);
-	default: return m_sbycr;
-	}
+	return m_wsc;
 }
 
-void h8570_device::sysctl_w(offs_t offset, u8 data)
+void h8570_device::wsc_w(u8 data)
 {
-	switch (offset)
-	{
-	case 0:
-		m_wsc = data;
-		break;
-	case 1:
-	{
-		const bool ibe = BIT(m_ramcr, 6);
-		m_ramcr = data | 0x3f;
-		if (ibe != BIT(m_ramcr, 6))
-			m_isp_ibe_cb(BIT(m_ramcr, 6));
-		break;
-	}
-	case 2:
-		break;
-	default:
-		m_sbycr = data;
-		break;
-	}
+	m_wsc = data;
+}
+
+u8 h8570_device::ramcr_r()
+{
+	return m_ramcr | 0x3f;
+}
+
+void h8570_device::ramcr_w(u8 data)
+{
+	const bool ibe = BIT(m_ramcr, 6);
+	m_ramcr = data | 0x3f;
+	if (ibe != BIT(m_ramcr, 6))
+		m_isp_ibe_cb(BIT(m_ramcr, 6));
+}
+
+u8 h8570_device::mdcr_r()
+{
+	return 0xc0 | (mode_control() & 7);
+}
+
+u8 h8570_device::sbycr_r()
+{
+	return m_sbycr;
+}
+
+void h8570_device::sbycr_w(u8 data)
+{
+	m_sbycr = data;
 }
 
 void h8570_device::pwm_out_w(u8 data)

@@ -25,7 +25,7 @@ public:
 	auto write_port5() { return m_write_port[PORT_5].bind(); }
 	auto read_port6() { return m_read_port[PORT_6].bind(); }
 	auto write_port6() { return m_write_port[PORT_6].bind(); }
-	auto read_port7() { return m_read_port[PORT_7].bind(); }    // port 7 is input only
+	auto read_port7() { return m_read_port[PORT_7].bind(); }
 	auto read_port8() { return m_read_port[PORT_8].bind(); }
 	auto write_port8() { return m_write_port[PORT_8].bind(); }
 	auto read_port9() { return m_read_port[PORT_9].bind(); }
@@ -39,7 +39,6 @@ public:
 
 	auto write_pwm() { return m_pwm_out_cb.bind(); }
 
-	// ISP side: the sub-processor's program is the board's to model
 	auto isf_ack_cb() { return m_isf_ack_cb.bind(); }
 	auto isp_reset_cb() { return m_isp_reset_cb.bind(); }
 	auto isp_bus_enable_cb() { return m_isp_ibe_cb.bind(); }
@@ -74,16 +73,33 @@ private:
 	void internal_map(address_map &map) ATTR_COLD;
 	void register_field_map(address_map &map, offs_t base) ATTR_COLD;
 
-	u8 isp_r(offs_t offset);
-	void isp_w(offs_t offset, u8 data);
+	u8 isf_r(offs_t offset);
+	void isf_w(offs_t offset, u8 data);
+	u8 iof_r(offs_t offset);
+	u8 egf_r();
+	u8 icf_r(offs_t offset);
+	void icf_w(offs_t offset, u8 data);
+	u8 ief_r(offs_t offset);
+	void ief_w(offs_t offset, u8 data);
+	u8 ioie_r(offs_t offset);
+	void ioie_w(offs_t offset, u8 data);
+	u8 cle_r(offs_t offset);
+	void cle_w(offs_t offset, u8 data);
+	u8 ever_r();
+	void ever_w(u8 data);
 	u8 isp_ctl_r(offs_t offset);
 	void isp_ctl_w(offs_t offset, u8 data);
 	u8 edge_r(offs_t offset);
 	void edge_w(offs_t offset, u8 data);
 	u8 syscr_r(offs_t offset);
 	void syscr_w(offs_t offset, u8 data);
-	u8 sysctl_r(offs_t offset);
-	void sysctl_w(offs_t offset, u8 data);
+	u8 wsc_r();
+	void wsc_w(u8 data);
+	u8 ramcr_r();
+	void ramcr_w(u8 data);
+	u8 mdcr_r();
+	u8 sbycr_r();
+	void sbycr_w(u8 data);
 	void isf_update(u16 before);
 	void pwm_out_w(u8 data);
 	void pwm_icf_w(u8 data);

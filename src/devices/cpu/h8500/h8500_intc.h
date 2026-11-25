@@ -205,10 +205,6 @@ private:
 	u8 m_pin_ctl;   // SYSCR2 bits 2-0: P6PWME, P9PWME, P9SCI2E (storage only)
 };
 
-// The H8/570 has NMI and IRQ0 only; IRQ0E and NMIEG sit in SYSCR1 with the
-// bus release enable, as on the H8/534.  Its priority registers hold IRQ0
-// and the watchdog, the PWM timer, the sixteen ISP interrupt status flags,
-// the SCI and the A/D converter.
 class h8570_intc_device : public h8500_intc_device
 {
 public:

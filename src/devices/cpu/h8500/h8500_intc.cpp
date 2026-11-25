@@ -35,7 +35,7 @@ static const int h8510_irq_vectors[4] = { 32, 36, 37, 38 };
 static const int h8520_irq_vectors[8] = { 32, 33, 34, 35, 36, 37, 38, 39 };
 static const int h8532_irq_vectors[2] = { 32, 33 };
 static const int h8534_irq_vectors[6] = { 32, 36, 40, 41, 44, 45 };
-static const int h8570_irq_vectors[1] = { 32 };
+constexpr int h8570_irq_vectors[1] = { 32 };
 
 // Vector to IPR mapping table.  Even slots are bits 6-4 of an IPR,
 // odd slots are bits 2-0, and -1 means no programmable priority.
@@ -95,7 +95,7 @@ static const int h8534_vector_to_slot[80] =
 	10, -1, -1, -1, -1, -1, -1, -1  // A/D ADI
 };
 
-static const int h8570_vector_to_slot[80] =
+constexpr int h8570_vector_to_slot[80] =
 {
 	-1, -1, -1, -1, -1, -1, -1, -1, // 0-7: reset, CPU exceptions
 	-1, -1, -1, -1, -1, -1, -1, -1, // 8-15: NMI at 11 (fixed level 8)
