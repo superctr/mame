@@ -104,7 +104,6 @@ protected:
 		u8 reason;
 	};
 
-	// whether a visit is a service, and the parity bit its step takes
 	struct ramp_clock
 	{
 		bool service;

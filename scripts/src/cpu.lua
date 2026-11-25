@@ -3816,6 +3816,7 @@ end
 
 if CPUS["ROLANDXP"] then
 	files {
+		MAME_DIR .. "src/devices/sound/roland_pcm_interp.h",
 		MAME_DIR .. "src/devices/sound/roland_xp.cpp",
 		MAME_DIR .. "src/devices/sound/roland_xp.h",
 	}

@@ -5,93 +5,14 @@
  *
  *  64-voice custom sound generator with built-in microcoded effect DSP.
  *
- *  Host window: 44 voice pages of 64 x 32 bits (page * 0x100 + voice * 4, high word first,
- *  committed by the low word through one chip-wide high-word latch), CRAM/IRAM/PRAM of the
- *  effect DSP, the control block at 0x3900 (run mask, readback latch, interrupt event and
- *  acknowledge, ROM window page/bank, serial and DSP configuration, the transposed per-voice
- *  window), four banks of mixer sends at 0x3a00 and the wave ROM access window at 0x3c00. A
- *  read of a voice page, CRAM, IRAM, PRAM, a send or the ROM window returns nothing on the
- *  bus: it loads the readback latch, masked to the register's width, which 0x3912/0x3910
- *  return. A voice is launched by a read of the run mask: a write only shadows a newly set
- *  bit, and a read of any of the four words commits every shadowed bit; a cleared bit parks
- *  the voice on the write. CONTROL bit 15 enables the voice's marker interrupt.
- *
- *  Voice: every piece of a voice's runtime is one of its pages, and this device keeps it
- *  there - the read pointer (01), the exponent cache (04), the DPCM accumulator (0C), the
- *  decoded pitch increment (0D), the 14-bit phase (0E), the service counter and launch phase
- *  (10), the ramp currents (the seed pages 1B-1E and 21), the filter coefficient (22), the two
- *  amplitude stages (23, 27), the linear ramp step registers (24-26), the filter states (28,
- *  29) and the output sample (2A). A launch takes three frames (preload, initialize, starting)
- *  before the first sample. Each frame a running voice steps one of its five ramps, chosen by
- *  its service counter (odd counts the amplitude envelope TVA1, 0/2/4/6 TVA2, RESO, TVF and
- *  PITCH), gated by the control word's hold divider against a chip-global clock: the linear
- *  law walks a double-resolution step register, the exponential law recomputes its step from
- *  the distance every service, the fade-to-zero steers a velocity, RESO steps in quanta of
- *  four, and a linear ramp's target bit 0 is the chip's acknowledge of a host write. PITCH
- *  and TVF are decoded on their service slots into pages 0D and 22 and held flat; only the
- *  amplitude is smoothed, by the one-pole filter in page 27. The reader is a DPCM decoder
- *  with forward, alternate and reverse loops over 1 MB ROM regions into an 18-bit
- *  accumulator; a one-shot parks its pointer at END and a backward one at LOOP, the marker
- *  interrupt fires on every advance at or past LOOP in the direction of travel, a whole word
- *  at a time on a 16-bit wave bus and never on an alternate loop that selects reason 6 (the
- *  two-stage latch in CONTROL bits 17/16 limits it to two reports), and no other event comes
- *  from the reader. The 4-tap
- *  128-phase interpolator forms four times the accumulator plus the weighted deltas, wraps
- *  at 20 bits and shifts by the wave gain (page 10); the Chamberlin state-variable filter
- *  runs on the top 16 bits of its Q19 coefficients, its states saturated at 24 bits and its
- *  highpass node symmetrically, and a halted or muted voice filters the sample held at its
- *  frozen position; the smoothed amplitude multiplies the result into page 2A, from which
- *  the four sends (10-bit level, 0x200 = unity, 6-bit destination) deposit on the voice's
- *  own four DSP slots into the mixer bank, the first send to name a word clearing it and a
- *  third send to the fourth's word adding nothing - for every voice up to the highest, running
- *  or not, from the page 2A the last frame left, which a parked voice's own frame then clears.
- *  An even voice with FILTER bit 4 and a structure of 1 to 9 pairs with the next one: the two
- *  samples go through one of nine arrangements of the two filters, a booster shift and a ring
- *  modulator, the booster and the ring's modulator saturating at 16 bits and the sums at 24,
- *  and the pair's output lands in the owner's page 2A and zero in the partner's. Every product
- *  in the voice path divides towards zero.
- *
- *  DSP: 288 instruction slots, of which (highest voice + 1) x 4 run a frame, over three RAMs -
- *  IRAM1 and IRAM2, 64 x 24 bits, which words 00-7f address with bit 6 XOR the frame parity, so
- *  one range names this frame's bank and the other the previous frame's and the mixer deposits
- *  under the program into the bank it is not reading, and which 80-bf address unswapped; and
- *  IRAM3, 64 x 26 bits, at c0-ff, whose top 0x3926 [12:8] words are gain registers, a signed
- *  16-bit current above a 10-bit target that the host writes at 0x3300 and the chip approaches
- *  proportionally on odd frames at the rate registers' slew, stopping at the code << 6 - and a
- *  64K-word external delay ring addressed relative to a cursor that steps back once per frame.
- *  The datapath is one multiplier and one ALU on a 29-bit wrapping accumulator: products divide
- *  towards zero and saturate at 29 bits, the accumulator is saturated to 24 bits where it feeds
- *  the multiplier. A slot's col field is a 4 x 16 grid: bits 5..4 the multiply input (the
- *  previous multiply's input, the accumulator, the IRAM read latch, the ERAM read latch) and
- *  bits 3..0 the ALU function, applied to the previous slot's product; a slot issues a multiply
- *  only on functions 1-12, and the product and input latches stand otherwise. Function 0
- *  selects a special by the input field: a no-op, a branch on the accumulator with the
- *  condition and target in the CRAM word, the indexed ERAM read, or the parallel op, which
- *  hands the CRAM word over as a second instruction: a product shift, a post-function (absolute
- *  value, wrap, the PRNG step, the fold, a one's complement of the negative half), whether a
- *  multiply is issued, a factor (the interpolation fraction, the accumulator's magnitude or
- *  value, or a gain register, each complementable), an input and a function, the sixteen
- *  functions being the primary ones with three further sums in place of the immediates, which
- *  pay back a negative fraction the last multiply discarded. ERAM accesses span two slots and a
- *  read lands two slots after its start; a write stores the accumulator or the read latch.
- *
- *  Serial ports: the chip keeps one word position a frame that every ext strobe of 1 or 2
- *  advances, and the strobe clocks the previous frame's word at that position out of RAM.
- *  Strobe 2 drives ports B, C and D (SDOB, SDOC, SDOD) in rotation, three-strobe group by
- *  group, each port enabled by its descriptor (0x3924 [15:8] for B, 0x3926 [7:0] for the other
- *  two, bits 7..6 non-zero); the word goes out with its top 18 bits and two guard bits, or 14
- *  and three with 0x3932 bit 5, and a DAC takes it at a quarter of the word's full scale. The
- *  stream carries the three ports' two halves. Strobe 1 drives port A, the six-line bus that
- *  also receives: it presents its word and takes one back after the strobe's instruction has
- *  run, so a `col 0x0c` on the strobe multiplies the word taken at the previous strobe. Port B's
- *  input is refreshed at the first strobe of each group and `col 0x1c` reads it.
- *
- *  The DSP program is the chip's schedule - one pass of the slots is one sample - so the
- *  device is a CPU as much as a sound chip: execute_run() steps one cycle per slot, voice n
- *  taking cycles 4n to 4n+3, and the output stream is synchronous at the frame rate. The DSP
- *  runs on bit 2 of 0x3916, bit 1 enables the serial input and bits 1 and 0 together the
- *  serial output. Interrupts are one event register with back-pressure: a source whose event
- *  finds the line busy, or the frame's one event already taken, offers it again later.
+ *  - Host window: 44 voice pages of 64 x 32 bits, CRAM/IRAM/PRAM, the control block at
+ *    0x3900, four banks of mixer sends at 0x3a00, the wave ROM window at 0x3c00
+ *  - Voice: DPCM reader over 1 MB ROM regions (forward, alternate, reverse), 4-tap 128-phase
+ *    interpolator, Chamberlin state-variable filter, two amplitude stages, five ramps (TVA1,
+ *    TVA2, RESO, TVF, PITCH), paired voice structures with booster and ring modulator
+ *  - DSP: 288 slots, IRAM1/IRAM2 64 x 24 bits, IRAM3 64 x 26 bits with gain registers,
+ *    64K-word external delay RAM, one multiplier and one ALU on a 29-bit accumulator
+ *  - Serial: port A (six-line, bidirectional), ports B, C and D out
  *
  *  TODO:
  *  - the sample FIFO and the fetch-overload interrupt (reason 7)
@@ -100,6 +21,8 @@
  */
 #include "emu.h"
 #include "roland_xp.h"
+
+#include "roland_pcm_interp.h"
 
 #include <algorithm>
 #include <cmath>
@@ -121,39 +44,6 @@
 DEFINE_DEVICE_TYPE(ROLAND_XP, roland_xp_device, "roland_xp", "Roland XP")
 
 namespace {
-
-constexpr s16 interp_weights[3][128] = {
-	{
-		3385, 3401, 3417, 3432, 3448, 3463, 3478, 3492, 3506, 3521, 3535, 3548, 3562, 3575, 3588, 3601,
-		3614, 3626, 3638, 3650, 3662, 3673, 3685, 3696, 3707, 3718, 3728, 3739, 3749, 3759, 3768, 3778,
-		3787, 3796, 3805, 3814, 3823, 3831, 3839, 3847, 3855, 3863, 3870, 3878, 3885, 3892, 3899, 3905,
-		3912, 3918, 3924, 3930, 3936, 3942, 3948, 3953, 3958, 3963, 3968, 3973, 3978, 3983, 3987, 3991,
-		3995, 4000, 4004, 4007, 4011, 4015, 4018, 4022, 4025, 4028, 4031, 4034, 4037, 4040, 4042, 4045,
-		4047, 4050, 4052, 4054, 4057, 4059, 4061, 4063, 4064, 4066, 4068, 4070, 4071, 4073, 4074, 4076,
-		4077, 4078, 4079, 4081, 4082, 4083, 4084, 4085, 4086, 4086, 4087, 4088, 4089, 4089, 4090, 4091,
-		4091, 4092, 4092, 4093, 4093, 4094, 4094, 4094, 4094, 4095, 4095, 4095, 4095, 4095, 4095, 4095,
-	},
-	{
-		 710,  726,  742,  758,  775,  792,  809,  826,  844,  861,  879,  897,  915,  933,  952,  971,
-		 990, 1009, 1028, 1047, 1067, 1087, 1106, 1126, 1147, 1167, 1188, 1208, 1229, 1250, 1271, 1292,
-		1314, 1335, 1357, 1379, 1400, 1423, 1445, 1467, 1489, 1512, 1534, 1557, 1580, 1602, 1625, 1648,
-		1671, 1695, 1718, 1741, 1764, 1788, 1811, 1835, 1858, 1882, 1906, 1929, 1953, 1977, 2000, 2024,
-		2048, 2071, 2095, 2119, 2143, 2166, 2190, 2214, 2237, 2261, 2284, 2308, 2331, 2355, 2378, 2401,
-		2425, 2448, 2471, 2494, 2517, 2539, 2562, 2585, 2607, 2630, 2652, 2674, 2696, 2718, 2740, 2762,
-		2783, 2805, 2826, 2847, 2868, 2889, 2910, 2931, 2951, 2971, 2991, 3011, 3031, 3051, 3070, 3089,
-		3108, 3127, 3146, 3164, 3182, 3200, 3218, 3236, 3253, 3271, 3288, 3304, 3321, 3338, 3354, 3370,
-	},
-	{
-		   0,    0,    0,    1,    1,    1,    2,    2,    3,    3,    3,    4,    4,    5,    5,    6,
-		   6,    7,    8,    8,    9,   10,   10,   11,   12,   13,   14,   15,   16,   17,   18,   19,
-		  20,   22,   23,   24,   26,   27,   29,   30,   32,   34,   36,   38,   40,   42,   44,   46,
-		  49,   51,   53,   56,   59,   62,   65,   68,   71,   74,   77,   81,   84,   88,   92,   96,
-		 100,  104,  109,  113,  118,  122,  127,  132,  137,  143,  148,  154,  160,  165,  171,  178,
-		 184,  191,  197,  204,  211,  219,  226,  234,  241,  249,  257,  266,  274,  283,  292,  301,
-		 310,  319,  329,  339,  349,  359,  369,  380,  391,  402,  413,  424,  436,  448,  460,  472,
-		 484,  497,  510,  523,  536,  549,  563,  577,  591,  605,  619,  634,  648,  663,  679,  694,
-	},
-};
 
 constexpr u32 hold_masks[4] = { 0, 7, 31, 127 };
 constexpr u8 hold_shifts[4] = { 0, 3, 5, 7 };
@@ -473,7 +363,7 @@ void roland_xp_device::load_latch(offs_t address, offs_t lane)
 	else if (address >= ROM_WINDOW)
 	{
 		const u32 base = (u32(m_regs[ROM_BANK >> 1] & 0x7f) << 20) | (u32(m_regs[ROM_PAGE >> 1] & 0x3ff) << 10);
-		const unsigned select = base >> 24;
+		const u32 select = base >> 24;
 		const u8 descriptor = m_regs[(ROM_SELECT >> 1) + (select >> 1)] >> (BIT(select, 0) ? 8 : 0);
 		const u32 byte = base | ((address - ROM_WINDOW) + (BIT(descriptor, 0) ? 0 : lane));
 		if (BIT(descriptor, 0))
@@ -938,7 +828,7 @@ roland_xp_device::address_step roland_xp_device::advance(int n, u32 control, add
 
 bool roland_xp_device::wide_bus(u32 control) const
 {
-	const unsigned select = (control >> 4) & 7;
+	const u32 select = (control >> 4) & 7;
 	return BIT(m_regs[(ROM_SELECT >> 1) + (select >> 1)] >> (BIT(select, 0) ? 8 : 0), 0);
 }
 
@@ -1005,7 +895,7 @@ s32 roland_xp_device::interpolate(int n, u32 control, u32 service)
 	s32 sum = 4 * wrap18(s32(page(n, PREDICTOR)));
 	for (int i = 0; i < 3; i++)
 	{
-		sum += tap(interp_weights[i][phase >> 7], cell_at(n, control, s.address));
+		sum += tap(roland_pcm_interp::WEIGHTS[i][phase >> 7], cell_at(n, control, s.address));
 		s = advance(n, control, s);
 	}
 	return wrap20(sum) >> (3 - ((service >> 3) & 3));
