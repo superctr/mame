@@ -28,7 +28,7 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 private:
-	static constexpr unsigned QUEUE = 64;
+	static constexpr u32 QUEUE = 64;
 
 	TIMER_CALLBACK_MEMBER(int_raise);
 	void update_int();

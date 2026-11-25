@@ -13,6 +13,8 @@
 #include "emu.h"
 #include "ssc1000.h"
 
+#include <algorithm>
+
 DEFINE_DEVICE_TYPE(SSC1000, ssc1000_device, "ssc1000", "Roland SSC-1000 Key Scanner")
 
 ssc1000_device::ssc1000_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
@@ -44,7 +46,7 @@ void ssc1000_device::device_reset()
 	m_count = 0;
 	m_int = false;
 	m_int_timer->adjust(attotime::never);
-	m_int_callback(CLEAR_LINE);
+	m_int_callback(0);
 }
 
 void ssc1000_device::update_int()
@@ -53,7 +55,7 @@ void ssc1000_device::update_int()
 	if (state != m_int)
 	{
 		m_int = state;
-		m_int_callback(state ? ASSERT_LINE : CLEAR_LINE);
+		m_int_callback(state);
 	}
 }
 
@@ -66,7 +68,7 @@ void ssc1000_device::key_w(u8 key, u8 velocity)
 {
 	if (m_count == QUEUE)
 		return;
-	unsigned const at = (m_head + m_count) % QUEUE;
+	u32 const at = (m_head + m_count) % QUEUE;
 	m_queue_key[at] = (key & 0x7f) | (velocity ? 0x80 : 0x00);
 	m_queue_vel[at] = velocity & 0x7f;
 	m_count++;
@@ -87,7 +89,7 @@ u8 ssc1000_device::read(offs_t offset)
 			if (m_int)
 			{
 				m_int = false;
-				m_int_callback(CLEAR_LINE);
+				m_int_callback(0);
 			}
 			if (m_count)
 				m_int_timer->adjust(attotime::from_usec(20));
