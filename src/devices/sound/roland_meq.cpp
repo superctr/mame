@@ -3,26 +3,25 @@
 // thanks-to: giulioz
 /***************************************************************************
 
-    Roland MEQ (Toshiba TC24SC220AF-007), the mixer, EQ and effects DSP of
-    the JD-800, S-760 and SP-700.
+    Roland MEQ (Toshiba TC24SC220AF-007)
 
-    A fixed program of up to 400 steps runs once a sample: each step
-    reads one data word and writes another, multiplies the input the step
-    before chose by its coefficient and adds a word read, a result or
-    nothing.  24 voice words come in one a strobe; results leave through
-    latches on three serial ports, exposed here as eight words a port in
-    step order.
+    - mixer, EQ and effects DSP of the JD-800, S-760 and SP-700
+    - fixed program of up to 400 steps, run once a sample
+    - 400 coefficients, 128 data words of 24 bits
+    - 24 voice inputs, one a strobe
+    - two serial inputs, three latched serial outputs
+    - 16-bit host bus, or 8-bit with a byte-pair latch
 
-    Two serial input ports arrive as stream inputs after the voices, left
-    then right: a port's first read in a sample takes the left word, its
-    second the right.
-
-    Not emulated: the clock-pin field.
+    TODO:
+    - the configuration word's input clock field
 
 ***************************************************************************/
 
 #include "emu.h"
 #include "roland_meq.h"
+
+#include <algorithm>
+#include <iterator>
 
 #define VERBOSE (0)
 #include "logmacro.h"
@@ -45,7 +44,7 @@ constexpr int input_of(u16 lo) { return (lo >> 2) & 7; }
 constexpr int mode_of(u16 lo) { return (lo >> 12) & 3; }
 
 constexpr s32 wrap24(s64 v) { return s32(util::sext(u32(v), 24)); }
-constexpr s32 clamp24(s64 v) { return s32(std::clamp<s64>(v, -0x800000, 0x7fffff)); }
+constexpr s32 clamp24(s64 v) { return s32(std::clamp<s64>(v, -0x80'0000, 0x7f'ffff)); }
 
 }
 
@@ -57,8 +56,15 @@ roland_meq_device::roland_meq_device(const machine_config &mconfig, const char *
 	m_serial_right_first{ false, false },
 	m_stream(nullptr),
 	m_first_voice(20),
-	m_latch_steps{ nullptr, nullptr, nullptr }
+	m_latch_steps_set{ false, false, false },
+	m_latch_steps{ { 0 }, { 0 }, { 0 } }
 {
+}
+
+void roland_meq_device::set_latch_steps(int port, const u16 (&steps)[LATCHES])
+{
+	std::copy(std::begin(steps), std::end(steps), m_latch_steps[port]);
+	m_latch_steps_set[port] = true;
 }
 
 void roland_meq_device::device_start()
@@ -66,10 +72,14 @@ void roland_meq_device::device_start()
 	for (int port = 0; port != PORTS; port++)
 	{
 		std::fill(std::begin(m_latch_of_step[port]), std::end(m_latch_of_step[port]), -1);
-		if (m_latch_steps[port])
+		if (m_latch_steps_set[port])
+		{
 			for (int n = 0; n != LATCHES; n++)
+			{
 				if (m_latch_steps[port][n] < STEPS)
 					m_latch_of_step[port][m_latch_steps[port][n]] = n;
+			}
+		}
 	}
 
 	m_stream = stream_alloc(VOICES + SERIAL_INPUTS * 2, PORTS * LATCHES, clock(), m_synchronous ? STREAM_SYNCHRONOUS : STREAM_DEFAULT_FLAGS);
@@ -98,7 +108,7 @@ void roland_meq_device::device_clock_changed()
 
 void roland_meq_device::device_reset()
 {
-	std::fill(std::begin(m_program), std::end(m_program), 0x80800000);
+	std::fill(std::begin(m_program), std::end(m_program), 0x8080'0000);
 	std::fill(std::begin(m_coef), std::end(m_coef), 0);
 	std::fill(std::begin(m_data), std::end(m_data), 0);
 	m_latch = 0;
@@ -121,19 +131,22 @@ void roland_meq_device::write(offs_t offset, u16 data)
 	switch (offset & 7)
 	{
 	case 0:
-		m_latch = (m_latch & 0xffff0000) | data;
+		m_latch = (m_latch & 0xffff'0000) | data;
 		break;
 	case 1:
-		m_latch = (m_latch & 0x0000ffff) | (data << 16);
+		m_latch = (m_latch & 0x0000'ffff) | (data << 16);
 		break;
 	case 2:
 		data &= 0x7ff;
 		if (data < 0x200)
-			m_latch = data < STEPS ? m_program[data] : 0xffffffff;
+			m_latch = data < STEPS ? m_program[data] : 0xffff'ffff;
 		else if (data < 0x400)
-			m_latch = data - 0x200 < STEPS ? m_coef[data - 0x200] : 0xffffffff;
+			m_latch = data - 0x200 < STEPS ? m_coef[data - 0x200] : 0xffff'ffff;
 		else if (data < 0x600)
-			m_latch = m_data[data & (DATA_WORDS - 1)] & 0xffffff;
+		{
+			m_stream->update();
+			m_latch = m_data[data & (DATA_WORDS - 1)] & 0xff'ffff;
+		}
 		else
 			m_latch = (data << 16) | data;
 		break;
@@ -202,8 +215,10 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 	int serial_reads[SERIAL_INPUTS] = { 0, 0 };
 	int strobes = 0;
 	for (int port = 0; port != PORTS; port++)
-		if (m_latch_steps[port])
+	{
+		if (m_latch_steps_set[port])
 			std::fill(std::begin(m_port[port]), std::end(m_port[port]), 0);
+	}
 
 	for (int m = 0; m != length; m++)
 	{
@@ -224,14 +239,14 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 		s64 f = (lo & LO_SATURATE) ? clamp24(m_result) : m_result;
 		if (prev & LO_RAMP)
 		{
-			u32 const target = u32(m_read_q) & 0xffffff;
-			u32 const t = (u32(f) << 4) & 0xffffff;
+			u32 const target = u32(m_read_q) & 0xff'ffff;
+			u32 const t = (u32(f) << 4) & 0xff'ffff;
 			bool const coarse = ((prev >> 5) & 3) == ADD_NONE;
 			bool const falling = coarse || BIT(target, 11);
-			if (t < 0x800000 && (falling ? t > (target & 0x7ff000) : t < (target & 0x7ff000)))
-				f = coarse ? (t & 0xfff000) : t;
+			if (t < 0x80'0000 && (falling ? t > (target & 0x7f'f000) : t < (target & 0x7f'f000)))
+				f = coarse ? (t & 0xff'f000) : t;
 			else
-				f = target & 0xfff000;
+				f = target & 0xff'f000;
 		}
 		s32 const formatted = wrap24(f);
 
@@ -242,7 +257,7 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 		case SRC_READ: x = m_read_l; break;
 		case SRC_R2: x = m_r2_before; break;
 		case SRC_RESULT: x = m_stored; break;
-		case SRC_HALF: x = 0x400000; break;
+		case SRC_HALF: x = 0x40'0000; break;
 		default:
 			{
 				int const port = input_of(prev) - SRC_SERIAL;
@@ -284,8 +299,8 @@ void roland_meq_device::run(const s32 *voices, const s32 (*serial)[2])
 		{
 			int const port = ((lo & LO_SERIAL_LATCH) >> 9) - 1;
 			if (port == 2)
-				m_port3_cb(latched[port], u32(m_stored) & 0xffffff);
-			if (m_latch_steps[port])
+				m_port3_cb(latched[port], u32(m_stored) & 0xff'ffff);
+			if (m_latch_steps_set[port])
 			{
 				if (m_latch_of_step[port][m] >= 0)
 					m_port[port][m_latch_of_step[port][m]] = m_stored;
@@ -310,18 +325,18 @@ void roland_meq_device::sound_stream_update(sound_stream &stream)
 	for (int i = 0; i != stream.samples(); i++)
 	{
 		for (int v = 0; v != VOICES; v++)
-			voices[v] = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * 0x7fffff) & ~0x1f;
+			voices[v] = s32(std::clamp(stream.get(v, i), -1.0f, 1.0f) * 0x7f'ffff) & ~0x1f;
 		for (int p = 0; p != SERIAL_INPUTS; p++)
 		{
 			s32 in[2];
 			for (int c = 0; c != 2; c++)
-				in[c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7fffff);
+				in[c] = s32(std::clamp(stream.get(INPUT_SERIAL + p * 2 + c, i), -1.0f, 1.0f) * 0x7f'ffff);
 			serial[p][0] = in[m_serial_right_first[p] ? 1 : 0];
 			serial[p][1] = in[m_serial_right_first[p] ? 0 : 1];
 		}
 		run(voices, serial);
 		for (int p = 0; p != PORTS; p++)
 			for (int l = 0; l != LATCHES; l++)
-				stream.put_int(p * LATCHES + l, i, m_port[p][l], 0x800000);
+				stream.put_int(p * LATCHES + l, i, m_port[p][l], 0x80'0000);
 	}
 }

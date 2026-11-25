@@ -18,40 +18,30 @@ public:
 	static constexpr int LATCHES = 8;
 	static constexpr int STEPS = 400;
 
-	// the stream output carrying a port's latch, latches counted in step order from the start of the sample
 	static constexpr int output(int port, int latch) { return port * LATCHES + latch; }
 
 	roland_meq_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// the voice input whose word the first strobe of a sample brings; the others follow in order
-	void set_first_voice(int voice) { m_first_voice = voice; }
-
-	// a port whose latches are told apart by their steps, as a demultiplexer timed to the program
-	// takes them: output(port, n) carries the word latched at steps[n], zero in a sample without it
-	void set_latch_steps(int port, const u16 (&steps)[LATCHES]) { m_latch_steps[port] = steps; }
-
-	// the third serial port's words as they are latched, the latch's index in the sample as the offset
 	auto port3_callback() { return m_port3_cb.bind(); }
 
-	// one sample at a time, for a machine whose CPU waits on the port 3 callback's effects
+	void set_first_voice(int voice) { m_first_voice = voice; }
+	void set_latch_steps(int port, const u16 (&steps)[LATCHES]);
 	void set_synchronous(bool synchronous) { m_synchronous = synchronous; }
-
-	// a serial input that delivers the right word first
 	void set_serial_right_first(int port, bool right_first) { m_serial_right_first[port] = right_first; }
 
-	// the register file, a 16-bit word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
 
-	// the register file on an 8-bit bus: each word as two bytes, most significant first
 	u8 read8(offs_t offset);
 	void write8(offs_t offset, u8 data);
 
 protected:
+	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 	virtual void device_clock_changed() override;
 
+	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
@@ -66,7 +56,8 @@ private:
 	bool m_serial_right_first[SERIAL_INPUTS];
 	sound_stream *m_stream;
 	int m_first_voice;
-	const u16 *m_latch_steps[PORTS];
+	bool m_latch_steps_set[PORTS];
+	u16 m_latch_steps[PORTS][LATCHES];
 	s8 m_latch_of_step[PORTS][STEPS];
 
 	u32 m_program[STEPS];
