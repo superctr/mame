@@ -16,16 +16,17 @@
 
 #include "emu.h"
 
-#include "cpu/sh/sh7034.h"
 #include "datacard.h"
 #include "m60205.h"
-#include "machine/nvram.h"
-#include "sound/roland_xp.h"
-#include "video/hd44780.h"
 #include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
+#include "cpu/sh/sh7034.h"
+#include "machine/nvram.h"
+#include "sound/roland_xp.h"
+#include "video/hd44780.h"
+
 #include "emupal.h"
 #include "screen.h"
 #include "softlist_dev.h"
@@ -53,7 +54,7 @@ public:
 	{
 	}
 
-	void jv1080(machine_config &config);
+	void jv1080(machine_config &config) ATTR_COLD;
 	void init_jv1080() ATTR_COLD;
 
 protected:
@@ -82,9 +83,6 @@ private:
 };
 
 
-// SENS0-SENS4 on PB1-PB5, high while a card or a board is fitted; 0a01a99e
-// polls them as one five-bit field thirty times a second.  SENS0 is the PCM
-// card's, SENS1-SENS4 are EXP-A to EXP-D
 u16 roland_jv1080_state::sense_r()
 {
 	u16 data = 0xffff;
@@ -97,8 +95,6 @@ u16 roland_jv1080_state::sense_r()
 }
 
 
-// IC25 with A16 high: the DATA card's sense line in bit 1 and its protect
-// switch's MRO in bit 0, high while the card can be written
 u8 roland_jv1080_state::card_status_r()
 {
 	return (m_datacard->sense_r() ? 0x02 : 0x00) | ((m_datacard->sense_r() && !m_datacard->protect_r()) ? 0x01 : 0x00);
@@ -134,7 +130,6 @@ void roland_jv1080_state::xp_rom_map(address_map &map)
 }
 
 
-// The wave ROMs are stored as dumped, wired as an SRX board is, as on the SC-88.
 void roland_jv1080_state::init_jv1080()
 {
 	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
@@ -148,8 +143,8 @@ void roland_jv1080_state::machine_start()
 
 void roland_jv1080_state::jv_palette(palette_device &palette) const
 {
-	palette.set_pen_color(0, rgb_t(0x06, 0x08, 0x3c)); // negative LCD: dark blue background
-	palette.set_pen_color(1, rgb_t(88, 247, 0));        // lit dots
+	palette.set_pen_color(0, rgb_t(0x06, 0x08, 0x3c));
+	palette.set_pen_color(1, rgb_t(88, 247, 0));
 }
 
 HD44780_PIXEL_UPDATE(roland_jv1080_state::lcd_pixel_update)
@@ -159,55 +154,55 @@ HD44780_PIXEL_UPDATE(roland_jv1080_state::lcd_pixel_update)
 }
 
 
-static INPUT_PORTS_START(jv1080)
+INPUT_PORTS_START(jv1080)
 	PORT_START("SW0")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON1)  PORT_NAME("Palette")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON2)  PORT_NAME("F1")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON3)  PORT_NAME("F4")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON4)  PORT_NAME("F7")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_BUTTON5)  PORT_NAME("Utility")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_BUTTON6)  PORT_NAME("Sound B")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_BUTTON7)  PORT_NAME("Performance")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_BUTTON8)  PORT_NAME("User/Card")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Palette")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F1")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F4")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F7")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Utility")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Sound B")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Performance")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("User/Card")
 
 	PORT_START("SW1")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON9)  PORT_NAME("Parameter")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON10) PORT_NAME("F2")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON11) PORT_NAME("F5")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON12) PORT_NAME("F8")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_BUTTON13) PORT_NAME("EFX On/Off")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_BUTTON14) PORT_NAME("Sound C")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_BUTTON15) PORT_NAME("Patch")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_BUTTON16) PORT_NAME("Preset")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Parameter")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F2")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F5")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F8")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("EFX On/Off")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Sound C")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset")
 
 	PORT_START("SW2")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("1-8/9-16")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("F3")
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("F6")
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("System")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Sound A")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Sound D")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Rhythm")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER)    PORT_NAME("Exp")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("1-8/9-16")
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F3")
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("F6")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System")
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Sound A")
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Sound D")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rhythm")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exp")
 
 	PORT_START("SW3")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN)  PORT_NAME("Cursor Down")
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT)  PORT_NAME("Cursor Left")
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP)    PORT_NAME("Cursor Up")
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT) PORT_NAME("Cursor Right")
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Shift")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Exit")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER)          PORT_NAME("Enter")
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
 
 	PORT_START("PORTA")
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Preview (Volume push)")
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Inc")
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Dec")
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Preview (Volume push)")
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Inc")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Dec")
 	PORT_BIT(0xf1, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("PORTB")
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_OTHER) PORT_NAME("Value push")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Value push")
 	PORT_BIT(0xfe, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("DIAL")
@@ -224,9 +219,6 @@ void roland_jv1080_state::jv1080(machine_config &config)
 {
 	SH7034(config, m_maincpu, 20_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jv1080_state::jv1080_map);
-	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
-	// AN2-AN7 are grounded.  AN0 and AN1 are the data card's cell and the
-	// internal one, each through a buffer; 0x1ff-0x2cc of full scale is healthy
 	m_maincpu->read_adc<0>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 620 : 0; });
 	m_maincpu->read_adc<1>().set_constant(620);
 	m_maincpu->read_adc<2>().set_constant(0);
@@ -242,7 +234,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 	m_maincpu->read_portc().set_constant(0xffff);
 
 	M60205(config, m_ga, 20_MHz_XTAL);
-	m_ga->int_callback().set_inputline(m_maincpu, 5); // IRQ5
+	m_ga->int_callback().set_inputline(m_maincpu, 5);
 	m_ga->write_lcd_control().set(m_lcd, FUNC(hd44780_device::control_w));
 	m_ga->write_lcd_data().set(m_lcd, FUNC(hd44780_device::data_w));
 	m_ga->write_led().set(FUNC(roland_jv1080_state::led_w));
@@ -257,8 +249,6 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	ROLAND_DATACARD(config, m_datacard);
 
-	// the PCM card on the XP's chip select 1, and EXP-A to EXP-D, CN501-CN504,
-	// one 8 MB board at the foot of each of its chip selects 2 to 5
 	ROLAND_SOPCM1_SLOT(config, m_pcmcard, 0).set_open(0xffff);
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
@@ -270,7 +260,8 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(sh7034_device::sci_rx_w<0>));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+	midi_port_device &mdout(MIDI_PORT(config, "mdout", midiout_slot, "midiout"));
+	m_maincpu->write_sci_tx<0>().set(mdout, FUNC(midi_port_device::write_txd));
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
@@ -293,7 +284,7 @@ void roland_jv1080_state::jv1080(machine_config &config)
 
 	ROLAND_XP(config, m_xp, 24.576_MHz_XTAL);
 	m_xp->set_addrmap(roland_xp_device::AS_WAVE, &roland_jv1080_state::xp_rom_map);
-	m_xp->int_callback().set_inputline(m_maincpu, 7); // IRQ7
+	m_xp->int_callback().set_inputline(m_maincpu, 7);
 	m_xp->add_route(0, "mix", 1.0, 0);
 	m_xp->add_route(1, "mix", 1.0, 1);
 	m_xp->add_route(2, "output1", 1.0, 0);
