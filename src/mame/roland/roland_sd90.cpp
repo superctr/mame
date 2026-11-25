@@ -2,59 +2,25 @@
 // copyright-holders:superctr
 /****************************************************************************
 
-    EDIROL SD-90 (2001) and SD-80 (2002) Studio Canvas.
+    Edirol SD-80 and SD-90 Studio Canvas
 
-    Two USB sound modules on one firmware: an SH-3 with two XV tone
-    generators over a wave ROM set of their own, and a USB block with its
-    own 8-bit CPU.  The SD-90 adds a second effect processor, the MR3, and
-    audio inputs; the SD-80 is the same machine without them.
+    SD-80 main board:
+    - IC2 HD6417706 SH-3, EXTAL 12 MHz from the USB block, 96 MHz internal
+    - IC3 LH28F160BJE-BTL80 program flash, 2 MB
+    - IC4/IC6 LC3816161ET-70 SDRAM, 4 MB
+    - IC19/IC27 TC223C660CF-503 XV tone generators, 16.9344 MHz
+    - IC26/IC30 GM71C18163CJ-6 effect DRAM, one beside each XV
+    - IC28/IC29 uPD23C128040ALGY wave mask ROMs, 16 MB each
+    - IC17 M37641M8-137FP USB controller, 24 MHz
+    - IC32/IC34 PCM1716E DACs, IC33 TC9271FS digital output
+    - LCD board IC7 RCM2072M-B, 20 x 2 characters
 
-    SD-80 main board, from the service notes:
-
-        IC2     HD6417706           the CPU, an SH-3
-        IC3     LH28F160BJE-BTL80   program flash, 16 Mbit, 1M x 16
-        IC4/6   LC3816161ET-70      SDRAM, 4 MB the pair
-        IC19/27 TC223C660CF-503     the two XVs, Roland's RA08-503
-        IC26/30 GM71C18163CJ-6      one 16 Mbit effect DRAM beside each
-        IC28/29 uPD23C128040ALGY    wave mask ROM, 128 Mbit each
-        IC17    M37641M8-137FP      the USB block's 8-bit CPU, its own ROM
-        IC32/34 PCM1716E            the two DACs, with a TC9271FS (IC33)
-                                    driving the digital output
-        LB IC7  RCM2072M-B          the display, 20 characters by 2 lines
-
-    X1 is 24.000 MHz at the M37641, X2 16.9344 MHz -- 384 x 44.1 kHz -- on
-    the wave side, and the CPU's EXTAL takes 12 MHz off the USB block
-    through IC5, a TC7SH04FU inverter.  In clock mode 1 PLL circuit 2
-    multiplies that by four, and the boot block's FRQCR of 0x0112 doubles it
-    again for the CPU: 96 MHz internal, 48 MHz bus, 24 MHz peripheral, which
-    is the 31250 baud the two serial channels ask for.  The SD-90's own
-    service notes are not in hand and which SH-3 it carries is unread; its
-    firmware uses no register that tells one family member from another.
-
-    There is no on-chip ROM: the flash's first instruction is the reset
-    vector, and the boot block sets the bus up, inflates the program out of
-    two zlib containers into the SDRAM and enters it.  The SD-80's dump is
-    the flash with the two bytes of every word exchanged.
-
-    The interrupts, read out of the firmware's own dispatch table -- it
-    indexes on INTEVT2 and every entry here has a handler of its own:
-
-        SD-80   TMU0, TMU1, TMU2, the watchdog's interval timer, IRQ0 the
-                XV at 0x14000000, IRQ1 the XV at 0x15000000, IRQ2 the USB
-                controller's IBF and IRQ3 its OBF, IRQ5 a pin read back on
-                SCPDR, the SCI and the SCIF
-        SD-90   TMU0, TMU1, the watchdog, IRQ0 and IRQ1 the two XVs, IRQ2
-                its USB controller at 0x18800000, PINT0-7, the IrDA channel and
-                the SCIF
-
-    So both machines' MIDI is two channels of the CPU's own: the SD-80's
-    SCI and SCIF, the SD-90's IrDA channel and SCIF.
+    SD-90: the SD-80's platform with an LH28F320BF flash, the MR3 effect
+    processor as the output mixer, audio inputs and a 128 x 64 graphic LCD.
 
     TODO:
-    - the USB controller is a stub: no USB MIDI or audio, so the SD-90
-      is given a settings record that starts it in MIDI mode
-    - which XV DAC pairs feed the MR3 and DACs is unconfirmed
-    - the SD-90's analog and digital inputs, and its digital output
+    - the USB controller: no USB MIDI or audio
+    - the SD-90's analog and digital inputs, the digital outputs
 
 ****************************************************************************/
 
@@ -83,189 +49,239 @@
 #define LOG_UIPC    (1U << 1)
 #define LOG_RESET   (1U << 2)
 
-#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
 namespace {
 
-class sd90_state : public driver_device
+class sd_state : public driver_device
 {
 public:
-	sd90_state(const machine_config &mconfig, device_type type, const char *tag)
+	void init_waverom() ATTR_COLD;
+
+protected:
+	enum
+	{
+		LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM,
+		LED_BYPASS, LED_EDIT, LED_SELECT, LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, LEDS
+	};
+
+	sd_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
-		, m_uipc(*this, "uipc")
 		, m_xv(*this, "xv%u", 0U)
-		, m_mr3(*this, "mr3")
 		, m_flash(*this, "flash")
-		, m_lcd(*this, "lcd")
-		, m_glcd(*this, "glcd")
-		, m_dial(*this, "DIAL")
-		, m_knob(*this, "V%u", 1U)
-		, m_midi_sw(*this, "MIDI_SW")
-		, m_mdout2(*this, "mdout2")
 		, m_out(*this, "out%u", 1U)
 		, m_tg_view(*this, "tg_view")
 		, m_leds(*this, "led_%u", 0U)
 	{
 	}
 
-	void sd80(machine_config &config) ATTR_COLD;
-	void sd90(machine_config &config) ATTR_COLD;
+	virtual void machine_start() override ATTR_COLD;
+	virtual void machine_reset() override ATTR_COLD;
 
-	void init_sd90() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
-	void init_sd80() ATTR_COLD { init_sd90(); m_analog_gpio = true; }
+	void common(machine_config &config) ATTR_COLD;
+	void xv_wave_map(address_map &map) ATTR_COLD;
+	void lcd_palette(palette_device &palette) const ATTR_COLD;
+
+	static bool port_pin(u64 data, int bit) { return BIT(data, 16 + 2 * bit, 2) != 1 || BIT(data, bit); }
+	bool tg_reset_w(int state);
+
+	required_device<sh7709_device> m_maincpu;
+	required_device_array<roland_xv_device, 2> m_xv;
+	required_device<intelfsh16_device> m_flash;
+	required_device_array<speaker_device, 2> m_out;
+	memory_view m_tg_view;
+	output_finder<LEDS> m_leds;
+
+	bool m_tg_reset = true;
+};
+
+class sd80_state : public sd_state
+{
+public:
+	sd80_state(const machine_config &mconfig, device_type type, const char *tag)
+		: sd_state(mconfig, type, tag)
+		, m_uipc(*this, "uipc")
+		, m_lcd(*this, "lcd")
+		, m_mdout2(*this, "mdout2")
+		, m_dial(*this, "DIAL")
+		, m_midi_sw(*this, "MIDI_SW")
+	{
+	}
+
+	void sd80(machine_config &config) ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
 
-	void common(machine_config &config) ATTR_COLD;
-
+private:
 	void sd80_map(address_map &map) ATTR_COLD;
-	void sd90_map(address_map &map) ATTR_COLD;
 	void sd80_io_map(address_map &map) ATTR_COLD;
-	void sd90_io_map(address_map &map) ATTR_COLD;
-	void xv_wave_map(address_map &map) ATTR_COLD;
 
-	static bool port_pin(u64 data, int bit) { return ((data >> (16 + 2 * bit)) & 3) != 1 || BIT(data, bit); }
-	void tg_reset_w(int state);
-	void sd80_port_c_w(u64 data);
-	void sd80_port_d_w(u64 data);
-	void sd90_port_e_w(u64 data);
+	void port_c_w(u64 data);
+	void port_d_w(u64 data);
 	void update_dac();
-
-	u8 usb_r(offs_t offset);
-	void usb_w(offs_t offset, u8 data);
-
 	void led_w(offs_t offset, u8 data);
-	void sd90_led_w(offs_t offset, u8 data);
 	void out2_update();
 	u64 scp_r();
 	bool enca() const { return m_encoder_phase != 1 && m_encoder_phase != 2; }
 	TIMER_CALLBACK_MEMBER(step_encoder);
+
+	required_device<roland_uipc_device> m_uipc;
+	required_device<hd44780_device> m_lcd;
+	required_device<midi_port_device> m_mdout2;
+	required_ioport m_dial;
+	required_ioport m_midi_sw;
+
+	emu_timer *m_encoder_timer = nullptr;
+	u8 m_dial_last = 0;
+	s8 m_dial_pending = 0;
+	u8 m_encoder_phase = 0;
+	u8 m_in1_rxd = 1;
+	u8 m_scif_txd = 1;
+	bool m_dac_reset = true;
+	bool m_amute = true;
+};
+
+class sd90_state : public sd_state
+{
+public:
+	sd90_state(const machine_config &mconfig, device_type type, const char *tag)
+		: sd_state(mconfig, type, tag)
+		, m_mr3(*this, "mr3")
+		, m_glcd(*this, "glcd")
+		, m_panel(*this, "PANEL%u", 0U)
+		, m_knob(*this, "V%u", 1U)
+		, m_hacks(*this, "HACKS")
+	{
+	}
+
+	void sd90(machine_config &config) ATTR_COLD;
+
+protected:
+	virtual void machine_start() override ATTR_COLD;
+	virtual void machine_reset() override ATTR_COLD;
+
+private:
+	void sd90_map(address_map &map) ATTR_COLD;
+	void sd90_io_map(address_map &map) ATTR_COLD;
+
+	void port_e_w(u64 data);
+	u8 usb_r(offs_t offset);
+	void usb_w(offs_t offset, u8 data);
+	void led_w(offs_t offset, u8 data);
 	u64 knob_a_r();
 	u64 knob_b_r();
 	void knob_clear_w(u64 data);
 	void update_knobs();
 	TIMER_CALLBACK_MEMBER(step_knobs);
 
-	void lcd_palette(palette_device &palette) const ATTR_COLD;
+	required_device<roland_mr_device> m_mr3;
+	required_device<st7565_device> m_glcd;
+	required_ioport_array<2> m_panel;
+	required_ioport_array<3> m_knob;
+	required_ioport m_hacks;
 
-	enum { LED_GS, LED_MIDI, LED_SYSTEM, LED_NATIVE, LED_USB, LED_EFFECTS, LED_GM2, LED_PREVIEW, LED_INST_DRUM,
-		LED_BYPASS, LED_EDIT, LED_SELECT, LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, LEDS };
-
-	u8 m_dial_last = 0;
-	s8 m_dial_pending = 0;
-	u8 m_encoder_phase = 0;
-	u8 m_in1_rxd = 1;
-	u8 m_scif_txd = 1;
+	emu_timer *m_knob_timer = nullptr;
 	u8 m_usb_state = 0;
-	bool m_analog_gpio = false;
-	bool m_tg_reset = true;
-	bool m_dac_reset = true;
-	bool m_amute = true;
 	u8 m_usb_reg[0x10]{};
 	u8 m_knob_last[3]{};
 	s8 m_knob_pending[3]{};
 	bool m_knob_latched[3]{};
 	bool m_knob_up[3]{};
-
-	emu_timer *m_encoder_timer = nullptr;
-	emu_timer *m_knob_timer = nullptr;
-
-	required_device<sh7709_device> m_maincpu;
-	optional_device<roland_uipc_device> m_uipc;
-	required_device_array<roland_xv_device, 2> m_xv;
-	optional_device<roland_mr_device> m_mr3;
-	optional_device<intelfsh16_device> m_flash;
-	optional_device<hd44780_device> m_lcd;
-	optional_device<st7565_device> m_glcd;
-	optional_ioport m_dial;
-	optional_ioport_array<3> m_knob;
-	optional_ioport m_midi_sw;
-	optional_device<midi_port_device> m_mdout2;
-	required_device_array<speaker_device, 2> m_out;
-	memory_view m_tg_view;
-	output_finder<LEDS> m_leds;
 };
 
 
-void sd90_state::machine_start()
+void sd_state::init_waverom()
 {
-	m_encoder_timer = timer_alloc(FUNC(sd90_state::step_encoder), this);
-	m_encoder_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
-	m_knob_timer = timer_alloc(FUNC(sd90_state::step_knobs), this);
-	if (m_knob[0])
-		m_knob_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
-
-	save_item(NAME(m_dial_last));
-	save_item(NAME(m_dial_pending));
-	save_item(NAME(m_encoder_phase));
-	save_item(NAME(m_in1_rxd));
-	save_item(NAME(m_scif_txd));
-	save_item(NAME(m_usb_state));
-	save_item(NAME(m_usb_reg));
-	save_item(NAME(m_tg_reset));
-	save_item(NAME(m_dac_reset));
-	save_item(NAME(m_amute));
-	save_item(NAME(m_knob_last));
-	save_item(NAME(m_knob_pending));
-	save_item(NAME(m_knob_latched));
-	save_item(NAME(m_knob_up));
+	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
 }
 
-void sd90_state::machine_reset()
+void sd_state::machine_start()
 {
-	m_usb_state = 0;
+	save_item(NAME(m_tg_reset));
+}
 
+void sd_state::machine_reset()
+{
 	m_tg_reset = true;
 	m_tg_view.select(1);
-	m_dac_reset = m_analog_gpio;
-	m_amute = m_analog_gpio;
-	update_dac();
-
-	// with no settings record in the parameter blocks the SD-90 starts in
-	// USB mode, where MIDI IN goes to the computer; a fresh flash is given
-	// the record SYSTEM writes when MIDI Start Up is saved as MIDI, so the
-	// MIDI inputs play parts A and B
-	if (m_mr3)
-	{
-		static const u8 midi_startup[0x28] = {
-				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf,
-				0x42, 0x04, 0x28, 0x5e, 0x7f, 0x3c, 0x00, 0x00,
-				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf };
-		u8 *const params = m_flash->base() + 0x8000;
-		if (std::all_of(params, params + 0x8000, [] (u8 b) { return b == 0xff; }))
-			std::copy(std::begin(midi_startup), std::end(midi_startup), params + 0x2000);
-	}
 }
 
-
-//-------------------------------------------------
-//  the reset and audio controls on the CPU's ports, each asserted while
-//  its pin is high and so from power-on, when the pins are pulled-up
-//  inputs: the tone generators' reset, PTC4 on the SD-80 and PTE2 on the
-//  SD-90, which also resets the MR3; and on the SD-80 PTC5, the DACs'
-//  reset, and PTD6, the analog outputs' mute
-//-------------------------------------------------
-
-void sd90_state::tg_reset_w(int state)
+bool sd_state::tg_reset_w(int state)
 {
-	if (state == m_tg_reset)
-		return;
+	if (bool(state) == m_tg_reset)
+		return false;
 
 	LOGMASKED(LOG_RESET, "%s: tone generator reset %s\n", machine().describe_context(), state ? "asserted" : "released");
 	m_tg_reset = state;
 	m_tg_view.select(state ? 1 : 0);
 	for (auto &xv : m_xv)
 		xv->reset();
-	if (m_mr3)
-		m_mr3->reset();
+	return true;
 }
 
-void sd90_state::sd80_port_c_w(u64 data)
+void sd_state::lcd_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t(0x20, 0x50, 0xd0));
+	palette.set_pen_color(1, rgb_t(0xe8, 0xf0, 0xff));
+}
+
+void sd_state::xv_wave_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
+}
+
+void sd_state::common(machine_config &config)
+{
+	SH7709(config, m_maincpu, 24_MHz_XTAL / 2 * 8, ENDIANNESS_BIG);
+
+	SPEAKER(config, m_out[0], 2).front();
+	SPEAKER(config, m_out[1], 2).front();
+
+	ROLAND_XV(config, m_xv[0], 16.9344_MHz_XTAL);
+	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &sd_state::xv_wave_map);
+	m_xv[0]->int_callback().set_inputline(m_maincpu, 0);
+	m_xv[0]->set_link(m_xv[1]);
+
+	ROLAND_XV(config, m_xv[1], 16.9344_MHz_XTAL);
+	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &sd_state::xv_wave_map);
+	m_xv[1]->int_callback().set_inputline(m_maincpu, 1);
+
+	PALETTE(config, "palette", FUNC(sd_state::lcd_palette), 2);
+}
+
+
+void sd80_state::machine_start()
+{
+	sd_state::machine_start();
+
+	m_encoder_timer = timer_alloc(FUNC(sd80_state::step_encoder), this);
+	m_encoder_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
+
+	save_item(NAME(m_dial_last));
+	save_item(NAME(m_dial_pending));
+	save_item(NAME(m_encoder_phase));
+	save_item(NAME(m_in1_rxd));
+	save_item(NAME(m_scif_txd));
+	save_item(NAME(m_dac_reset));
+	save_item(NAME(m_amute));
+}
+
+void sd80_state::machine_reset()
+{
+	sd_state::machine_reset();
+
+	m_dac_reset = true;
+	m_amute = true;
+	update_dac();
+}
+
+void sd80_state::port_c_w(u64 data)
 {
 	tg_reset_w(port_pin(data, 4));
 	const bool dac_reset = port_pin(data, 5);
@@ -277,7 +293,7 @@ void sd90_state::sd80_port_c_w(u64 data)
 	}
 }
 
-void sd90_state::sd80_port_d_w(u64 data)
+void sd80_state::port_d_w(u64 data)
 {
 	const bool amute = port_pin(data, 6);
 	if (amute != m_amute)
@@ -288,12 +304,7 @@ void sd90_state::sd80_port_d_w(u64 data)
 	}
 }
 
-void sd90_state::sd90_port_e_w(u64 data)
-{
-	tg_reset_w(port_pin(data, 2));
-}
-
-void sd90_state::update_dac()
+void sd80_state::update_dac()
 {
 	const float gain = (m_dac_reset || m_amute) ? 0.0f : 1.0f;
 	for (auto &out : m_out)
@@ -301,67 +312,25 @@ void sd90_state::update_dac()
 			out->set_input_gain(ch, gain);
 }
 
-
-//-------------------------------------------------
-//  the display, an RCM2072M-B of 20 characters by two lines on the LCD
-//  board, blue backlit
-//-------------------------------------------------
-
-void sd90_state::lcd_palette(palette_device &palette) const
+void sd80_state::led_w(offs_t offset, u8 data)
 {
-	palette.set_pen_color(0, rgb_t(0x20, 0x50, 0xd0));  // backlight
-	palette.set_pen_color(1, rgb_t(0xe8, 0xf0, 0xff));  // dot on
-}
-
-
-//-------------------------------------------------
-//  the front panel, which is on the tone generator: ten buttons and nine
-//  LEDs, three strobes each way, in the chip's own numbering
-//-------------------------------------------------
-
-void sd90_state::led_w(offs_t offset, u8 data)
-{
-	static const int led[3][3] = {
+	constexpr u8 LED_MAP[3][3] = {
 		{ LED_GS,     LED_MIDI,    LED_SYSTEM },
 		{ LED_NATIVE, LED_USB,     LED_EFFECTS },
-		{ LED_GM2,    LED_PREVIEW, LED_INST_DRUM }
-	};
-	const int strobe = offset >> 3, line = offset & 7;
+		{ LED_GM2,    LED_PREVIEW, LED_INST_DRUM } };
+	const u32 strobe = offset >> 3, line = offset & 7;
 	if (strobe < 3 && line < 3)
-		m_leds[led[strobe][line]] = data;
+		m_leds[LED_MAP[strobe][line]] = data;
 }
 
-// the SD-90's, as the firmware lights them: each key's lamp is the LED one
-// strobe below its switch; GAIN and PEAK are not among them
-void sd90_state::sd90_led_w(offs_t offset, u8 data)
-{
-	static const int led[32] = {
-		LED_PREVIEW, -1, LED_EFFECTS, LED_INST_DRUM, -1, -1, -1, -1,
-		-1, -1, -1, -1, -1, -1, -1, -1,
-		LED_SYSTEM, LED_BYPASS, LED_EDIT, LED_SELECT, -1, -1, -1, -1,
-		LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, -1, -1, -1, -1
-	};
-	if (offset < 32 && led[offset] >= 0)
-		m_leds[led[offset]] = data;
-}
-
-
-//-------------------------------------------------
-//  the value encoder, which is not: XENCA on SCPT5 is IRQ5 and the
-//  handler reads XENCB back on SCPDR, so a detent is a quadrature cycle
-//-------------------------------------------------
-
-u64 sd90_state::scp_r()
+u64 sd80_state::scp_r()
 {
 	const bool encb = m_encoder_phase < 2;
-	return 0xcf | (enca() << 5) | (encb << 4);   // SCPT3, XENCSW, is not wired
+	return 0xcf | (enca() ? 0x20 : 0x00) | (encb ? 0x10 : 0x00);
 }
 
-TIMER_CALLBACK_MEMBER(sd90_state::step_encoder)
+TIMER_CALLBACK_MEMBER(sd80_state::step_encoder)
 {
-	if (!m_dial)
-		return;
-
 	const u8 now = m_dial->read();
 	m_dial_pending += s8(now - m_dial_last);
 	m_dial_last = now;
@@ -369,25 +338,138 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_encoder)
 	if (!m_dial_pending)
 		return;
 
-	const int step = m_dial_pending > 0 ? 1 : -1;
+	const int step = (m_dial_pending > 0) ? 1 : -1;
 	const bool was = enca();
 	m_encoder_phase = (m_encoder_phase + step) & 3;
 	if (!m_encoder_phase)
 		m_dial_pending -= step;
 
-	// one edge, one interrupt: the handler takes XENCB for the direction
-	// and clears its own bit in IRR0
 	if (was != enca())
 		m_maincpu->set_input_line(5, enca() ? CLEAR_LINE : ASSERT_LINE);
 }
 
+void sd80_state::out2_update()
+{
+	m_mdout2->write_txd(BIT(m_midi_sw->read(), 0) ? m_in1_rxd : m_scif_txd);
+}
 
-//-------------------------------------------------
-//  the SD-90's V1-V3 encoders: each detent latches PTC1-PTC3, which are
-//  PINT1-PINT3, low, with the direction on PTL1-PTL3, high for up; the
-//  handler counts while the latch is low and clears it by pulsing
-//  PTC5-PTC7 low
-//-------------------------------------------------
+void sd80_state::sd80_map(address_map &map)
+{
+	map(0x00000000, 0x001fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));
+	map(0x08000000, 0x083fffff).ram();
+	map(0x14000000, 0x17ffffff).view(m_tg_view);
+	m_tg_view[0](0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	m_tg_view[0](0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));
+	m_tg_view[1](0x14000000, 0x17ffffff).noprw();
+	map(0x18000000, 0x18000003).lrw8(
+			NAME([this] (offs_t offset) { return m_uipc->tx_r(offset >> 1); }),
+			NAME([this] (offs_t offset, u8 data) { m_uipc->tx_w(offset >> 1, data); }));
+	map(0x19000000, 0x19000003).lrw8(
+			NAME([this] (offs_t offset) { return m_uipc->rx_r(offset >> 1); }),
+			NAME([this] (offs_t offset, u8 data) { m_uipc->rx_w(offset >> 1, data); }));
+}
+
+void sd80_state::sd80_io_map(address_map &map)
+{
+	map(SH3_PORT_C, SH3_PORT_C + 7).w(FUNC(sd80_state::port_c_w));
+	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(sd80_state::port_d_w));
+	map(SH3_PORT_SC, SH3_PORT_SC + 7).r(FUNC(sd80_state::scp_r));
+}
+
+void sd80_state::sd80(machine_config &config)
+{
+	common(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &sd80_state::sd80_map);
+	m_maincpu->set_addrmap(AS_IO, &sd80_state::sd80_io_map);
+
+	SHARP_LH28F160BJE(config, m_flash);
+
+	ROLAND_UIPC(config, m_uipc);
+	m_uipc->set_announcement({ { 0x01, 0xaa }, { 0x01, 0x00 } });
+
+	m_xv[0]->add_route(0, m_out[0], 1.0, 0);
+	m_xv[0]->add_route(1, m_out[0], 1.0, 1);
+	m_xv[0]->add_route(2, m_out[1], 1.0, 0);
+	m_xv[0]->add_route(3, m_out[1], 1.0, 1);
+
+	screen_device &screen(SCREEN(config, "screen"));
+	screen.set_lcd();
+	screen.set_refresh_hz(60);
+	screen.set_screen_update(m_lcd, FUNC(hd44780_device::screen_update));
+	screen.set_size(6 * 20, 9 * 2);
+	screen.set_visarea_full();
+	screen.set_palette("palette");
+
+	HD44780(config, m_lcd, 270'000);
+	m_lcd->set_lcd_size(2, 20);
+	m_xv[0]->lcd_callback().set(m_lcd, FUNC(hd44780_device::write));
+
+	m_xv[0]->switch_callback().set_ioport("PANEL");
+	m_xv[0]->led_callback().set(FUNC(sd80_state::led_w));
+
+	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
+	mdin1.rxd_handler().set([this] (int state) { m_maincpu->sci_rxd_w(state); m_in1_rxd = state; out2_update(); });
+	midi_port_device &mdout1(MIDI_PORT(config, "mdout1", midiout_slot, "midiout"));
+	m_maincpu->sci_txd_handler().set(mdout1, FUNC(midi_port_device::write_txd));
+
+	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
+	mdin2.rxd_handler().set(m_maincpu, FUNC(sh7709_device::scif_rxd_w));
+	MIDI_PORT(config, m_mdout2, midiout_slot, "midiout");
+	m_maincpu->scif_txd_handler().set([this] (int state) { m_scif_txd = state; out2_update(); });
+}
+
+
+void sd90_state::machine_start()
+{
+	sd_state::machine_start();
+
+	m_knob_timer = timer_alloc(FUNC(sd90_state::step_knobs), this);
+	m_knob_timer->adjust(attotime::from_hz(1000), 0, attotime::from_hz(1000));
+
+	save_item(NAME(m_usb_state));
+	save_item(NAME(m_usb_reg));
+	save_item(NAME(m_knob_last));
+	save_item(NAME(m_knob_pending));
+	save_item(NAME(m_knob_latched));
+	save_item(NAME(m_knob_up));
+}
+
+void sd90_state::machine_reset()
+{
+	sd_state::machine_reset();
+
+	m_usb_state = 0;
+
+	// HACK: the USB controller is not emulated, so a blank flash is given the
+	// settings record that starts the machine in MIDI mode
+	if (BIT(m_hacks->read(), 0))
+	{
+		constexpr u8 MIDI_STARTUP[0x28] = {
+				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf,
+				0x42, 0x04, 0x28, 0x5e, 0x7f, 0x3c, 0x00, 0x00,
+				'R', 'o', 'l', 'a', 'n', 'd', ' ', 'D', 'M', 'Z', '0', '7', 0x44, 0xbb, 0x50, 0xaf };
+		u8 *const params = m_flash->base() + 0x8000;
+		if (std::all_of(params, params + 0x8000, [] (u8 b) { return b == 0xff; }))
+			std::copy(std::begin(MIDI_STARTUP), std::end(MIDI_STARTUP), params + 0x2000);
+	}
+}
+
+void sd90_state::port_e_w(u64 data)
+{
+	if (tg_reset_w(port_pin(data, 2)))
+		m_mr3->reset();
+}
+
+void sd90_state::led_w(offs_t offset, u8 data)
+{
+	constexpr s8 LED_MAP[32] = {
+		LED_PREVIEW, -1, LED_EFFECTS, LED_INST_DRUM, -1, -1, -1, -1,
+		-1, -1, -1, -1, -1, -1, -1, -1,
+		LED_SYSTEM, LED_BYPASS, LED_EDIT, LED_SELECT, -1, -1, -1, -1,
+		LED_TRACK_DOWN, LED_DIGITAL_IN, LED_LINE_IN, LED_MIC_GUITAR, -1, -1, -1, -1 };
+	if (offset < 32 && LED_MAP[offset] >= 0)
+		m_leds[LED_MAP[offset]] = data;
+}
 
 u64 sd90_state::knob_a_r()
 {
@@ -410,7 +492,7 @@ u64 sd90_state::knob_b_r()
 void sd90_state::knob_clear_w(u64 data)
 {
 	for (int i = 0; i < 3; i++)
-		if (((data >> (16 + 2 * (5 + i))) & 3) == 1 && !BIT(data, 5 + i))
+		if (BIT(data, 16 + 2 * (5 + i), 2) == 1 && !BIT(data, 5 + i))
 			m_knob_latched[i] = false;
 	update_knobs();
 }
@@ -440,23 +522,6 @@ TIMER_CALLBACK_MEMBER(sd90_state::step_knobs)
 	update_knobs();
 }
 
-
-//-------------------------------------------------
-//  what the SD-90 has there instead: the MR3's host port at 0x18000000,
-//  and at 0x18800000 its USB controller, a window of 48 bytes the two
-//  CPUs share, on IRQ2.  +8 is the controller's reason byte, +10 the
-//  host's, +13 a count or a state, and +16 on a 32-byte buffer of words,
-//  USB-MIDI event packets once the link runs.
-//
-//  At power-on the host steps the controller through five states: it
-//  waits for +8 to read 1 and +13 to read the state it expects, writes
-//  zero to +8, and waits again.  In state 3 a nonzero +16 asks for the
-//  controller's program, which the host then sends, 32 KiB of 740-family
-//  code out of its own flash, in 32-byte pieces each posted with +10 = 7.
-//  The controller here takes every step at once and asks for its program,
-//  and then sends nothing; there is no controller program to run it.
-//-------------------------------------------------
-
 u8 sd90_state::usb_r(offs_t offset)
 {
 	switch (offset)
@@ -464,8 +529,8 @@ u8 sd90_state::usb_r(offs_t offset)
 	case 0x08: return 1;
 	case 0x0a: return 0;
 	case 0x0d: return m_usb_state;
-	case 0x10: return m_usb_state == 3 ? 1 : 0;
-	default:   return offset < 0x10 ? m_usb_reg[offset] : 0;
+	case 0x10: return (m_usb_state == 3) ? 1 : 0;
+	default:   return (offset < 0x10) ? m_usb_reg[offset] : 0;
 	}
 }
 
@@ -481,33 +546,6 @@ void sd90_state::usb_w(offs_t offset, u8 data)
 		m_usb_state++;
 }
 
-
-//-------------------------------------------------
-//  the CPU's own bus, as the boot block declares it and the program's own
-//  literals reach it.  Areas 5 and 6 are declared PCMCIA space, which is
-//  how the boards' chip selects are wired rather than a card anywhere.
-//-------------------------------------------------
-
-void sd90_state::sd80_map(address_map &map)
-{
-	map(0x00000000, 0x001fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));    // area 0, IC3
-	map(0x08000000, 0x083fffff).ram();                              // area 2, IC4 and IC6
-//  map(0x0c000000, 0x0fffffff)                                     // area 3, declared SDRAM and unpopulated
-//  map(0x10000000, 0x13ffffff)                                     // area 4, which nothing reaches
-	map(0x14000000, 0x17ffffff).view(m_tg_view);                   // area 5
-	m_tg_view[0](0x14000000, 0x140001ff).rw(m_xv[0], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC19
-	m_tg_view[0](0x15000000, 0x150001ff).rw(m_xv[1], FUNC(roland_xv_device::read), FUNC(roland_xv_device::write));    // IC27
-	m_tg_view[1](0x14000000, 0x17ffffff).noprw();
-	// IC13A decodes XCSIPC into XS0 and XS1, the S0 and S1 pins of IC17's bus
-	// interface unit, with the CPU's A1 at its A0; IBF and OBF are IRQ2 and IRQ3
-	map(0x18000000, 0x18000003).lrw8(                                     // area 6, XS0
-			NAME([this] (offs_t offset) { return m_uipc->tx_r(offset >> 1); }),
-			NAME([this] (offs_t offset, u8 data) { m_uipc->tx_w(offset >> 1, data); }));
-	map(0x19000000, 0x19000003).lrw8(                                     // XS1
-			NAME([this] (offs_t offset) { return m_uipc->rx_r(offset >> 1); }),
-			NAME([this] (offs_t offset, u8 data) { m_uipc->rx_w(offset >> 1, data); }));
-}
-
 void sd90_state::sd90_map(address_map &map)
 {
 	map(0x00000000, 0x003fffff).rw(m_flash, FUNC(intelfsh16_device::read), FUNC(intelfsh16_device::write));
@@ -520,129 +558,22 @@ void sd90_state::sd90_map(address_map &map)
 	map(0x18800000, 0x1880003f).rw(FUNC(sd90_state::usb_r), FUNC(sd90_state::usb_w));
 }
 
-
-void sd90_state::sd80_io_map(address_map &map)
-{
-	map(SH3_PORT_C, SH3_PORT_C + 7).w(FUNC(sd90_state::sd80_port_c_w));
-	map(SH3_PORT_D, SH3_PORT_D + 7).w(FUNC(sd90_state::sd80_port_d_w));
-	map(SH3_PORT_SC, SH3_PORT_SC + 7).r(FUNC(sd90_state::scp_r));
-}
-
 void sd90_state::sd90_io_map(address_map &map)
 {
 	map(SH3_PORT_C, SH3_PORT_C + 7).rw(FUNC(sd90_state::knob_a_r), FUNC(sd90_state::knob_clear_w));
-	map(SH3_PORT_E, SH3_PORT_E + 7).w(FUNC(sd90_state::sd90_port_e_w));
+	map(SH3_PORT_E, SH3_PORT_E + 7).w(FUNC(sd90_state::port_e_w));
 	map(SH3_PORT_L, SH3_PORT_L + 7).r(FUNC(sd90_state::knob_b_r));
-}
-
-
-//-------------------------------------------------
-//  the wave memory as both chips see it: the two mask ROMs at cell 0, two
-//  bytes a cell, and no expansion socket on either machine
-//-------------------------------------------------
-
-void sd90_state::xv_wave_map(address_map &map)
-{
-	map.unmap_value_high();
-	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
-}
-
-
-void sd90_state::common(machine_config &config)
-{
-	// the HD6417706 the SD-80 carries has no device of its own here, and
-	// which SH-3 the SD-90 has is unread; EXTAL x 4 in the chip's clock
-	// mode 1, then x 2 for the CPU out of the boot block's FRQCR
-	SH7709(config, m_maincpu, 24_MHz_XTAL / 2 * 8, ENDIANNESS_BIG);
-
-	// OUTPUT 1 and OUTPUT 2, one PCM1716E each
-	SPEAKER(config, "out1", 2).front();
-	SPEAKER(config, "out2", 2).front();
-
-	ROLAND_XV(config, m_xv[0], 16.9344_MHz_XTAL);   // IC19 on the SD-80, with IC26 its effect DRAM
-	m_xv[0]->set_addrmap(roland_xv_device::AS_WAVE, &sd90_state::xv_wave_map);
-	m_xv[0]->int_callback().set_inputline(m_maincpu, 0);    // IRQ0
-	m_xv[0]->set_link(m_xv[1]);
-
-	ROLAND_XV(config, m_xv[1], 16.9344_MHz_XTAL);   // IC27, with IC30
-	m_xv[1]->set_addrmap(roland_xv_device::AS_WAVE, &sd90_state::xv_wave_map);
-	m_xv[1]->int_callback().set_inputline(m_maincpu, 1);    // IRQ1
-}
-
-void sd90_state::sd80(machine_config &config)
-{
-	common(config);
-	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd80_map);
-
-	// the firmware saves its settings into the flash with Sharp's command set
-	SHARP_LH28F160BJE(config, m_flash);
-
-	// the controller's announcement: an untagged aa, then one byte more
-	ROLAND_UIPC(config, m_uipc);
-	m_uipc->set_announcement({ { 0x01, 0xaa }, { 0x01, 0x00 } });
-
-	// IC19's SDO4 carries OUTPUT 1 and its SDO5 OUTPUT 2, the stream's first
-	// two pairs; its SDO3 goes to the digital transmitter, which is not here
-	m_xv[0]->add_route(0, "out1", 1.0, 0);
-	m_xv[0]->add_route(1, "out1", 1.0, 1);
-	m_xv[0]->add_route(2, "out2", 1.0, 0);
-	m_xv[0]->add_route(3, "out2", 1.0, 1);
-
-	// the display is on IC19's own LCD pins, LP0-LP7 with RS and LE, and
-	// the CPU's D/A channel 1 sets its contrast, which is not modelled
-	screen_device &screen(SCREEN(config, "screen"));
-	screen.set_lcd();
-	screen.set_refresh_hz(60);
-	screen.set_screen_update("lcd", FUNC(hd44780_device::screen_update));
-	screen.set_size(6 * 20, 9 * 2);
-	screen.set_visarea_full();
-	screen.set_palette("palette");
-	PALETTE(config, "palette", FUNC(sd90_state::lcd_palette), 2);
-
-	HD44780(config, m_lcd, 270'000);
-	m_lcd->set_lcd_size(2, 20);
-	m_xv[0]->lcd_callback().set(m_lcd, FUNC(hd44780_device::write));
-
-	m_maincpu->set_addrmap(AS_IO, &sd90_state::sd80_io_map);
-	m_xv[0]->switch_callback().set_ioport("PANEL");
-	m_xv[0]->led_callback().set(FUNC(sd90_state::led_w));
-
-	// MIDI IN 1 and OUT 1 are the SCI, IN 2 and OUT 2 the SCIF; SW2 on the
-	// rear panel gives OUT 2 to IN 1's thru instead
-	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
-	mdin1.rxd_handler().set([this] (int state) { m_maincpu->sci_rxd_w(state); m_in1_rxd = state; out2_update(); });
-	MIDI_PORT(config, "mdout1", midiout_slot, "midiout");
-	m_maincpu->sci_txd_handler().set("mdout1", FUNC(midi_port_device::write_txd));
-
-	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
-	mdin2.rxd_handler().set(m_maincpu, FUNC(sh7709_device::scif_rxd_w));
-	MIDI_PORT(config, m_mdout2, midiout_slot, "midiout");
-	m_maincpu->scif_txd_handler().set([this] (int state) { m_scif_txd = state; out2_update(); });
-}
-
-void sd90_state::out2_update()
-{
-	m_mdout2->write_txd(BIT(m_midi_sw->read(), 0) ? m_in1_rxd : m_scif_txd);
 }
 
 void sd90_state::sd90(machine_config &config)
 {
 	common(config);
-
-	// the firmware sets its MIDI channels' bit rate for a 25 MHz peripheral
-	// clock where the SD-80's asks for 24 MHz, so EXTAL is taken as 12.5 MHz;
-	// the SD-90's board is unread
-	m_maincpu->set_clock(25_MHz_XTAL / 2 * 8);
+	m_maincpu->set_clock(100'000'000);
 	m_maincpu->set_addrmap(AS_PROGRAM, &sd90_state::sd90_map);
 	m_maincpu->set_addrmap(AS_IO, &sd90_state::sd90_io_map);
 
-	// the firmware takes Sharp's maker and device codes B0 and B5, and saves
-	// its settings into the flash's parameter blocks
 	SHARP_LH28F320BF(config, m_flash);
 
-	// a graphic panel on the same LCD pins the SD-80 drives its character
-	// module from; its columns run from SEG131 down, which is what the boot
-	// loader's ADC reverse is for, and its contrast is a command, not a D/A
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
 	screen.set_refresh_hz(60);
@@ -650,65 +581,45 @@ void sd90_state::sd90(machine_config &config)
 	screen.set_size(128, 64);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
-	PALETTE(config, "palette", FUNC(sd90_state::lcd_palette), 2);
 
 	ST7565(config, m_glcd, 0);
 	m_glcd->set_panel(128, 64, 131, -1);
 	m_xv[0]->lcd_callback().set(m_glcd, FUNC(st7565_device::write));
-	m_xv[0]->switch_callback().set([this] () { return u64(ioport("PANEL0")->read()) | u64(ioport("PANEL1")->read()) << 32; });
-	m_xv[0]->led_callback().set(FUNC(sd90_state::sd90_led_w));
+	m_xv[0]->switch_callback().set([this] () { return u64(m_panel[0]->read()) | (u64(m_panel[1]->read()) << 32); });
+	m_xv[0]->led_callback().set(FUNC(sd90_state::led_w));
 
-	// The MR3 chip acts as the system mixer.
-	// The input buses are:
-	//   0-1: Internal tone generator
-	//   2-3: Analog In
-	//   4-5: Digital In
-	//   6-7: Wave (from USB)
-	// The output buses are:
-	//   0-1: Analog Out 1
-	//   2-3: Analog Out 2
-	//   4-5: Digital Out
-	//   6-7: Record Out (to USB)
 	ROLAND_MR(config, m_mr3, 16.9344_MHz_XTAL);
-	// the resident mixer gives INST twice the gain of the other strips, so the
-	// XV's word is taken to reach the MR3 a bit down; the serial format of the
-	// link (the SD-90 moves chip 0's word clock edges) is unread
 	m_xv[0]->add_route(0, m_mr3, 0.5, 0);
 	m_xv[0]->add_route(1, m_mr3, 0.5, 1);
-	m_mr3->add_route(0, "out1", 1.0, 0);
-	m_mr3->add_route(1, "out1", 1.0, 1);
-	m_mr3->add_route(2, "out2", 1.0, 0);
-	m_mr3->add_route(3, "out2", 1.0, 1);
-	//m_mr3->add_route(4, "digout", 1.0, 0);
-	//m_mr3->add_route(5, "digout", 1.0, 1);
-	//m_mr3->add_route(6, "recout", 1.0, 0);
-	//m_mr3->add_route(7, "recout", 1.0, 1);
+	m_mr3->add_route(0, m_out[0], 1.0, 0);
+	m_mr3->add_route(1, m_out[0], 1.0, 1);
+	m_mr3->add_route(2, m_out[1], 1.0, 0);
+	m_mr3->add_route(3, m_out[1], 1.0, 1);
 
-	// the IrDA channel and the SCIF, which way round is unread
 	midi_port_device &mdin1(MIDI_PORT(config, "mdin1", midiin_slot, "midiin"));
 	mdin1.rxd_handler().set(m_maincpu, FUNC(sh7709_device::irda_rxd_w));
-	MIDI_PORT(config, "mdout1", midiout_slot, "midiout");
-	m_maincpu->irda_txd_handler().set("mdout1", FUNC(midi_port_device::write_txd));
+	midi_port_device &mdout1(MIDI_PORT(config, "mdout1", midiout_slot, "midiout"));
+	m_maincpu->irda_txd_handler().set(mdout1, FUNC(midi_port_device::write_txd));
 
 	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
 	mdin2.rxd_handler().set(m_maincpu, FUNC(sh7709_device::scif_rxd_w));
-	MIDI_PORT(config, "mdout2", midiout_slot, "midiout");
-	m_maincpu->scif_txd_handler().set("mdout2", FUNC(midi_port_device::write_txd));
+	midi_port_device &mdout2(MIDI_PORT(config, "mdout2", midiout_slot, "midiout"));
+	m_maincpu->scif_txd_handler().set(mdout2, FUNC(midi_port_device::write_txd));
 }
 
 
-static INPUT_PORTS_START(sd80)
-	PORT_START("PANEL")   // strobe times eight plus line, as the chip numbers them
-	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
-	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inst/Drum") PORT_CODE(KEYCODE_I)
-	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
-	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
-	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part Down") PORT_CODE(KEYCODE_OPENBRACE)
-	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
-	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
-	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
-	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part Up") PORT_CODE(KEYCODE_CLOSEBRACE)
-	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("System") PORT_CODE(KEYCODE_S)
+INPUT_PORTS_START(sd80)
+	PORT_START("PANEL")
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inst/Drum") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Part Down") PORT_CODE(KEYCODE_OPENBRACE)
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Part Up") PORT_CODE(KEYCODE_CLOSEBRACE)
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System") PORT_CODE(KEYCODE_S)
 
 	PORT_START("DIAL")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2)
@@ -719,32 +630,28 @@ static INPUT_PORTS_START(sd80)
 	PORT_CONFSETTING(   0x01, "IN 1 THRU")
 INPUT_PORTS_END
 
-
-static INPUT_PORTS_START(sd90)
-	// in the tone generator's numbering, strobe times eight plus line;
-	// SYSTEM, INST/DRUM SET and MIC/GUITAR held at power-on enter the test
-	// mode, where PART > and PART < step its pages
+INPUT_PORTS_START(sd90)
 	PORT_START("PANEL0")
-	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
-	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
-	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part >") PORT_CODE(KEYCODE_CLOSEBRACE)
-	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Part <") PORT_CODE(KEYCODE_OPENBRACE)
-	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
-	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
-	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
-	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inst/Drum Set") PORT_CODE(KEYCODE_I)
-	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Page Down") PORT_CODE(KEYCODE_PGDN)
-	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Page Up") PORT_CODE(KEYCODE_PGUP)
-	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("System") PORT_CODE(KEYCODE_S)
-	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Bypass") PORT_CODE(KEYCODE_B)
-	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Edit") PORT_CODE(KEYCODE_D)
-	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("AFX Select") PORT_CODE(KEYCODE_A)
+	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Enter") PORT_CODE(KEYCODE_ENTER)
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Part >") PORT_CODE(KEYCODE_CLOSEBRACE)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Part <") PORT_CODE(KEYCODE_OPENBRACE)
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preview") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Effects") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inst/Drum Set") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Page Down") PORT_CODE(KEYCODE_PGDN)
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Page Up") PORT_CODE(KEYCODE_PGUP)
+	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("System") PORT_CODE(KEYCODE_S)
+	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("AFX Bypass") PORT_CODE(KEYCODE_B)
+	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("AFX Edit") PORT_CODE(KEYCODE_D)
+	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("AFX Select") PORT_CODE(KEYCODE_A)
 
 	PORT_START("PANEL1")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Track Down") PORT_CODE(KEYCODE_4)
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Digital In") PORT_CODE(KEYCODE_3)
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Line In") PORT_CODE(KEYCODE_2)
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Mic/Guitar") PORT_CODE(KEYCODE_1)
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Track Down") PORT_CODE(KEYCODE_4)
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Digital In") PORT_CODE(KEYCODE_3)
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Line In") PORT_CODE(KEYCODE_2)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Mic/Guitar") PORT_CODE(KEYCODE_1)
 
 	PORT_START("V1")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("V1") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_Z) PORT_CODE_INC(KEYCODE_X)
@@ -754,21 +661,20 @@ static INPUT_PORTS_START(sd90)
 
 	PORT_START("V3")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_PLAYER(3) PORT_NAME("V3") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_N) PORT_CODE_INC(KEYCODE_M)
+
+	PORT_START("HACKS")
+	PORT_CONFNAME(0x01, 0x01, "Start a blank flash in MIDI mode (hack)")
+	PORT_CONFSETTING(   0x00, DEF_STR(No))
+	PORT_CONFSETTING(   0x01, DEF_STR(Yes))
 INPUT_PORTS_END
 
 
-//-------------------------------------------------
-//  ROM definitions
-//-------------------------------------------------
-
-// the set as read through the chips, put back through an SRX board's wiring
 #define ROM_WAVEROM \
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00) \
 	ROM_LOAD("upd23c128040algy525mjh.ic28", 0x0000000, 0x1000000, CRC(bb778083) SHA1(57cd6709274329a1e109f22564d2b706832ecdb0)) \
 	ROM_LOAD("upd23c128040algy526mkh.ic29", 0x1000000, 0x1000000, CRC(dbbdc726) SHA1(68e3d39248bfde38b8e2cc509f7972feac066760))
 
 ROM_START(sd80)
-	// the flash read off IC3, the two bytes of every word exchanged
 	ROM_REGION16_BE(0x200000, "flash", 0)
 	ROM_LOAD16_WORD_SWAP("sd80_v1.01.ic3", 0x000000, 0x200000, CRC(e0cfce2e) SHA1(8fcf6df19cf0c32bc07e464fdc77fd31a02e6c32))
 
@@ -776,12 +682,8 @@ ROM_START(sd80)
 ROM_END
 
 ROM_START(sd90)
-	// out of Roland's own updater, the f00001.mid off the SD-90 Version
-	// Updating Disk, which carries the flash as Roland exclusive: a boot
-	// block, the program in two zlib containers, the effect data and the
-	// rest left erased
 	ROM_REGION16_BE(0x400000, "flash", ROMREGION_ERASEFF)
-	ROM_LOAD("sd90_v1.03.bin", 0x000000, 0x300000, CRC(e44fb343) SHA1(447cc7edabedfe3fb4cb7c280f44eb6eca50d7fe))
+	ROM_LOAD("sd90_v1.03", 0x000000, 0x300000, CRC(e44fb343) SHA1(447cc7edabedfe3fb4cb7c280f44eb6eca50d7fe))
 
 	ROM_WAVEROM
 ROM_END
@@ -789,6 +691,6 @@ ROM_END
 } // anonymous namespace
 
 
-//    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY   FULLNAME  FLAGS
-SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, init_sd90,  "Roland", "Studio Canvas SD-90", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd90_state, init_sd80,  "Roland", "Studio Canvas SD-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+//    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT          COMPANY   FULLNAME               FLAGS
+SYST( 2001, sd90, 0,      0,      sd90,    sd90,  sd90_state, init_waverom, "Edirol", "Studio Canvas SD-90", MACHINE_NOT_WORKING )
+SYST( 2002, sd80, 0,      0,      sd80,    sd80,  sd80_state, init_waverom, "Edirol", "Studio Canvas SD-80", 0 )
