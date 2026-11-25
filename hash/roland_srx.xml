@@ -1,4 +1,4 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
 <!--
 license:CC0-1.0
@@ -32,7 +32,6 @@ license:CC0-1.0
 		<description>Dynamic Drum Kits (SRX-01)</description>
 		<year>2000</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20000117"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-01.ic1" size="0x2000000" crc="6c9e2fa1" sha1="44dfaf57bf89429d90c496443360eddee6f20c38" offset="0"/>
@@ -44,7 +43,6 @@ license:CC0-1.0
 		<description>Concert Piano (SRX-02)</description>
 		<year>1999</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="19991216"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-02.ic1" size="0x2000000" crc="4c02d5f1" sha1="4a7c002bca1bbf36ad26b79434ac64d506ce159e" offset="0"/>
@@ -56,7 +54,6 @@ license:CC0-1.0
 		<description>Studio SRX (SRX-03)</description>
 		<year>2001</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20010322"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-03.ic1" size="0x2000000" crc="423088ff" sha1="077791f49e14d32fb68a3727ff0d58cb4baf9d59" offset="0"/>
@@ -68,7 +65,6 @@ license:CC0-1.0
 		<description>Symphonique Strings (SRX-04)</description>
 		<year>2001</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20010329"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-04.ic1" size="0x2000000" crc="44685495" sha1="1956a8162e6df56dabbf269efc5fd3296cf96716" offset="0"/>
@@ -80,7 +76,6 @@ license:CC0-1.0
 		<description>Supreme Dance (SRX-05)</description>
 		<year>2001</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20011115"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-05.ic1" size="0x2000000" crc="0d7a57b0" sha1="548f9508390bbf9609f253a46fab3d27ee4edf41" offset="0"/>
@@ -92,7 +87,6 @@ license:CC0-1.0
 		<description>Complete Orchestra (SRX-06)</description>
 		<year>2003</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20030520"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-06.ic1" size="0x2000000" crc="a5ac263f" sha1="ffa88d543898fc3d920e676b4bf4bba876a36e75" offset="0"/>
@@ -104,7 +98,6 @@ license:CC0-1.0
 		<description>Ultimate Keys (SRX-07)</description>
 		<year>2002</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20020714"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-07.ic1" size="0x2000000" crc="a10ce395" sha1="2b2306b8becba01d253acc0c38022b81dbd35d90" offset="0"/>
@@ -116,7 +109,6 @@ license:CC0-1.0
 		<description>Platinum Trax (SRX-08)</description>
 		<year>2002</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20020714"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-08.ic1" size="0x2000000" crc="11527df0" sha1="a95500832b8018b1d6e8d23f1dabe88cee823146" offset="0"/>
@@ -128,7 +120,6 @@ license:CC0-1.0
 		<description>World Collection (SRX-09)</description>
 		<year>2002</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20020714"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-09.ic1" size="0x2000000" crc="4af8432e" sha1="d0a3213ff2f10cdc3b437b82a7db8fea9c302282" offset="0"/>
@@ -140,7 +131,6 @@ license:CC0-1.0
 		<description>Big Brass Ensemble (SRX-10)</description>
 		<year>2004</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20040129"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-10.ic1" size="0x2000000" crc="341efd0b" sha1="3eec680ac416ac206f5168531552afa294cacad7" offset="0"/>
@@ -152,7 +142,6 @@ license:CC0-1.0
 		<description>Complete Piano (SRX-11)</description>
 		<year>2004</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20041104"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-11.ic1" size="0x2000000" crc="9f4536b2" sha1="fe786e42943a96753604711691a2f4153f6ed2e1" offset="0"/>
@@ -164,7 +153,6 @@ license:CC0-1.0
 		<description>Classic EPs (SRX-12)</description>
 		<year>2006</year>
 		<publisher>Roland</publisher>
-		<info name="release" value="20060119"/>
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-12.ic1" size="0x2000000" crc="68b2faa2" sha1="84dd2895ca94c3b2cfde8a60e02f90896580292f" offset="0"/>
