@@ -3334,9 +3334,6 @@ void smc37c78_device::device_reset()
 	std::fill(std::begin(config_regs), std::end(config_regs), 0);
 }
 
-// the configuration port: two writes of 55 to the index port enter the
-// configuration state, AA leaves it, and in it the index port selects a
-// register that the data port reads and writes
 uint8_t smc37c78_device::config_r(offs_t offset)
 {
 	if (!config_mode)
@@ -3673,7 +3670,7 @@ void upd72069_device::auxcmd_w(uint8_t data)
 	case 0x5f: // select ECMA/ISO format (select 255 tracks on some other 7206x variants)
 	case 0x35: // set standby
 	case 0x47: // start clock
-	case 0x27: // the Roland S-760 sends it twice after a reset and discards the status
+	case 0x27:
 	case 0x34: // reset standby
 	case 0x33: // enable external mode
 	case 0x80: // Not a valid auxcmd, but the Akai S3000 sends it and expects an ACK.
