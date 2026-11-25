@@ -15,8 +15,8 @@ public:
 	auto write_lcd_control() { return m_lcd_control_cb.bind(); }
 	auto write_lcd_data() { return m_lcd_data_cb.bind(); }
 	auto write_led() { return m_led_cb.bind(); }
-	template <unsigned N> auto read_scan() { return m_scan_cb[N].bind(); }
-	template <unsigned N> auto read_port() { return m_port_cb[N].bind(); }
+	template <u32 N> auto read_scan() { return m_scan_cb[N].bind(); }
+	template <u32 N> auto read_port() { return m_port_cb[N].bind(); }
 	auto write_port() { return m_port_out_cb.bind(); }
 	auto read_encoder() { return m_encoder_cb.bind(); }
 
@@ -28,10 +28,10 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 private:
-	static inline constexpr unsigned SCAN_LINES = 4;
-	static inline constexpr unsigned FIFO_SIZE = 16;
+	static constexpr u32 SCAN_LINES = 4;
+	static constexpr u32 FIFO_SIZE = 16;
 
-	enum : unsigned
+	enum : u8
 	{
 		SOURCE_KEY = 0,
 		SOURCE_ENCODER = 1,
@@ -44,7 +44,7 @@ private:
 	TIMER_CALLBACK_MEMBER(tick_b);
 	TIMER_CALLBACK_MEMBER(tick_c);
 
-	void raise(unsigned source);
+	void raise(u8 source);
 	void update_int();
 	void queue_key(u8 code);
 
@@ -62,7 +62,7 @@ private:
 	emu_timer *m_timer_c;
 
 	u16 m_pending;
-	int m_int_state;
+	u8 m_int_state;
 	u8 m_config[0x10];
 	u8 m_led[8];
 	u8 m_scan_state[SCAN_LINES];
@@ -72,7 +72,6 @@ private:
 	u8 m_fifo[FIFO_SIZE];
 	u8 m_fifo_head;
 	u8 m_fifo_tail;
-	u8 m_divider;
 };
 
 DECLARE_DEVICE_TYPE(M60205, m60205_device)

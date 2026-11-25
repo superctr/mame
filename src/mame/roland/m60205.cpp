@@ -9,12 +9,14 @@
     into twelve of its own, generates wait states, scans a switch matrix and
     an LED matrix, counts a quadrature encoder, and drives an HD44780.  Its
     sixty-four registers are undocumented; what is modelled here is what the
-    JV-1080's firmware uses (xp/docs/jv1080.md).
+    JV-1080's firmware uses.
 
 ****************************************************************************/
 
 #include "emu.h"
 #include "m60205.h"
+
+#include <algorithm>
 
 
 DEFINE_DEVICE_TYPE(M60205, m60205_device, "m60205", "Roland M60205 gate array")
@@ -49,7 +51,6 @@ void m60205_device::device_start()
 	save_item(NAME(m_fifo));
 	save_item(NAME(m_fifo_head));
 	save_item(NAME(m_fifo_tail));
-	save_item(NAME(m_divider));
 }
 
 void m60205_device::device_reset()
@@ -63,7 +64,6 @@ void m60205_device::device_reset()
 	m_encoder_state = 0;
 	m_encoder_delta = 0;
 	m_fifo_head = m_fifo_tail = 0;
-	m_divider = 0;
 
 	m_int_cb(0);
 
@@ -73,7 +73,7 @@ void m60205_device::device_reset()
 }
 
 
-void m60205_device::raise(unsigned source)
+void m60205_device::raise(u8 source)
 {
 	m_pending |= 1 << source;
 	update_int();
@@ -81,7 +81,7 @@ void m60205_device::raise(unsigned source)
 
 void m60205_device::update_int()
 {
-	const int state = m_pending != 0;
+	const u8 state = m_pending ? 1 : 0;
 	if (state != m_int_state)
 	{
 		m_int_state = state;
@@ -103,13 +103,13 @@ void m60205_device::queue_key(u8 code)
 
 TIMER_CALLBACK_MEMBER(m60205_device::tick_a)
 {
-	for (unsigned line = 0; line < SCAN_LINES; line++)
+	for (u32 line = 0; line < SCAN_LINES; line++)
 	{
 		const u8 state = m_scan_cb[line]();
 		u8 changed = state ^ m_scan_state[line];
 		m_scan_state[line] = state;
 
-		for (unsigned bit = 0; changed != 0; bit++, changed >>= 1)
+		for (u32 bit = 0; changed != 0; bit++, changed >>= 1)
 			if (BIT(changed, 0))
 				queue_key((line * 8 + bit) | (BIT(state, bit) ? 0x80 : 0x00));
 	}
@@ -156,11 +156,10 @@ u8 m60205_device::read(offs_t offset)
 
 	case 0x3c:
 	{
-		// the number of the pending source, lowest first; reading clears it
 		if (m_pending == 0)
 			return 0x0f;
 
-		unsigned source = 0;
+		u8 source = 0;
 		while (!BIT(m_pending, source))
 			source++;
 
