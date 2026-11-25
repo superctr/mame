@@ -66,13 +66,6 @@ void roland_tvf_device::device_reset()
 		v = voice();
 }
 
-
-//-------------------------------------------------
-//  the window: the readback pair reads the selected channel's damping
-//  and mode back in the chip's own byte order; everything else is a
-//  channel's word behind the select, or a global
-//-------------------------------------------------
-
 u16 roland_tvf_device::read(offs_t offset)
 {
 	const int word = offset & (WORDS - 1);
@@ -220,8 +213,6 @@ s32 roland_tvf_device::filter(voice &v, s64 sample) const
 	}
 }
 
-// the pair's two channels through one of the structures; the flags of the
-// first channel say which
 std::pair<s32, s32> roland_tvf_device::pair(int n, s32 first, s32 second)
 {
 	voice &a = m_voices[n];

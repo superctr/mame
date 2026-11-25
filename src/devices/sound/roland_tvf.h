@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include <algorithm>
+#include <utility>
+
 class roland_tvf_device : public device_t, public device_sound_interface
 {
 public:
@@ -16,7 +19,6 @@ public:
 	static constexpr s32 FULL_SCALE = SAMPLE_ONE;
 	static constexpr int COEFFICIENT_FRACTION_BITS = 28;
 
-	// the 64 words of the window
 	enum register_word
 	{
 		READBACK_LOW = 0x00, READBACK_HIGH = 0x01, STATE_A = 0x02, STATE_B = 0x03, DAMPING = 0x04, FLAGS = 0x05,
@@ -27,13 +29,11 @@ public:
 		WORDS = 0x40
 	};
 
-	// the flag byte, word 0x05 bits 15-8
 	enum filter_mode { MODE_LPF = 0, MODE_HPF = 1, MODE_BPF = 2 };
 	enum structure { PAIR_INDEPENDENT = 0, PAIR_SUM_THEN_FILTERS = 1, PAIR_RING_THEN_FILTERS = 2, PAIR_FILTERS_THEN_RING = 3 };
 
 	roland_tvf_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// the window, a word at a time
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
 
