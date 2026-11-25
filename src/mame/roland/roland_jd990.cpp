@@ -6,8 +6,8 @@
 
     Main board:
     - IC9 H8/570 (R15199852), 20 MHz, mode 3, on-chip ROM disabled; its ISP
-      sub-processor scans the panel and runs the display transfer, FXM and
-      the tones' LFOs
+      sub-processor scans the panel and runs the display transfer, FXM,
+      the tones' sync and their LFOs
     - IC6 R10-0001 gate array: the chip selects, the panel scan
     - IC31 program ROM, 256K x 16; IC30/IC32 LC36256 SRAM, battery backed
     - IC22 MB87731A EP PCM chip, IC25 MB87424A TVF
@@ -145,6 +145,8 @@ private:
 	// HLE: the ISP's program is in the part and undumped; these are firmware 1.05's work RAM
 	static constexpr offs_t ISP_SEND_PENDING = 0x87e85;
 	static constexpr offs_t ISP_FXM_CODE = 0x8fb78;
+	static constexpr offs_t ISP_SYNC = 0x8fba8;
+	static constexpr int ISP_SYNC_SLOTS = 4;
 	static constexpr offs_t ISP_LFO1_PHASE = 0x8fbc0;
 	static constexpr offs_t ISP_LFO2_PHASE = 0x8fbf0;
 	static constexpr offs_t ISP_LFO_RATE = 0x1e0;
@@ -161,6 +163,7 @@ private:
 
 	void isp_reset_w(int state);
 	void isp_dr_w(offs_t offset, u8 data);
+	void isp_icf_w(u8 data);
 	TIMER_CALLBACK_MEMBER(isp_tick);
 	TIMER_CALLBACK_MEMBER(isp_fxm);
 
@@ -292,6 +295,28 @@ void roland_jd990_state::isp_reset_w(int state)
 	{
 		m_isp_tick->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
 		m_isp_fxm->adjust(FXM_PERIOD, 0, FXM_PERIOD);
+	}
+}
+
+void roland_jd990_state::isp_icf_w(u8 data)
+{
+	if (data != 14)
+		return;
+	m_maincpu->isp_set_icf(14, 0);
+
+	address_space &space = m_maincpu->space(AS_PROGRAM);
+	const u32 slaves = (u32(m_maincpu->dr_r(0x32)) << 24) | (u32(m_maincpu->dr_r(0x33)) << 16) | (u32(m_maincpu->dr_r(0x30)) << 8) | m_maincpu->dr_r(0x31);
+	const int count = std::min<int>(m_maincpu->dr_r(0x0d), ISP_SYNC_SLOTS);
+	for (int n = 0; n < count; n++)
+	{
+		const offs_t at = ISP_SYNC + 6 * n;
+		const u16 voice = space.read_word(at);
+		if (voice < FXM_VOICES && BIT(slaves, voice))
+		{
+			const u16 high = space.read_word(at + 2);
+			const u16 low = space.read_word(at + 4);
+			m_ep->voice_restart(voice, high, low);
+		}
 	}
 }
 
@@ -523,6 +548,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jd990_state::mem_map);
 	m_maincpu->isp_reset_cb().set(FUNC(roland_jd990_state::isp_reset_w));
 	m_maincpu->isp_dr_write_cb().set(FUNC(roland_jd990_state::isp_dr_w));
+	m_maincpu->isp_icf_cb().set(FUNC(roland_jd990_state::isp_icf_w));
 	m_maincpu->read_adc<0>().set_constant(0x266);
 	m_maincpu->read_adc<1>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 0x266 : 0; });
 	m_maincpu->read_port9().set(FUNC(roland_jd990_state::port9_r));
