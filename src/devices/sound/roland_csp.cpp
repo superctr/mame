@@ -198,7 +198,7 @@ void roland_csp_device::eram_clock(u32 word)
 	{
 		const u32 address = m_eram_address[1] & m_eram_mask;
 		if (m_eram_command[1] == 4)
-			m_eram[address] = narrow(m_eram_data);
+			m_eram[address] = narrow(m_eram_data) & m_eram_word_mask;
 		else
 			m_eram_read = m_eram[address];
 		m_eram_active[1] = false;

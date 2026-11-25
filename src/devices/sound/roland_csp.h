@@ -23,6 +23,7 @@ public:
 	void sc_w(unsigned channel, s32 sample) { if (channel < 24) m_parallel_in[channel] = narrow(sample); }
 	void set_eram_size(u32 words) { m_eram_mask = (words - 1) & (ERAM_SIZE - 1); }
 	void set_delay_slots(unsigned slots) { m_delay_slots = std::min(slots, 2U); }
+	void set_eram_bits(unsigned bits) { m_eram_word_mask = s32(~0U << (24 - std::clamp(bits, 1U, 24U))); }
 	void run_once(unsigned slots = PROGRAM_SIZE);
 
 protected:
@@ -68,6 +69,7 @@ protected:
 	u16 m_iram_pos;
 	u32 m_eram_pos;
 	u32 m_eram_mask = 0x1ffff;
+	s32 m_eram_word_mask = -1;
 	s32 m_eram_read;
 	s32 m_eram_write;
 	u16 m_eram_start[2];
