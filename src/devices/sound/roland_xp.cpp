@@ -1677,8 +1677,6 @@ void roland_xp_device::dsp_frame_start()
 		decode_program();
 
 	update_iram_ramps();
-	m_dsp.product = 0;
-	m_dsp.payback = false;
 }
 
 void roland_xp_device::dsp_step()
