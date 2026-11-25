@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 class roland_xv_dsp_recompiler;
@@ -15,8 +17,6 @@ class roland_xv_device : public device_t, public device_memory_interface, public
 public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
-	// the wave ROMs, the expansion boards and the sample RAM, 16 bits a cell,
-	// addressed by cell, one space the board shares between its chips
 	enum { AS_WAVE = 0 };
 
 	static constexpr int OBJECTS = 64;
@@ -26,7 +26,7 @@ public:
 	static constexpr int SENDS = 6;
 	static constexpr int CACHE_CELLS = 16;
 	static constexpr int CACHE_AHEAD = 12;
-	static constexpr u32 PHASE_MASK = 0x1fffff;
+	static constexpr u32 PHASE_MASK = 0x1f'ffff;
 	static constexpr u32 PHASE_LAP = 1 << 21;
 	static constexpr u32 CLOCKS_PER_SAMPLE = 768;
 	static constexpr int RATE_CODES = 16;
@@ -42,12 +42,11 @@ public:
 	static constexpr int IORAM_WORDS = 0x100;
 	static constexpr int SERIAL_OUTS = 5;
 	static constexpr int OUTPUTS = 2 * SERIAL_OUTS;
-	static constexpr u32 ADDRESS_MASK = 0x0fffffff;
-	static constexpr u32 PAGE_MASK = 0x000fffff;
-	static constexpr u32 INDEX_MASK = 0x01ffffff;
+	static constexpr u32 ADDRESS_MASK = 0x0fff'ffff;
+	static constexpr u32 PAGE_MASK = 0x000f'ffff;
+	static constexpr u32 INDEX_MASK = 0x01ff'ffff;
 	static constexpr int BANK_BYTE_WIDE = 1;
 
-	// the registers of the window, by word number
 	enum register_word
 	{
 		IDENTITY = 0x00, MODE = 0x02, DATA_HIGH = 0x04, DATA_LOW = 0x05, ADDRESS = 0x06, FIFO = 0x08, FIFO_CONTROL = 0x09,
@@ -57,7 +56,6 @@ public:
 		OBJECT_BASE = 0x60, OBJECT_END = 0x100
 	};
 
-	// the per-voice register file behind word 0x02, by word number
 	enum voice_word
 	{
 		VOICE_CONTROL = 0x60, VOICE_CONTROL2 = 0x61, ACCUMULATOR = 0x62, EXPONENTS = 0x63,
@@ -72,7 +70,6 @@ public:
 		VOICE_OUTPUT = 0xe4, SEND_BASE = 0xf0
 	};
 
-	// the interrupt reasons a voice raises, each with its own voice-number word at IRQ_VOICE + reason
 	enum irq_reason
 	{
 		IRQ_FINISHED = 0, IRQ_PITCH_LANDED = 1, IRQ_CUTOFF_LANDED = 2, IRQ_RESONANCE_LANDED = 3,
@@ -87,7 +84,6 @@ public:
 
 	enum ramp_use { USE_PARAMETER, USE_COEFFICIENT, USE_SEND };
 
-	// word 0xc4 bits 3:0; a type at or above FILTER_TYPES passes the input through
 	enum filter_type
 	{
 		FILTER_LPF = 0, FILTER_BPF = 1, FILTER_HPF = 2, FILTER_PKG = 3, FILTER_NOTCH = 4,
@@ -95,7 +91,6 @@ public:
 		FILTER_HIGH_POLE = 8, FILTER_LOW_POLE = 9, FILTER_TYPES = 10
 	};
 
-	// word 0xc4 bits 11:8 on a pair's master; the partner is the next voice
 	enum structure_case
 	{
 		STRUCTURE_NONE = 0, STRUCTURE_SUM = 1, STRUCTURE_BOOST = 2, STRUCTURE_BOOST_FILTERED = 3,
@@ -103,39 +98,26 @@ public:
 		STRUCTURE_RING_BOTH = 11, STRUCTURE_RING_BOTH_CARRIER = 12
 	};
 
-	// word 0x60 bits 13:12
 	enum sample_format { FORMAT_WIDE = 0, FORMAT_DPCM = 1, FORMAT_IDLE = 2, FORMAT_FULL = 3 };
 
-	// word 0x02's upper bits: memories cleared, and the program counter's steps past a row's operand
 	enum mode_bits : u16 { MODE_CLEAR = 0x0040, MODE_READ_STEP = 0x2000, MODE_WRITE_STEP = 0x4000, MODE_STEP_DOWN = 0x8000 };
 
-	// word 0x60 bits 11:10
 	enum loop_mode { LOOP_NONE = 0, LOOP_FORWARD = 1, LOOP_ALTERNATE = 2 };
 
-	// word 0x60 bits 9:8: when the voice reports itself finished
 	enum end_condition { END_NEVER = 0, END_INSIDE_LOOP = 2, END_AT_END = 3 };
 
-	// where a voice's last fetched sample lies: before either point, at the end, or from the loop start on
 	enum region { REGION_END = 1, REGION_LOOP = 0, REGION_BEFORE = 2 };
 
-	// the spaces behind word 0x06, by their top nibble
 	enum host_space { SPACE_IRAM = 0x0000, SPACE_PRAM = 0x1000, SPACE_IORAM = 0x2000, SPACE_RECORDS = 0x3000, SPACE_CACHE = 0x3400, SPACE_CACHE_END = 0x3800 };
 
-	// the stream's channels, a left and a right word each: the four data lines of
-	// the DAC group, SDO4-SDO7, then SDO3
 	enum serial_out { OUT_SDO4 = 0, OUT_SDO5 = 1, OUT_SDO6 = 2, OUT_SDO7 = 3, OUT_SDO3 = 4 };
 
-	// the DSP's ten-bit data addresses: a ring that slides under the cursor, static cells,
-	// then the mix cells, the transport slots and the staging cells in two work banks
-	// the samples take in turn; the parameter bank is read-only
 	enum ibus
 	{
 		IBUS_STATIC = 0x200, IBUS_IRAM_END = 0x280, IBUS_MIX = 0x280, IBUS_TRANSPORT = 0x2c0, IBUS_STAGING = 0x300,
 		IBUS_BANK = 0x380, IBUS_BANK_END = 0x3c0, IBUS_SERIAL_CELLS = 0x40
 	};
 
-	// the I/O sequencer's words: a transmit or a receive pointer into the 64
-	// cells from 0x2c0, a word sent or taken at the pointer, the end of the table
 	enum io_word
 	{
 		IO_FAMILY = 0x300, IO_SET_TRANSMIT = 0x100, IO_SET_RECEIVE = 0x200,
@@ -143,31 +125,23 @@ public:
 		IO_SDO4 = 0x0c0, IO_SDO7 = 0x0f0, IO_END = 0x3ff
 	};
 
-	// the memory operation a row's W1 (or a second one in its W2) carries
 	enum memory_mode { MEM_NONE = 0, MEM_STORE_P = 1, MEM_STORE_A = 2, MEM_STORE_B = 3, MEM_READ_R = 4, MEM_READ_S = 5, MEM_READ_M = 6, MEM_READ_C = 7 };
 
-	// the ALU's left operand, W0 bits 10:8, and right operand, bits 6:4
 	enum alu_left { LEFT_ZERO = 0, LEFT_R = 1, LEFT_S = 2, LEFT_M = 3, LEFT_A = 4, LEFT_B = 5, LEFT_MAG_A = 6, LEFT_MAG_B = 7 };
 	enum alu_right { RIGHT_ZERO = 0, RIGHT_A = 1, RIGHT_B = 2, RIGHT_R = 3, RIGHT_K23 = 4, RIGHT_K19 = 5, RIGHT_K15 = 6, RIGHT_P = 7 };
 
-	// the multiplier's operand, W0 bits 3:1
 	enum multiplier_source { SOURCE_R = 0, SOURCE_S = 1, SOURCE_M = 2, SOURCE_C = 3, SOURCE_A = 4, SOURCE_B = 5, SOURCE_P = 6, SOURCE_ZERO = 7 };
 
-	// what W0 bits 15:14 and W1 bits 11:10 make of a row
 	enum row_kind { ROW_PLAIN = 0, ROW_PREDICATED = 1, ROW_BRANCH = 2, ROW_JUMP = 3 };
 
-	// a predicated row's W1 bits 11:8
 	enum predicate_mode
 	{
 		PREDICATE_WRITE = 0, PREDICATE_LEFT = 1, PREDICATE_RIGHT = 2, PREDICATE_SHIFT = 3, PREDICATE_SPECIAL = 4,
 		PREDICATE_SOURCE = 6, PREDICATE_COEFFICIENT = 7, PREDICATE_PARAMETER = 8, PREDICATE_PARAMETER_STORE = 11
 	};
 
-	// the special ALU's operation, W1 bits 6:4 under PREDICATE_SPECIAL
 	enum special_op { SPECIAL_MAX = 0, SPECIAL_MIN = 1, SPECIAL_FEEDBACK = 2, SPECIAL_NORMALIZE = 3, SPECIAL_AND = 4, SPECIAL_OR = 5, SPECIAL_XOR = 6, SPECIAL_COPY = 7 };
 
-	// what the rows read and write, in one block near the code when there is a recompiler;
-	// the accumulators, the product and the flag results count sixteenths of a cell's step
 	struct dsp_state
 	{
 		s32 acc[2];
@@ -186,7 +160,6 @@ public:
 		u32 work_phase;
 	};
 
-	// the rows compiled to native code, when the machine runs with the recompiler (roland_xv_drc.cpp)
 	class dsp_recompiler
 	{
 	public:
@@ -199,7 +172,6 @@ public:
 		virtual void run() = 0;
 	};
 
-	// the fields a false predicate can replace: a row has them as written and as substituted
 	struct dsp_fields
 	{
 		u8 left = 0;
@@ -214,7 +186,6 @@ public:
 		s32 immediate = 0;
 	};
 
-	// a program row, its three words and their fields decoded
 	struct dsp_row
 	{
 		u16 w0 = 0;
@@ -245,43 +216,20 @@ public:
 
 	auto int_callback() { return m_int_callback.bind(); }
 
-	// the panel the chip scans itself: 32 switches read as one word, bit n
-	// the switch the chip numbers n (strobe times eight plus line), and an
-	// LED brightness, 0 to 15, written with the LED's number the same way
 	auto switch_callback() { return m_switch_callback.bind(); }
 	auto led_callback() { return m_led_callback.bind(); }
 
-	// the character display the chip drives on its own LCD pins: a one-word
-	// command under mode 0 is a byte for it, bit 8 of the word the RS line,
-	// so the offset is RS and hd44780_device::write takes it as it stands
 	auto lcd_callback() { return m_lcd_callback.bind(); }
 
-	// the chip whose transport slots this one's are linked to; the linked chip is run from this one's stream
 	template <typename T> void set_link(T &&tag) { m_link.set_tag(std::forward<T>(tag)); }
 
-	// the clock on the CKI pin is doubled inside the chip, and a sample takes 768 of those
 	u32 internal_clock() const { return clock() * 2; }
 	u32 sample_rate() const { return internal_clock() / CLOCKS_PER_SAMPLE; }
 
-	// the 512 byte window, byte wide
 	u8 read(offs_t offset);
 	void write(offs_t offset, u8 data);
 
 protected:
-	// device_t implementation
-	virtual void device_start() override ATTR_COLD;
-	virtual void device_reset() override ATTR_COLD;
-	virtual void device_clock_changed() override;
-
-	// device_memory_interface implementation
-	virtual space_config_vector memory_space_config() const override;
-
-	// device_sound_interface implementation
-	virtual void sound_stream_update(sound_stream &stream) override;
-
-	virtual void device_post_load() override;
-
-	// what a voice keeps beside its register file
 	struct voice
 	{
 		bool backward = false;
@@ -309,7 +257,6 @@ protected:
 		bool wrapped;
 	};
 
-	// what the ERAM port does at a service slot, the records' events and the taps'
 	enum transfer_kind : u8 { XFER_WRITE, XFER_READ, XFER_RETURN, XFER_TAP_FIRST, XFER_TAP_SECOND, XFER_TAP_FRACTION, XFER_TAP_FIRST_RETURN, XFER_TAP_SECOND_RETURN };
 
 	struct transfer
@@ -320,12 +267,23 @@ protected:
 		u32 offset;
 	};
 
-	// a receive in table order: the cell, and the word of the link it takes or the auxiliary input
 	struct io_receive
 	{
 		u16 cell;
 		s16 index;
 	};
+
+	// device_t implementation
+	virtual void device_start() override ATTR_COLD;
+	virtual void device_reset() override ATTR_COLD;
+	virtual void device_clock_changed() override;
+	virtual void device_post_load() override ATTR_COLD;
+
+	// device_memory_interface implementation
+	virtual space_config_vector memory_space_config() const override ATTR_COLD;
+
+	// device_sound_interface implementation
+	virtual void sound_stream_update(sound_stream &stream) override;
 
 	u16 object_word(int voice, int word) const { return m_object_regs[voice][word - OBJECT_BASE]; }
 	u16 &object_ref(int voice, int word) { return m_object_regs[voice][word - OBJECT_BASE]; }
@@ -341,6 +299,9 @@ protected:
 	void cell_w(u16 address, s32 value);
 	TIMER_CALLBACK_MEMBER(scan_switches);
 
+	static u16 ramp(u16 current, u16 target, u16 &control, s32 &slope, int use, bool event_free, u8 threshold);
+	static u8 ramp_threshold(u8 phase) { return bitswap<8>(phase, 0, 1, 2, 3, 4, 5, 6, 7); }
+
 	optional_device<roland_xv_device> m_link;
 	std::unique_ptr<u32[]> m_space;
 	u32 *m_iram;
@@ -349,9 +310,6 @@ protected:
 	s32 *m_bus_other;
 	dsp_state *m_dsp;
 	u8 m_ramp_phase;
-
-	u16 ramp(u16 current, u16 target, u16 &control, s32 &slope, int use, bool event_free, u8 threshold) const;
-	static u8 ramp_threshold(u8 phase) { return bitswap<8>(phase, 0, 1, 2, 3, 4, 5, 6, 7); }
 
 private:
 	friend class roland_xv_dsp_recompiler;
@@ -403,8 +361,8 @@ private:
 	void run_pair(int n, int kind, s64 *mix, u64 &claimed);
 	void set_long(int n, int word, u32 value);
 	void clear_memories();
-	bool write_only(int word) const;
-	bool answers_latch(int word) const;
+	static bool write_only(int word);
+	static bool answers_latch(int word);
 	void pram_w(u16 data);
 	u16 pram_r();
 	void pram_step(bool write);
@@ -429,13 +387,8 @@ private:
 	void execute(const dsp_row &row, bool commit, bool predicate);
 	bool condition(int code) const;
 
-	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x800000, 0x7fffff)); }
-	static s64 clamp28(s64 value) { return std::clamp<s64>(value, -0x8000000, 0x7ffffff); }
-	static s64 wrap28(s64 value) { return s64(u64(value) << 36) >> 36; }
-	static s64 wrap29(s64 value) { return s64(u64(value) << 35) >> 35; }
-	static s32 wrap19(s32 value) { return s32(u32(value) << 13) >> 13; }
-	static s32 wrap18(s32 value) { return s32(u32(value) << 14) >> 14; }
-	static s32 wrap24(s32 value) { return s32(u32(value) << 8) >> 8; }
+	static s32 clamp24(s64 value) { return s32(std::clamp<s64>(value, -0x80'0000, 0x7f'ffff)); }
+	static s64 clamp28(s64 value) { return std::clamp<s64>(value, -0x800'0000, 0x7ff'ffff); }
 
 	address_space_config m_wave_config;
 	memory_access<32, 1, -1, ENDIANNESS_LITTLE>::specific m_wave;
@@ -457,12 +410,12 @@ private:
 	bool m_run_pending;
 	u16 m_row_stage[2];
 	u16 m_fifo[FIFO_DEPTH];
-	int m_fifo_write;
-	int m_fifo_read;
-	int m_scan_select;
-	int m_scan_read;
-	int m_scan_write;
-	int m_led_select;
+	s32 m_fifo_write;
+	s32 m_fifo_read;
+	s32 m_scan_select;
+	s32 m_scan_read;
+	s32 m_scan_write;
+	s32 m_led_select;
 	u16 m_led[16];
 	u16 m_scan[16];
 	u64 m_switch_state;
