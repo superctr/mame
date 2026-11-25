@@ -571,8 +571,8 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->read_adc<0>().set_constant(0x266);
 	m_maincpu->read_adc<1>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 0x266 : 0; });
 	// the card and board sense lines in bit 7, low with an empty slot
-	m_maincpu->read_port<h8570_device::PORT_9>().set(FUNC(roland_jd990_state::port9_r));
-	m_maincpu->read_port<h8570_device::PORT_11>().set(FUNC(roland_jd990_state::port11_r));
+	m_maincpu->read_port9().set(FUNC(roland_jd990_state::port9_r));
+	m_maincpu->read_port11().set(FUNC(roland_jd990_state::port11_r));
 	m_maincpu->write_port6().set(FUNC(roland_jd990_state::port6_w));
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
