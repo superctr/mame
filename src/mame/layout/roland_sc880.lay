@@ -19,31 +19,11 @@ copyright-holders:superctr
 	<view name="Display">
 		<bounds x="0" y="0" width="140" height="50"/>
 		<element ref="glass"><bounds x="0" y="0" width="140" height="50"/></element>
-		<element name="digit0" ref="digit"><bounds x="2.90" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit1" ref="digit"><bounds x="8.34" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit2" ref="digit"><bounds x="13.78" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit3" ref="digit"><bounds x="19.22" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit4" ref="digit"><bounds x="24.66" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit5" ref="digit"><bounds x="30.10" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit6" ref="digit"><bounds x="35.54" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit7" ref="digit"><bounds x="40.98" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit8" ref="digit"><bounds x="46.42" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit9" ref="digit"><bounds x="51.86" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit10" ref="digit"><bounds x="57.30" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit11" ref="digit"><bounds x="62.74" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit12" ref="digit"><bounds x="68.18" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit13" ref="digit"><bounds x="73.62" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit14" ref="digit"><bounds x="79.06" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit15" ref="digit"><bounds x="84.50" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit16" ref="digit"><bounds x="89.94" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit17" ref="digit"><bounds x="95.38" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit18" ref="digit"><bounds x="100.82" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit19" ref="digit"><bounds x="106.26" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit20" ref="digit"><bounds x="111.70" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit21" ref="digit"><bounds x="117.14" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit22" ref="digit"><bounds x="122.58" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit23" ref="digit"><bounds x="128.02" y="1.5" width="3.6" height="9.5"/></element>
-		<element name="digit24" ref="digit"><bounds x="133.46" y="1.5" width="3.6" height="9.5"/></element>
+		<repeat count="25">
+			<param name="n" start="0" increment="1"/>
+			<param name="x" start="2.90" increment="5.44"/>
+			<element name="digit~n~" ref="digit"><bounds x="~x~" y="1.5" width="3.6" height="9.5"/></element>
+		</repeat>
 		<element ref="label_part"><bounds x="2.00" y="1" width="10.88" height="3.5"/></element>
 		<element ref="label_perf"><bounds x="29.20" y="1" width="16.32" height="3.5"/></element>
 		<element ref="label_patch"><bounds x="45.52" y="1" width="16.32" height="3.5"/></element>

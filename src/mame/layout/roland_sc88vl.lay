@@ -80,7 +80,6 @@ Units are 0.1 mm.
 	<element name="label_chorus"><text string="CHORUS"><color red="0.85" green="0.85" blue="0.85"/></text></element>
 	<element name="label_keyshift"><text string="KEY SHIFT"><color red="0.85" green="0.85" blue="0.85"/></text></element>
 	<element name="label_midich"><text string="MIDI CH"><color red="0.85" green="0.85" blue="0.85"/></text></element>
-	<element name="label_roland"><text string="Roland"><color red="0.85" green="0.85" blue="0.85"/></text></element>
 	<element name="label_soundcanvas"><text string="SOUND Canvas"><color red="0.85" green="0.85" blue="0.85"/></text></element>
 	<element name="label_model" defstate="0"><text state="0" string="SC-88VL"><color red="0.95" green="0.55" blue="0.10"/></text></element>
 	<element name="glass_level"><text string="LEVEL" align="1"><color red="0.15" green="0.08" blue="0.0"/></text></element>
@@ -89,22 +88,10 @@ Units are 0.1 mm.
 	<element name="glass_chorus"><text string="CHORUS" align="1"><color red="0.15" green="0.08" blue="0.0"/></text></element>
 	<element name="glass_kshift"><text string="K SHIFT" align="1"><color red="0.15" green="0.08" blue="0.0"/></text></element>
 	<element name="glass_midich"><text string="MIDI CH" align="1"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_1"><text string="1"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_2"><text string="2"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_3"><text string="3"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_4"><text string="4"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_5"><text string="5"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_6"><text string="6"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_7"><text string="7"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_8"><text string="8"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_9"><text string="9"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_10"><text string="10"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_11"><text string="11"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_12"><text string="12"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_13"><text string="13"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_14"><text string="14"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_15"><text string="15"><color red="0.15" green="0.08" blue="0.0"/></text></element>
-	<element name="glass_16"><text string="16"><color red="0.15" green="0.08" blue="0.0"/></text></element>
+	<repeat count="16">
+		<param name="n" start="1" increment="1"/>
+		<element name="glass_~n~"><text string="~n~"><color red="0.15" green="0.08" blue="0.0"/></text></element>
+	</repeat>
 
 	<view name="Front Panel">
 		<bounds x="0" y="0" width="1800" height="440"/>
@@ -134,24 +121,12 @@ Units are 0.1 mm.
 		<element ref="glass_chorus"><bounds x="523" y="225" width="90" height="12"/></element>
 		<element ref="glass_kshift"><bounds x="404" y="289" width="90" height="12"/></element>
 		<element ref="glass_midich"><bounds x="523" y="289" width="90" height="12"/></element>
-		<element ref="glass_1"><bounds x="663" y="349" width="24" height="12"/></element>
-		<element ref="glass_2"><bounds x="689" y="349" width="24" height="12"/></element>
-		<element ref="glass_3"><bounds x="715" y="349" width="24" height="12"/></element>
-		<element ref="glass_4"><bounds x="741" y="349" width="24" height="12"/></element>
-		<element ref="glass_5"><bounds x="767" y="349" width="24" height="12"/></element>
-		<element ref="glass_6"><bounds x="793" y="349" width="24" height="12"/></element>
-		<element ref="glass_7"><bounds x="819" y="349" width="24" height="12"/></element>
-		<element ref="glass_8"><bounds x="845" y="349" width="24" height="12"/></element>
-		<element ref="glass_9"><bounds x="871" y="349" width="24" height="12"/></element>
-		<element ref="glass_10"><bounds x="897" y="349" width="24" height="12"/></element>
-		<element ref="glass_11"><bounds x="923" y="349" width="24" height="12"/></element>
-		<element ref="glass_12"><bounds x="949" y="349" width="24" height="12"/></element>
-		<element ref="glass_13"><bounds x="975" y="349" width="24" height="12"/></element>
-		<element ref="glass_14"><bounds x="1001" y="349" width="24" height="12"/></element>
-		<element ref="glass_15"><bounds x="1027" y="349" width="24" height="12"/></element>
-		<element ref="glass_16"><bounds x="1053" y="349" width="24" height="12"/></element>
+		<repeat count="16">
+			<param name="n" start="1" increment="1"/>
+			<param name="x" start="663" increment="26"/>
+			<element ref="glass_~n~"><bounds x="~x~" y="349" width="24" height="12"/></element>
+		</repeat>
 
-		<element ref="label_roland"><bounds x="980" y="25" width="140" height="38"/></element>
 		<element ref="label_soundcanvas"><bounds x="370" y="398" width="300" height="34"/></element>
 		<element ref="label_part"><bounds x="810" y="406" width="60" height="20"/></element>
 		<element name="model_label" ref="label_model"><bounds x="900" y="400" width="210" height="28"/></element>
@@ -181,36 +156,32 @@ Units are 0.1 mm.
 		<element ref="button" inputtag="KEY0" inputmask="0x10"><bounds x="1652" y="70" width="100" height="48"/></element>
 		<element ref="arrow_r"><bounds x="1684" y="81" width="35" height="26"/></element>
 		<element ref="label_level"><bounds x="1300" y="124" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x10"><bounds x="1300" y="154" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1332" y="165" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x20"><bounds x="1406" y="154" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1438" y="165" width="35" height="26"/></element>
 		<element ref="label_pan"><bounds x="1546" y="124" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x10"><bounds x="1546" y="154" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1578" y="165" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x20"><bounds x="1652" y="154" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1684" y="165" width="35" height="26"/></element>
 		<element ref="label_reverb"><bounds x="1300" y="208" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x04"><bounds x="1300" y="238" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1332" y="249" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x08"><bounds x="1406" y="238" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1438" y="249" width="35" height="26"/></element>
 		<element ref="label_chorus"><bounds x="1546" y="208" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x04"><bounds x="1546" y="238" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1578" y="249" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x08"><bounds x="1652" y="238" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1684" y="249" width="35" height="26"/></element>
 		<element ref="label_keyshift"><bounds x="1300" y="292" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x01"><bounds x="1300" y="322" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1332" y="333" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY2" inputmask="0x02"><bounds x="1406" y="322" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1438" y="333" width="35" height="26"/></element>
+		<repeat count="3">
+			<param name="y" start="154" increment="84"/>
+			<param name="ya" start="165" increment="84"/>
+			<param name="dec" start="0x10" rshift="2"/>
+			<param name="inc" start="0x20" rshift="2"/>
+			<element ref="button" inputtag="KEY2" inputmask="~dec~"><bounds x="1300" y="~y~" width="100" height="48"/></element>
+			<element ref="arrow_l"><bounds x="1332" y="~ya~" width="35" height="26"/></element>
+			<element ref="button" inputtag="KEY2" inputmask="~inc~"><bounds x="1406" y="~y~" width="100" height="48"/></element>
+			<element ref="arrow_r"><bounds x="1438" y="~ya~" width="35" height="26"/></element>
+		</repeat>
 		<element ref="label_delay"><bounds x="1300" y="378" width="206" height="22"/></element>
 		<element ref="label_midich"><bounds x="1546" y="292" width="206" height="24"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x01"><bounds x="1546" y="322" width="100" height="48"/></element>
-		<element ref="arrow_l"><bounds x="1578" y="333" width="35" height="26"/></element>
-		<element ref="button" inputtag="KEY1" inputmask="0x02"><bounds x="1652" y="322" width="100" height="48"/></element>
-		<element ref="arrow_r"><bounds x="1684" y="333" width="35" height="26"/></element>
+		<repeat count="3">
+			<param name="y" start="154" increment="84"/>
+			<param name="ya" start="165" increment="84"/>
+			<param name="dec" start="0x10" rshift="2"/>
+			<param name="inc" start="0x20" rshift="2"/>
+			<element ref="button" inputtag="KEY1" inputmask="~dec~"><bounds x="1546" y="~y~" width="100" height="48"/></element>
+			<element ref="arrow_l"><bounds x="1578" y="~ya~" width="35" height="26"/></element>
+			<element ref="button" inputtag="KEY1" inputmask="~inc~"><bounds x="1652" y="~y~" width="100" height="48"/></element>
+			<element ref="arrow_r"><bounds x="1684" y="~ya~" width="35" height="26"/></element>
+		</repeat>
 	</view>
 
 </mamelayout>

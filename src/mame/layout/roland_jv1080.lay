@@ -13,304 +13,315 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 
 	<element name="panel"><rect><color red="0.110" green="0.114" blue="0.129"/></rect></element>
 	<element name="hole"><rect><color red="0.149" green="0.149" blue="0.165"/></rect></element>
-	<element name="t2"><text string="Roland" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t3"><text string="SUPER JV" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t4"><text string="64 VOICE" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t5"><text string="SYNTHESIZER MODULE" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t6"><text string="JV-1080" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t7"><text string="4× EXPANSION" align="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t8"><text string="VOLUME"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_super_jv"><text string="SUPER JV" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_64_voice"><text string="64 VOICE" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_synthesizer_module"><text string="SYNTHESIZER MODULE" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_jv_1080"><text string="JV-1080" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_4_expansion"><text string="4× EXPANSION" align="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_volume"><text string="VOLUME"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="knob"><disk><color red="0.055" green="0.055" blue="0.063"/></disk><disk><bounds x="0.1" y="0.1" width="0.8" height="0.8"/><color red="0.165" green="0.165" blue="0.180"/></disk><disk><bounds x="0.2" y="0.2" width="0.12" height="0.12"/><color red="0.925" green="0.925" blue="0.925"/></disk></element>
-	<element name="t10"><text string="MIN"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t11"><text string="MAX"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t12"><text string="PREVIEW (PUSH)"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_min"><text string="MIN"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_max"><text string="MAX"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_preview_push"><text string="PREVIEW (PUSH)"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="bezel"><rect><color red="0.055" green="0.059" blue="0.067"/></rect></element>
 	<element name="glass"><rect><color red="0.173" green="0.204" blue="0.169"/></rect></element>
-	<element name="t15"><text string="PHONES"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_phones"><text string="PHONES"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="jack"><disk><color red="0.769" green="0.773" blue="0.761"/></disk><disk><bounds x="0.19" y="0.19" width="0.62" height="0.62"/><color red="0.102" green="0.102" blue="0.118"/></disk><disk><bounds x="0.32" y="0.32" width="0.36" height="0.36"/><color red="0.020" green="0.020" blue="0.020"/></disk></element>
-	<element name="t17"><text string="PART SWITCH"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t18"><text string="SELECT"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="rule_5cb6ee"><rect><color red="0.361" green="0.714" blue="0.933"/></rect></element>
-	<element name="t20"><text string="1/9"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t21"><text string="2/10"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t22"><text string="3/11"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t23"><text string="4/12"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t24"><text string="5/13"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t25"><text string="6/14"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t26"><text string="7/15"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t27"><text string="8/16"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t28"><text string="TONE SWITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="rule_f39a32"><rect><color red="0.953" green="0.604" blue="0.196"/></rect></element>
-	<element name="t30"><text string="TONE SELECT"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t31"><text string="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t32"><text string="2"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t33"><text string="3"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t34"><text string="4"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_part_switch"><text string="PART SWITCH"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_select"><text string="SELECT"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="rule_blue"><rect><color red="0.361" green="0.714" blue="0.933"/></rect></element>
+	<element name="label_1_9"><text string="1/9"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_2_10"><text string="2/10"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_3_11"><text string="3/11"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_4_12"><text string="4/12"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_5_13"><text string="5/13"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_6_14"><text string="6/14"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_7_15"><text string="7/15"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_8_16"><text string="8/16"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_tone_switch"><text string="TONE SWITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="rule_orange"><rect><color red="0.953" green="0.604" blue="0.196"/></rect></element>
+	<element name="label_tone_select"><text string="TONE SELECT"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_1"><text string="1"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_2"><text string="2"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_3"><text string="3"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_4"><text string="4"><color red="0.953" green="0.604" blue="0.196"/></text></element>
 	<element name="key" defstate="0"><rect><color red="0.271" green="0.278" blue="0.302"/></rect><rect state="0"><bounds x="0.02" y="0.05" width="0.96" height="0.9"/><color red="0.071" green="0.075" blue="0.086"/></rect><rect state="1"><bounds x="0.02" y="0.05" width="0.96" height="0.9"/><color red="0.204" green="0.212" blue="0.235"/></rect></element>
 	<element name="win_red" defstate="0"><rect state="0"><color red="0.078" green="0.075" blue="0.078"/></rect><rect state="1"><color red="1.000" green="0.231" blue="0.165"/></rect></element>
-	<element name="t37"><text string="1-8" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t38"><text string="9-16" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t39"><text string="COMMON"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t40"><text string="EFFECTS"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t41"><text string="CONTROL"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t42"><text string="WAVE"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t43"><text string="LFO"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t44"><text string="PITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t45"><text string="TVF"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t46"><text string="TVA"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t47"><text string="COMMON"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t48"><text string="EFFECTS"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t49"><text string="MIDI"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t50"><text string="PART"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t51"><text string="—"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t52"><text string="PITCH"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t53"><text string="PAN"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t54"><text string="LEVEL"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t55"><text string="SETUP"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t56"><text string="—"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t57"><text string="MIDI"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t58"><text string="TUNE"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t59"><text string="PREVIEW"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t60"><text string="PALETTE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t61"><text string="PARAMETER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t62"><text string="VALUE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_1_8"><text string="1-8" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_9_16"><text string="9-16" align="1"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_common"><text string="COMMON"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_effects"><text string="EFFECTS"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_control"><text string="CONTROL"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_wave"><text string="WAVE"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_lfo"><text string="LFO"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_pitch"><text string="PITCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_tvf"><text string="TVF"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_tva"><text string="TVA"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_common_2"><text string="COMMON"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_effects_2"><text string="EFFECTS"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_midi"><text string="MIDI"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_part"><text string="PART"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_mark"><text string="—"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_pitch_2"><text string="PITCH"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_pan"><text string="PAN"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_level"><text string="LEVEL"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_setup"><text string="SETUP"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_mark_2"><text string="—"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_midi_2"><text string="MIDI"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_tune"><text string="TUNE"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_preview"><text string="PREVIEW"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_palette"><text string="PALETTE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_parameter"><text string="PARAMETER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_value"><text string="VALUE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="dial"><disk><color red="0.047" green="0.047" blue="0.055"/></disk><disk><bounds x="0.09" y="0.09" width="0.82" height="0.82"/><color red="0.137" green="0.137" blue="0.149"/></disk></element>
-	<element name="t64"><text string="DEC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t65"><text string="INC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t66"><text string="▲"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t67"><text string="&lt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t68"><text string="&gt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t69"><text string="▼"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t70"><text string="PERFORM"><color red="0.361" green="0.714" blue="0.933"/></text></element>
-	<element name="t71"><text string="PATCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="t72"><text string="RHYTHM"><color red="0.953" green="0.604" blue="0.196"/></text></element>
-	<element name="rule_e9e9e5"><rect><color red="0.914" green="0.914" blue="0.898"/></rect></element>
-	<element name="t74"><text string="GM" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t75"><text string="INFO" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t76"><text string="SYSTEM"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t77"><text string="UTILITY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t78"><text string="EFFECTS"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t79"><text string="ON/OFF"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t80"><text string="SHIFT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t81"><text string="EXIT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t82"><text string="ENTER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t83"><text string="ROM PLAY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t84"><text string="USER/CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t85"><text string="PRESET"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t86"><text string="EXP"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t87"><text string="A"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t88"><text string="B"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t89"><text string="C"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t90"><text string="D"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t91"><text string="(GM PATCH)" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t92"><text string="USER" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t93"><text string="DATA"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t94"><text string="CARD"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t95"><text string="PCM"><color red="0.639" green="0.639" blue="0.624"/></text></element>
-	<element name="t96"><text string="MIDI MESSAGE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_dec"><text string="DEC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_inc"><text string="INC"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_mark_3"><text string="▲"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_mark_4"><text string="&lt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_mark_5"><text string="&gt;"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_mark_6"><text string="▼"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_perform"><text string="PERFORM"><color red="0.361" green="0.714" blue="0.933"/></text></element>
+	<element name="label_patch"><text string="PATCH"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="label_rhythm"><text string="RHYTHM"><color red="0.953" green="0.604" blue="0.196"/></text></element>
+	<element name="rule"><rect><color red="0.914" green="0.914" blue="0.898"/></rect></element>
+	<element name="label_gm"><text string="GM" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_info"><text string="INFO" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_system"><text string="SYSTEM"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_utility"><text string="UTILITY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_effects_3"><text string="EFFECTS"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_on_off"><text string="ON/OFF"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_shift"><text string="SHIFT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_exit"><text string="EXIT"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_enter"><text string="ENTER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_rom_play"><text string="ROM PLAY"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_user"><text string="USER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_card"><text string="/CARD"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_preset"><text string="PRESET"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_exp"><text string="EXP"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_a"><text string="A"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_b"><text string="B"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_c"><text string="C"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_d"><text string="D"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_gm_patch"><text string="(GM PATCH)"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_data"><text string="DATA"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_card_2"><text string="CARD"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_pcm"><text string="PCM"><color red="0.639" green="0.639" blue="0.624"/></text></element>
+	<element name="label_midi_message"><text string="MIDI MESSAGE"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="bar_green" defstate="0"><rect state="0"><color red="0.102" green="0.165" blue="0.102"/></rect><rect state="1"><color red="0.298" green="1.000" blue="0.361"/></rect></element>
-	<element name="t98"><text string="PCM CARD" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_pcm_card"><text string="PCM CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 	<element name="recess"></element>
 	<element name="mouth"></element>
-	<element name="t101"><text string="DATA CARD" align="1"><color red="0.914" green="0.914" blue="0.898"/></text></element>
-	<element name="t102"><text string="POWER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_data_card"><text string="DATA CARD"><color red="0.914" green="0.914" blue="0.898"/></text></element>
+	<element name="label_power"><text string="POWER"><color red="0.914" green="0.914" blue="0.898"/></text></element>
 
 	<view name="Front Panel">
 		<bounds x="0" y="0" width="4820" height="881"/>
 		<element ref="panel"><bounds x="0" y="0" width="4820" height="881"/></element>
-		<element ref="hole"><bounds x="40" y="30" width="110" height="65"/></element>
-		<element ref="hole"><bounds x="4670" y="30" width="110" height="65"/></element>
-		<element ref="hole"><bounds x="40" y="775" width="110" height="65"/></element>
-		<element ref="hole"><bounds x="4670" y="775" width="110" height="65"/></element>
-		<element ref="t2"><bounds x="290" y="40.28" width="321.6" height="68.64"/></element>
-		<element ref="t3"><bounds x="610" y="42.56" width="395.6" height="65.78"/></element>
-		<element ref="t4"><bounds x="1060" y="41.76" width="137.6" height="22.88"/></element>
-		<element ref="t5"><bounds x="1060" y="76.76" width="289.6" height="22.88"/></element>
-		<element ref="t6"><bounds x="1630" y="60.8" width="229.5" height="42.9"/></element>
-		<element ref="t7"><bounds x="1940" y="65.36" width="322.4" height="37.18"/></element>
-		<element ref="t8"><bounds x="449.7" y="198.48" width="120.6" height="25.74"/></element>
+		<element ref="hole"><bounds x="29.5" y="27" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="29.5" y="789" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4680.5" y="27" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4680.5" y="789" width="110" height="65"/></element>
+		<element ref="label_super_jv"><bounds x="610" y="42.56" width="395.6" height="65.78"/></element>
+		<element ref="label_64_voice"><bounds x="1060" y="41.76" width="137.6" height="22.88"/></element>
+		<element ref="label_synthesizer_module"><bounds x="1060" y="76.76" width="289.6" height="22.88"/></element>
+		<element ref="label_jv_1080"><bounds x="1630" y="60.8" width="229.5" height="42.9"/></element>
+		<element ref="label_4_expansion"><bounds x="1940" y="65.36" width="322.4" height="37.18"/></element>
+		<element ref="label_volume"><bounds x="449.7" y="198.48" width="120.6" height="25.74"/></element>
 		<element ref="knob" inputtag="PORTA" inputmask="0x02"><bounds x="456" y="261" width="108" height="108"/></element>
-		<element ref="t10"><bounds x="426.9" y="387.32" width="46.2" height="17.16"/></element>
-		<element ref="t11"><bounds x="549.9" y="387.32" width="46.2" height="17.16"/></element>
-		<element ref="t12"><bounds x="417.05" y="413.18" width="185.9" height="18.59"/></element>
+		<element ref="label_min"><bounds x="426.9" y="387.32" width="46.2" height="17.16"/></element>
+		<element ref="label_max"><bounds x="549.9" y="387.32" width="46.2" height="17.16"/></element>
+		<element ref="label_preview_push"><bounds x="417.05" y="413.18" width="185.9" height="18.59"/></element>
 		<element ref="bezel"><bounds x="750" y="120" width="1570" height="260"/></element>
 		<element ref="glass"><bounds x="792.5" y="184.5" width="1485" height="131"/></element>
 		<screen index="0"><bounds x="792.5" y="200.5" width="1485" height="99"/></screen>
-		<element ref="t15"><bounds x="449.7" y="530.48" width="120.6" height="25.74"/></element>
+		<element ref="label_phones"><bounds x="449.7" y="530.48" width="120.6" height="25.74"/></element>
 		<element ref="jack"><bounds x="462" y="577" width="96" height="96"/></element>
-		<element ref="t17"><bounds x="1625.575" y="405.18" width="148.85" height="18.59"/></element>
-		<element ref="t18"><bounds x="1656.45" y="434.18" width="87.1" height="18.59"/></element>
-		<element ref="rule_5cb6ee"><bounds x="1120" y="446.25" width="500" height="3.5"/></element>
-		<element ref="rule_5cb6ee"><bounds x="1780" y="446.25" width="510" height="3.5"/></element>
-		<element ref="t20"><bounds x="1161.9" y="463.32" width="46.2" height="17.16"/></element>
-		<element ref="t21"><bounds x="1305.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t22"><bounds x="1454.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t23"><bounds x="1603.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t24"><bounds x="1752.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t25"><bounds x="1901.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t26"><bounds x="2050.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t27"><bounds x="2199.2" y="463.32" width="57.6" height="17.16"/></element>
-		<element ref="t28"><bounds x="1334.075" y="493.18" width="148.85" height="18.59"/></element>
-		<element ref="rule_f39a32"><bounds x="1120" y="498.25" width="161.5" height="3.5"/></element>
-		<element ref="rule_f39a32"><bounds x="1535.5" y="498.25" width="161.5" height="3.5"/></element>
-		<element ref="t30"><bounds x="1930.075" y="493.18" width="148.85" height="18.59"/></element>
-		<element ref="rule_f39a32"><bounds x="1716" y="498.25" width="161.5" height="3.5"/></element>
-		<element ref="rule_f39a32"><bounds x="2131.5" y="498.25" width="161.5" height="3.5"/></element>
-		<element ref="t31"><bounds x="1173.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t32"><bounds x="1322.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t33"><bounds x="1471.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t34"><bounds x="1620.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t31"><bounds x="1769.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t32"><bounds x="1918.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t33"><bounds x="2067.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="t34"><bounds x="2216.3" y="520.32" width="23.4" height="17.16"/></element>
-		<element ref="key" inputtag="SW0" inputmask="0x02"><bounds x="1120" y="545" width="130" height="50"/></element>
-		<element name="led1" ref="win_red"><bounds x="1169" y="551" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW1" inputmask="0x02"><bounds x="1269" y="545" width="130" height="50"/></element>
-		<element name="led9" ref="win_red"><bounds x="1318" y="551" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW2" inputmask="0x02"><bounds x="1418" y="545" width="130" height="50"/></element>
-		<element name="led17" ref="win_red"><bounds x="1467" y="551" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW0" inputmask="0x04"><bounds x="1567" y="545" width="130" height="50"/></element>
-		<element name="led2" ref="win_red"><bounds x="1616" y="551" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW1" inputmask="0x04"><bounds x="1716" y="545" width="130" height="50"/></element>
-		<element name="led10" ref="win_red"><bounds x="1765" y="551" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW2" inputmask="0x04"><bounds x="1865" y="545" width="130" height="50"/></element>
-		<element name="led18" ref="win_red"><bounds x="1914" y="551" width="32" height="11"/></element>
+		<element ref="label_part_switch"><bounds x="1585.5" y="397.2" width="229" height="28.6"/></element>
+		<element ref="label_select"><bounds x="1633" y="426.2" width="134" height="28.6"/></element>
+		<element ref="rule_blue"><bounds x="1120" y="446.25" width="519.932" height="3.5"/></element>
+		<element ref="rule_blue"><bounds x="1760.068" y="446.25" width="529.932" height="3.5"/></element>
+		<element ref="label_1_9"><bounds x="1161.9" y="463.32" width="46.2" height="17.16"/></element>
+		<element ref="label_2_10"><bounds x="1305.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_3_11"><bounds x="1454.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_4_12"><bounds x="1603.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_5_13"><bounds x="1752.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_6_14"><bounds x="1901.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_7_15"><bounds x="2050.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_8_16"><bounds x="2199.2" y="463.32" width="57.6" height="17.16"/></element>
+		<element ref="label_tone_switch"><bounds x="1294" y="485.2" width="229" height="28.6"/></element>
+		<element ref="rule_orange"><bounds x="1120" y="505.25" width="179.5" height="3.5"/></element>
+		<element ref="rule_orange"><bounds x="1517.5" y="505.25" width="179.5" height="3.5"/></element>
+		<element ref="label_tone_select"><bounds x="1890" y="485.2" width="229" height="28.6"/></element>
+		<element ref="rule_orange"><bounds x="1716" y="505.25" width="181.974" height="3.5"/></element>
+		<element ref="rule_orange"><bounds x="2111.026" y="505.25" width="181.974" height="3.5"/></element>
+		<element ref="label_1"><bounds x="1173.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_2"><bounds x="1322.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_3"><bounds x="1471.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_4"><bounds x="1620.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_1"><bounds x="1769.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_2"><bounds x="1918.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_3"><bounds x="2067.3" y="520.32" width="23.4" height="17.16"/></element>
+		<element ref="label_4"><bounds x="2216.3" y="520.32" width="23.4" height="17.16"/></element>
+		<repeat count="3">
+			<param name="key_x" start="1120" increment="149"/>
+			<param name="key_port" start="0" increment="1"/>
+			<param name="lamp_x" start="1169" increment="149"/>
+			<param name="lamp_output" start="1" increment="8"/>
+			<element ref="key" inputtag="SW~key_port~" inputmask="0x02"><bounds x="~key_x~" y="545" width="130" height="50"/></element>
+			<element name="led~lamp_output~" ref="win_red"><bounds x="~lamp_x~" y="551" width="32" height="11"/></element>
+		</repeat>
+		<repeat count="3">
+			<param name="key_x" start="1567" increment="149"/>
+			<param name="key_port" start="0" increment="1"/>
+			<param name="lamp_x" start="1616" increment="149"/>
+			<param name="lamp_output" start="2" increment="8"/>
+			<element ref="key" inputtag="SW~key_port~" inputmask="0x04"><bounds x="~key_x~" y="545" width="130" height="50"/></element>
+			<element name="led~lamp_output~" ref="win_red"><bounds x="~lamp_x~" y="551" width="32" height="11"/></element>
+		</repeat>
 		<element ref="key" inputtag="SW0" inputmask="0x08"><bounds x="2014" y="545" width="130" height="50"/></element>
 		<element name="led3" ref="win_red"><bounds x="2063" y="551" width="32" height="11"/></element>
 		<element ref="key" inputtag="SW1" inputmask="0x08"><bounds x="2163" y="545" width="130" height="50"/></element>
 		<element name="led11" ref="win_red"><bounds x="2212" y="551" width="32" height="11"/></element>
-		<element ref="t37"><bounds x="955" y="491.32" width="46.2" height="17.16"/></element>
-		<element ref="t38"><bounds x="955" y="519.32" width="57.6" height="17.16"/></element>
+		<element ref="label_1_8"><bounds x="955" y="491.32" width="46.2" height="17.16"/></element>
+		<element ref="label_9_16"><bounds x="955" y="519.32" width="57.6" height="17.16"/></element>
 		<element ref="key" inputtag="SW2" inputmask="0x01"><bounds x="890" y="545" width="155" height="50"/></element>
 		<element name="led16" ref="win_red"><bounds x="951.5" y="551" width="32" height="11"/></element>
-		<element ref="t39"><bounds x="1144.8" y="623.32" width="80.4" height="17.16"/></element>
-		<element ref="t40"><bounds x="1288.1" y="623.32" width="91.8" height="17.16"/></element>
-		<element ref="t41"><bounds x="1437.1" y="623.32" width="91.8" height="17.16"/></element>
-		<element ref="t42"><bounds x="1603.2" y="623.32" width="57.6" height="17.16"/></element>
-		<element ref="t43"><bounds x="1757.9" y="623.32" width="46.2" height="17.16"/></element>
-		<element ref="t44"><bounds x="1895.5" y="623.32" width="69" height="17.16"/></element>
-		<element ref="t45"><bounds x="2055.9" y="623.32" width="46.2" height="17.16"/></element>
-		<element ref="t46"><bounds x="2204.9" y="623.32" width="46.2" height="17.16"/></element>
-		<element ref="t47"><bounds x="1144.8" y="663.32" width="80.4" height="17.16"/></element>
-		<element ref="t48"><bounds x="1288.1" y="663.32" width="91.8" height="17.16"/></element>
-		<element ref="t49"><bounds x="1454.2" y="663.32" width="57.6" height="17.16"/></element>
-		<element ref="t50"><bounds x="1603.2" y="663.32" width="57.6" height="17.16"/></element>
-		<element ref="t51"><bounds x="1769.3" y="663.32" width="23.4" height="17.16"/></element>
-		<element ref="t52"><bounds x="1895.5" y="663.32" width="69" height="17.16"/></element>
-		<element ref="t53"><bounds x="2055.9" y="663.32" width="46.2" height="17.16"/></element>
-		<element ref="t54"><bounds x="2193.5" y="663.32" width="69" height="17.16"/></element>
-		<element ref="t55"><bounds x="1150.5" y="703.32" width="69" height="17.16"/></element>
-		<element ref="t56"><bounds x="1322.3" y="703.32" width="23.4" height="17.16"/></element>
-		<element ref="t57"><bounds x="1454.2" y="703.32" width="57.6" height="17.16"/></element>
-		<element ref="t56"><bounds x="1620.3" y="703.32" width="23.4" height="17.16"/></element>
-		<element ref="t56"><bounds x="1769.3" y="703.32" width="23.4" height="17.16"/></element>
-		<element ref="t58"><bounds x="1901.2" y="703.32" width="57.6" height="17.16"/></element>
-		<element ref="t56"><bounds x="2067.3" y="703.32" width="23.4" height="17.16"/></element>
-		<element ref="t59"><bounds x="2182.1" y="703.32" width="91.8" height="17.16"/></element>
-		<element ref="t60"><bounds x="756.45" y="649.04" width="107.1" height="20.02"/></element>
-		<element ref="t61"><bounds x="908.15" y="649.04" width="133.7" height="20.02"/></element>
+		<element ref="label_common"><bounds x="1144.8" y="623.32" width="80.4" height="17.16"/></element>
+		<element ref="label_effects"><bounds x="1288.1" y="623.32" width="91.8" height="17.16"/></element>
+		<element ref="label_control"><bounds x="1437.1" y="623.32" width="91.8" height="17.16"/></element>
+		<element ref="label_wave"><bounds x="1603.2" y="623.32" width="57.6" height="17.16"/></element>
+		<element ref="label_lfo"><bounds x="1757.9" y="623.32" width="46.2" height="17.16"/></element>
+		<element ref="label_pitch"><bounds x="1895.5" y="623.32" width="69" height="17.16"/></element>
+		<element ref="label_tvf"><bounds x="2055.9" y="623.32" width="46.2" height="17.16"/></element>
+		<element ref="label_tva"><bounds x="2204.9" y="623.32" width="46.2" height="17.16"/></element>
+		<element ref="label_common_2"><bounds x="1144.8" y="663.32" width="80.4" height="17.16"/></element>
+		<element ref="label_effects_2"><bounds x="1288.1" y="663.32" width="91.8" height="17.16"/></element>
+		<element ref="label_midi"><bounds x="1454.2" y="663.32" width="57.6" height="17.16"/></element>
+		<element ref="label_part"><bounds x="1603.2" y="663.32" width="57.6" height="17.16"/></element>
+		<element ref="label_mark"><bounds x="1769.3" y="663.32" width="23.4" height="17.16"/></element>
+		<element ref="label_pitch_2"><bounds x="1895.5" y="663.32" width="69" height="17.16"/></element>
+		<element ref="label_pan"><bounds x="2055.9" y="663.32" width="46.2" height="17.16"/></element>
+		<element ref="label_level"><bounds x="2193.5" y="663.32" width="69" height="17.16"/></element>
+		<element ref="label_setup"><bounds x="1150.5" y="703.32" width="69" height="17.16"/></element>
+		<element ref="label_mark_2"><bounds x="1322.3" y="703.32" width="23.4" height="17.16"/></element>
+		<element ref="label_midi_2"><bounds x="1454.2" y="703.32" width="57.6" height="17.16"/></element>
+		<element ref="label_mark_2"><bounds x="1620.3" y="703.32" width="23.4" height="17.16"/></element>
+		<element ref="label_mark_2"><bounds x="1769.3" y="703.32" width="23.4" height="17.16"/></element>
+		<element ref="label_tune"><bounds x="1901.2" y="703.32" width="57.6" height="17.16"/></element>
+		<element ref="label_mark_2"><bounds x="2067.3" y="703.32" width="23.4" height="17.16"/></element>
+		<element ref="label_preview"><bounds x="2182.1" y="703.32" width="91.8" height="17.16"/></element>
+		<element ref="label_palette"><bounds x="751.3" y="646.76" width="122.4" height="22.88"/></element>
+		<element ref="label_parameter"><bounds x="891.6" y="646.76" width="152.8" height="22.88"/></element>
 		<element ref="key" inputtag="SW0" inputmask="0x01"><bounds x="740" y="680" width="145" height="50"/></element>
 		<element name="led0" ref="win_red"><bounds x="796.5" y="686" width="32" height="11"/></element>
 		<element ref="key" inputtag="SW1" inputmask="0x01"><bounds x="895" y="680" width="150" height="50"/></element>
 		<element name="led8" ref="win_red"><bounds x="954" y="686" width="32" height="11"/></element>
-		<element ref="t62"><bounds x="2558.25" y="84.48" width="103.5" height="25.74"/></element>
+		<element ref="label_value"><bounds x="2558.25" y="84.48" width="103.5" height="25.74"/></element>
 		<element ref="dial" inputtag="PORTB" inputmask="0x01"><bounds x="2480" y="125" width="260" height="260"/></element>
-		<element ref="t64"><bounds x="2445.05" y="461.04" width="53.9" height="20.02"/></element>
+		<element ref="label_dec"><bounds x="2441.2" y="458.76" width="61.6" height="22.88"/></element>
 		<element ref="key" inputtag="PORTA" inputmask="0x08"><bounds x="2397" y="495" width="150" height="50"/></element>
-		<element ref="t65"><bounds x="2733.05" y="461.04" width="53.9" height="20.02"/></element>
+		<element ref="label_inc"><bounds x="2723.7" y="458.76" width="61.6" height="22.88"/></element>
 		<element ref="key" inputtag="PORTA" inputmask="0x04"><bounds x="2685" y="495" width="150" height="50"/></element>
-		<element ref="t66"><bounds x="2596.35" y="548.04" width="27.3" height="20.02"/></element>
+		<element ref="label_mark_3"><bounds x="2596.35" y="548.04" width="27.3" height="20.02"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x08"><bounds x="2535" y="575" width="150" height="50"/></element>
-		<element ref="t67"><bounds x="2438.4" y="628.04" width="67.2" height="20.02"/></element>
+		<element ref="label_mark_4"><bounds x="2438.4" y="628.04" width="67.2" height="20.02"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x02"><bounds x="2397" y="655" width="150" height="50"/></element>
-		<element ref="t68"><bounds x="2726.4" y="628.04" width="67.2" height="20.02"/></element>
+		<element ref="label_mark_5"><bounds x="2726.4" y="628.04" width="67.2" height="20.02"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x10"><bounds x="2685" y="655" width="150" height="50"/></element>
-		<element ref="t69"><bounds x="2596.35" y="703.04" width="27.3" height="20.02"/></element>
+		<element ref="label_mark_6"><bounds x="2596.35" y="703.04" width="27.3" height="20.02"/></element>
 		<element ref="key" inputtag="SW3" inputmask="0x01"><bounds x="2535" y="730" width="150" height="50"/></element>
-		<element ref="t70"><bounds x="2931.45" y="113.04" width="107.1" height="20.02"/></element>
-		<element ref="key" inputtag="SW0" inputmask="0x40"><bounds x="2910" y="145" width="150" height="50"/></element>
-		<element name="led6" ref="win_red"><bounds x="2969" y="151" width="32" height="11"/></element>
-		<element ref="t71"><bounds x="3109.75" y="113.04" width="80.5" height="20.02"/></element>
-		<element ref="key" inputtag="SW1" inputmask="0x40"><bounds x="3075" y="145" width="150" height="50"/></element>
-		<element name="led14" ref="win_red"><bounds x="3134" y="151" width="32" height="11"/></element>
-		<element ref="t72"><bounds x="3268.1" y="113.04" width="93.8" height="20.02"/></element>
-		<element ref="key" inputtag="SW2" inputmask="0x40"><bounds x="3240" y="145" width="150" height="50"/></element>
-		<element name="led22" ref="win_red"><bounds x="3299" y="151" width="32" height="11"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2885" y="216" width="45" height="2"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2884" y="217" width="2" height="308"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2885" y="524" width="25" height="2"/></element>
-		<element ref="rule_e9e9e5"><bounds x="2885" y="395" width="45" height="2"/></element>
-		<element ref="t74"><bounds x="2945" y="210.04" width="40.6" height="20.02"/></element>
-		<element ref="t75"><bounds x="2945" y="390.04" width="67.2" height="20.02"/></element>
-		<element ref="t76"><bounds x="2938.1" y="292.04" width="93.8" height="20.02"/></element>
-		<element ref="t77"><bounds x="3096.45" y="292.04" width="107.1" height="20.02"/></element>
-		<element ref="t78"><bounds x="3269.1" y="269.32" width="91.8" height="17.16"/></element>
-		<element ref="t79"><bounds x="3274.8" y="294.32" width="80.4" height="17.16"/></element>
+		<element ref="label_perform"><bounds x="2931.45" y="113.04" width="107.1" height="20.02"/></element>
+		<element ref="label_patch"><bounds x="3109.75" y="113.04" width="80.5" height="20.02"/></element>
+		<element ref="label_rhythm"><bounds x="3268.1" y="113.04" width="93.8" height="20.02"/></element>
+		<repeat count="3">
+			<param name="key_x" start="2910" increment="165"/>
+			<param name="key_port" start="0" increment="1"/>
+			<param name="lamp_x" start="2969" increment="165"/>
+			<param name="lamp_output" start="6" increment="8"/>
+			<element ref="key" inputtag="SW~key_port~" inputmask="0x40"><bounds x="~key_x~" y="145" width="150" height="50"/></element>
+			<element name="led~lamp_output~" ref="win_red"><bounds x="~lamp_x~" y="151" width="32" height="11"/></element>
+		</repeat>
+		<element ref="rule"><bounds x="2885" y="216" width="45" height="2"/></element>
+		<element ref="rule"><bounds x="2884" y="217" width="2" height="308"/></element>
+		<element ref="rule"><bounds x="2885" y="524" width="25" height="2"/></element>
+		<element ref="rule"><bounds x="2885" y="395" width="45" height="2"/></element>
+		<element ref="label_gm"><bounds x="2945" y="210.04" width="40.6" height="20.02"/></element>
+		<element ref="label_info"><bounds x="2945" y="390.04" width="67.2" height="20.02"/></element>
+		<element ref="label_system"><bounds x="2938.1" y="292.04" width="93.8" height="20.02"/></element>
+		<element ref="label_utility"><bounds x="3096.45" y="292.04" width="107.1" height="20.02"/></element>
+		<element ref="label_effects_3"><bounds x="3269.1" y="269.32" width="91.8" height="17.16"/></element>
+		<element ref="label_on_off"><bounds x="3274.8" y="294.32" width="80.4" height="17.16"/></element>
 		<element ref="key" inputtag="SW2" inputmask="0x08"><bounds x="2910" y="325" width="150" height="50"/></element>
 		<element name="led19" ref="win_red"><bounds x="2969" y="331" width="32" height="11"/></element>
 		<element ref="key" inputtag="SW0" inputmask="0x10"><bounds x="3075" y="325" width="150" height="50"/></element>
 		<element name="led4" ref="win_red"><bounds x="3134" y="331" width="32" height="11"/></element>
 		<element ref="key" inputtag="SW1" inputmask="0x10"><bounds x="3240" y="325" width="150" height="50"/></element>
 		<element name="led12" ref="win_red"><bounds x="3299" y="331" width="32" height="11"/></element>
-		<element ref="t80"><bounds x="2947.625" y="470.18" width="74.75" height="18.59"/></element>
-		<element ref="t81"><bounds x="3116.4" y="469.04" width="67.2" height="20.02"/></element>
-		<element ref="t82"><bounds x="3274.75" y="469.04" width="80.5" height="20.02"/></element>
-		<element ref="key" inputtag="SW3" inputmask="0x20"><bounds x="2910" y="500" width="150" height="50"/></element>
-		<element ref="key" inputtag="SW3" inputmask="0x40"><bounds x="3075" y="500" width="150" height="50"/></element>
-		<element ref="key" inputtag="SW3" inputmask="0x80"><bounds x="3240" y="500" width="150" height="50"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3014" y="555" width="2" height="28"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3015" y="582" width="230" height="2"/></element>
-		<element ref="t83"><bounds x="3263.4" y="576.32" width="103.2" height="17.16"/></element>
-		<element ref="t84"><bounds x="3588.15" y="116.04" width="133.7" height="20.02"/></element>
-		<element ref="t85"><bounds x="3756.1" y="116.04" width="93.8" height="20.02"/></element>
-		<element ref="t86"><bounds x="3931.05" y="116.04" width="53.9" height="20.02"/></element>
-		<element ref="key" inputtag="SW0" inputmask="0x80"><bounds x="3575" y="150" width="145" height="50"/></element>
-		<element name="led7" ref="win_red"><bounds x="3631.5" y="156" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW1" inputmask="0x80"><bounds x="3730" y="150" width="145" height="50"/></element>
-		<element name="led15" ref="win_red"><bounds x="3786.5" y="156" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW2" inputmask="0x80"><bounds x="3885" y="150" width="145" height="50"/></element>
-		<element name="led23" ref="win_red"><bounds x="3941.5" y="156" width="32" height="11"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3802" y="205" width="2" height="21"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3803" y="225" width="155" height="2"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3957" y="205" width="2" height="21"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3871" y="226" width="2" height="44"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3571" y="270" width="2" height="20"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3572" y="269" width="450" height="2"/></element>
-		<element ref="rule_e9e9e5"><bounds x="4021" y="270" width="2" height="20"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3721" y="270" width="2" height="20"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3871" y="270" width="2" height="20"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3470" y="123.6" width="85" height="2"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3469" y="124.6" width="2" height="291.4"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3470" y="415" width="80" height="2"/></element>
-		<element ref="t87"><bounds x="3558.35" y="299.04" width="27.3" height="20.02"/></element>
-		<element ref="t88"><bounds x="3708.35" y="299.04" width="27.3" height="20.02"/></element>
-		<element ref="t89"><bounds x="3858.35" y="299.04" width="27.3" height="20.02"/></element>
-		<element ref="t90"><bounds x="4008.35" y="299.04" width="27.3" height="20.02"/></element>
-		<element ref="t91"><bounds x="4055" y="301.32" width="126" height="17.16"/></element>
+		<element ref="label_shift"><bounds x="2947.625" y="470.18" width="74.75" height="18.59"/></element>
+		<element ref="label_exit"><bounds x="3111.6" y="466.76" width="76.8" height="22.88"/></element>
+		<element ref="label_enter"><bounds x="3269" y="466.76" width="92" height="22.88"/></element>
+		<repeat count="3">
+			<param name="key_x" start="2910" increment="165"/>
+			<param name="key_mask" start="0x20" lshift="1"/>
+			<element ref="key" inputtag="SW3" inputmask="~key_mask~"><bounds x="~key_x~" y="500" width="150" height="50"/></element>
+		</repeat>
+		<element ref="rule"><bounds x="3014" y="555" width="2" height="28"/></element>
+		<element ref="rule"><bounds x="3015" y="582" width="230" height="2"/></element>
+		<element ref="label_rom_play"><bounds x="3263.4" y="576.32" width="103.2" height="17.16"/></element>
+		<element ref="label_user"><bounds x="3558.2" y="112.62" width="81.6" height="24.31"/></element>
+		<element ref="label_card"><bounds x="3634.125" y="112.62" width="97.75" height="24.31"/></element>
+		<element ref="label_preset"><bounds x="3742.05" y="112.62" width="113.9" height="24.31"/></element>
+		<element ref="label_exp"><bounds x="3912.775" y="112.62" width="65.45" height="24.31"/></element>
+		<repeat count="3">
+			<param name="key_x" start="3575" increment="155"/>
+			<param name="key_port" start="0" increment="1"/>
+			<param name="lamp_x" start="3631.5" increment="155"/>
+			<param name="lamp_output" start="7" increment="8"/>
+			<element ref="key" inputtag="SW~key_port~" inputmask="0x80"><bounds x="~key_x~" y="150" width="145" height="50"/></element>
+			<element name="led~lamp_output~" ref="win_red"><bounds x="~lamp_x~" y="156" width="32" height="11"/></element>
+		</repeat>
+		<element ref="rule"><bounds x="3802" y="205" width="2" height="21"/></element>
+		<element ref="rule"><bounds x="3803" y="225" width="155" height="2"/></element>
+		<element ref="rule"><bounds x="3957" y="205" width="2" height="21"/></element>
+		<element ref="rule"><bounds x="3871" y="226" width="2" height="44"/></element>
+		<element ref="rule"><bounds x="3571" y="270" width="2" height="20"/></element>
+		<element ref="rule"><bounds x="3572" y="269" width="450" height="2"/></element>
+		<element ref="rule"><bounds x="4021" y="270" width="2" height="20"/></element>
+		<element ref="rule"><bounds x="3721" y="270" width="2" height="20"/></element>
+		<element ref="rule"><bounds x="3871" y="270" width="2" height="20"/></element>
+		<element ref="rule"><bounds x="3470" y="123.6" width="85" height="2"/></element>
+		<element ref="rule"><bounds x="3469" y="124.6" width="2" height="291.4"/></element>
+		<element ref="rule"><bounds x="3470" y="415" width="56" height="2"/></element>
+		<element ref="label_a"><bounds x="3555.425" y="295.62" width="33.15" height="24.31"/></element>
+		<element ref="label_b"><bounds x="3705.425" y="295.62" width="33.15" height="24.31"/></element>
+		<element ref="label_c"><bounds x="3855.425" y="295.62" width="33.15" height="24.31"/></element>
+		<element ref="label_d"><bounds x="4005.425" y="295.62" width="33.15" height="24.31"/></element>
+		<element ref="label_gm_patch"><bounds x="4023.75" y="295.62" width="178.5" height="24.31"/></element>
 		<element ref="key" inputtag="SW2" inputmask="0x10"><bounds x="3500" y="330" width="145" height="50"/></element>
 		<element name="led20" ref="win_red"><bounds x="3556.5" y="336" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW0" inputmask="0x20"><bounds x="3650" y="330" width="145" height="50"/></element>
-		<element name="led5" ref="win_red"><bounds x="3706.5" y="336" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW1" inputmask="0x20"><bounds x="3800" y="330" width="145" height="50"/></element>
-		<element name="led13" ref="win_red"><bounds x="3856.5" y="336" width="32" height="11"/></element>
-		<element ref="key" inputtag="SW2" inputmask="0x20"><bounds x="3950" y="330" width="145" height="50"/></element>
-		<element name="led21" ref="win_red"><bounds x="4006.5" y="336" width="32" height="11"/></element>
-		<element ref="t92"><bounds x="3560" y="413.32" width="57.6" height="17.16"/></element>
-		<element ref="rule_e9e9e5"><bounds x="3695" y="420" width="50" height="2"/></element>
-		<element ref="t93"><bounds x="3843.2" y="403.32" width="57.6" height="17.16"/></element>
-		<element ref="t94"><bounds x="3843.2" y="427.32" width="57.6" height="17.16"/></element>
-		<element ref="t95"><bounds x="3998.9" y="403.32" width="46.2" height="17.16"/></element>
-		<element ref="t94"><bounds x="3993.2" y="427.32" width="57.6" height="17.16"/></element>
-		<element ref="t96"><bounds x="4268.4" y="222.48" width="223.2" height="25.74"/></element>
+		<repeat count="3">
+			<param name="key_x" start="3650" increment="150"/>
+			<param name="key_port" start="0" increment="1"/>
+			<param name="lamp_x" start="3706.5" increment="150"/>
+			<param name="lamp_output" start="5" increment="8"/>
+			<element ref="key" inputtag="SW~key_port~" inputmask="0x20"><bounds x="~key_x~" y="330" width="145" height="50"/></element>
+			<element name="led~lamp_output~" ref="win_red"><bounds x="~lamp_x~" y="336" width="32" height="11"/></element>
+		</repeat>
+		<element ref="label_user"><bounds x="3531.7" y="407.62" width="81.6" height="24.31"/></element>
+		<element ref="rule"><bounds x="3695" y="420" width="50" height="2"/></element>
+		<element ref="label_data"><bounds x="3843.2" y="403.32" width="57.6" height="17.16"/></element>
+		<element ref="label_card_2"><bounds x="3843.2" y="427.32" width="57.6" height="17.16"/></element>
+		<element ref="label_pcm"><bounds x="3998.9" y="403.32" width="46.2" height="17.16"/></element>
+		<element ref="label_card_2"><bounds x="3993.2" y="427.32" width="57.6" height="17.16"/></element>
+		<element ref="label_midi_message"><bounds x="4247.5" y="220.2" width="248" height="28.6"/></element>
 		<element name="led24" ref="bar_green"><bounds x="4295" y="260" width="160" height="22"/></element>
-		<element ref="t98"><bounds x="3585" y="469.9" width="129" height="21.45"/></element>
+		<element ref="label_pcm_card"><bounds x="3553.7" y="469.76" width="137.6" height="22.88"/></element>
 		<element ref="recess"><bounds x="3500" y="500" width="600" height="100"/></element>
 		<element ref="mouth"><bounds x="3518" y="540" width="564" height="22"/></element>
-		<element ref="t101"><bounds x="3585" y="629.9" width="143.25" height="21.45"/></element>
+		<element ref="label_data_card"><bounds x="3550.6" y="629.76" width="152.8" height="22.88"/></element>
 		<element ref="recess"><bounds x="3500" y="660" width="600" height="100"/></element>
 		<element ref="mouth"><bounds x="3518" y="700" width="564" height="22"/></element>
-		<element ref="t102"><bounds x="4305.25" y="425.48" width="103.5" height="25.74"/></element>
+		<element ref="label_power"><bounds x="4300" y="423.2" width="115" height="28.6"/></element>
 		<element ref="key"><bounds x="4265" y="465" width="185" height="170"/></element>
 	</view>
 
