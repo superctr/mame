@@ -115,9 +115,6 @@ sh_itu_channel_device::sh_itu_channel_device(const machine_config &mconfig, cons
 
 void sh_itu_channel_device::device_start()
 {
-	m_channel_active = false;
-	device_reset();
-
 	save_item(NAME(m_gr_clearing));
 	save_item(NAME(m_tcr));
 	save_item(NAME(m_tior));
@@ -151,6 +148,7 @@ void sh_itu_channel_device::device_reset()
 	m_event_time = 0;
 	m_phase = 0;
 	m_counter_cycle = 0x10000;
+	m_channel_active = false;
 }
 
 u8 sh_itu_channel_device::tcr_r()

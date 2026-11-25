@@ -36,6 +36,7 @@ const u8 sh_intc_device::pribit[0x100] = {
 
 sh_intc_device::sh_intc_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	device_t(mconfig, SH_INTC, tag, owner, clock),
+	m_level_sense_bit(true),
 	m_cpu(*this, finder_base::DUMMY_TAG)
 {
 }
@@ -48,7 +49,6 @@ void sh_intc_device::device_start()
 	save_item(NAME(m_lines));
 	save_item(NAME(m_edge));
 	save_item(NAME(m_isr_read));
-	save_item(NAME(m_level_sense_bit));
 
 	std::fill(m_ipr.begin(), m_ipr.end(), 0);
 	m_icr = 0;
@@ -64,8 +64,6 @@ void sh_intc_device::device_reset()
 	m_isr_read = 0;
 }
 
-// IRQn's request is its line while it is level sensed, and the latched
-// edge while it is edge sensed
 u8 sh_intc_device::irq_requests() const
 {
 	u8 requests = 0;
@@ -140,8 +138,6 @@ void sh_intc_device::icr_w(offs_t, u16 data, u16 mem_mask)
 	update_irq();
 }
 
-// IRQ0F-IRQ7F are bits 7-0; an edge-sensed request is withdrawn by
-// writing zero to its flag after reading it as one
 u16 sh_intc_device::isr_r()
 {
 	u8 flags = 0;

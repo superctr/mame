@@ -307,8 +307,8 @@ void sh3_base_device::brdr_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 // CPG
 static int sh3_cpg_ratio(int code)
 {
-	static const int ratio[8] = { 1, 2, 4, 1, 3, 6, 1, 1 };
-	return ratio[code];
+	static constexpr int RATIOS[8] = { 1, 2, 4, 1, 3, 6, 1, 1 };
+	return RATIOS[code];
 }
 
 void sh3_base_device::sh3_cpg_update()
@@ -353,15 +353,17 @@ void sh3_base_device::stbcr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 	logerror("'%s' (%08x): CPG unmapped internal write %02x & %02x (STBCR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
-// the watchdog: an 8-bit counter on the peripheral clock, overflowing into
-// the ITI interrupt in interval mode and into a reset in watchdog mode
-static const int sh3_wdt_div[8] = { 2, 64, 128, 256, 512, 1024, 4096, 8192 };
+namespace {
+
+constexpr int SH3_WDT_DIVIDERS[8] = { 2, 64, 128, 256, 512, 1024, 4096, 8192 };
+
+} // anonymous namespace
 
 void sh3_base_device::sh3_wdt_update()
 {
 	if (m_wtcsr & 0x80)
 	{
-		const attotime period = attotime::from_hz(m_pm_clock) * sh3_wdt_div[m_wtcsr & 7];
+		const attotime period = attotime::from_hz(m_pm_clock) * SH3_WDT_DIVIDERS[m_wtcsr & 7];
 		m_wdt_timer->adjust(period * (256 - m_wtcnt));
 	}
 	else
@@ -375,7 +377,7 @@ uint8_t sh3_base_device::sh3_wdt_count()
 {
 	if ((m_wtcsr & 0x80) && m_wdt_timer->enabled())
 	{
-		const attotime period = attotime::from_hz(m_pm_clock) * sh3_wdt_div[m_wtcsr & 7];
+		const attotime period = attotime::from_hz(m_pm_clock) * SH3_WDT_DIVIDERS[m_wtcsr & 7];
 		const int remaining = int(std::ceil(m_wdt_timer->remaining().as_double() / period.as_double()));
 		return 256 - std::clamp(remaining, 1, 256);
 	}
@@ -952,37 +954,58 @@ void sh3_base_device::intevt2_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 	logerror("'%s' (%08x): INTC unmapped internal write %08x & %08x (INTEVT2)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
-//  IRQ0-IRQ5 are edge sensed, and a request stands in IRR0 until the
-//  handler writes its bit back as zero
 void sh3_base_device::execute_set_input(int irqline, int state)
 {
-	if (irqline != INPUT_LINE_NMI && irqline < 8)
+	if (irqline == INPUT_LINE_NMI || irqline >= 6)
 	{
-		if (state == CLEAR_LINE)
-			m_irr0 &= ~(1 << irqline);
-		else
-			m_irr0 |= 1 << irqline;
+		sh34_base_device::execute_set_input(irqline, state);
+		return;
 	}
-	sh34_base_device::execute_set_input(irqline, state);
+
+	const bool was = m_irq_line_state[irqline] != CLEAR_LINE;
+	const bool now = state != CLEAR_LINE;
+	m_irq_line_state[irqline] = state;
+	switch (BIT(m_icr1, 2 * irqline, 2))
+	{
+	case 0:
+		if (now && !was)
+			m_irr0 |= 1 << irqline;
+		break;
+	case 1:
+		if (!now && was)
+			m_irr0 |= 1 << irqline;
+		break;
+	case 2:
+		m_irr0 = now ? (m_irr0 | (1 << irqline)) : (m_irr0 & ~(1 << irqline));
+		break;
+	}
+	sh3_irq_update(irqline);
+}
+
+void sh3_base_device::sh3_irq_update(int irqline)
+{
+	const bool request = (BIT(m_icr1, 2 * irqline, 2) == 2) ? (m_irq_line_state[irqline] != CLEAR_LINE) : BIT(m_irr0, irqline);
+	if (request)
+		sh4_exception_request(SH4_INTC_IRL0 + irqline - SH4_IRL0);
+	else
+		sh4_exception_unrequest(SH4_INTC_IRL0 + irqline - SH4_IRL0);
 }
 
 uint8_t sh3_base_device::irr0_r(offs_t offset, uint8_t mem_mask)
 {
-	logerror("'%s' (%08x): INTC unmapped internal read mask %02x (IRR0) %02x\n", tag(), m_sh2_state->pc, mem_mask, m_irr0);
 	return m_irr0;
 }
 
 void sh3_base_device::irr0_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 {
-	COMBINE_DATA(&m_irr0);
-	logerror("'%s' (%08x): INTC unmapped internal write %02x & %02x (IRR0)\n", tag(), m_sh2_state->pc, data, mem_mask);
-	//  not sure if this is how we should clear lines in this core...
-	if (!(data & 0x01)) execute_set_input(0, CLEAR_LINE);
-	if (!(data & 0x02)) execute_set_input(1, CLEAR_LINE);
-	if (!(data & 0x04)) execute_set_input(2, CLEAR_LINE);
-	if (!(data & 0x08)) execute_set_input(3, CLEAR_LINE);
-	if (!(data & 0x10)) execute_set_input(4, CLEAR_LINE);
-	if (!(data & 0x20)) execute_set_input(5, CLEAR_LINE);
+	for (int irqline = 0; irqline < 6; irqline++)
+	{
+		if (BIT(mem_mask, irqline) && !BIT(data, irqline) && BIT(m_icr1, 2 * irqline, 2) != 2)
+		{
+			m_irr0 &= ~(1 << irqline);
+			sh3_irq_update(irqline);
+		}
+	}
 }
 
 uint8_t sh3_base_device::irr1_r(offs_t offset, uint8_t mem_mask)
@@ -1011,14 +1034,14 @@ void sh3_base_device::irr2_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 
 uint16_t sh3_base_device::icr1_r(offs_t offset, uint16_t mem_mask)
 {
-	logerror("'%s' (%08x): INTC unmapped internal read mask %04x (ICR1) %04x\n", tag(), m_sh2_state->pc, mem_mask, m_icr1);
 	return m_icr1;
 }
 
 void sh3_base_device::icr1_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_icr1);
-	logerror("'%s' (%08x): INTC unmapped internal write %04x & %04x (ICR1)\n", tag(), m_sh2_state->pc, data, mem_mask);
+	for (int irqline = 0; irqline < 6; irqline++)
+		sh3_irq_update(irqline);
 }
 
 uint16_t sh3_base_device::icr2_r(offs_t offset, uint16_t mem_mask)
@@ -1045,9 +1068,7 @@ void sh3_base_device::pinter_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 	sh3_pint_update();
 }
 
-//  PINT0-PINT15 are level sensed: ICR2 picks the level each pin asserts at,
-//  PINTER enables it, and each group of eight is one request
-template <unsigned Line> void sh3_base_device::pint_w(int state)
+template <u32 Line> void sh3_base_device::pint_w(int state)
 {
 	m_pint_in = (m_pint_in & ~(1 << Line)) | ((state ? 1 : 0) << Line);
 	sh3_pint_update();
@@ -1198,8 +1219,6 @@ void sh3_base_device::cmcor_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 	logerror("'%s' (%08x): CMT unmapped internal write %04x & %04x (CMCOR)\n", tag(), m_sh2_state->pc, data, mem_mask);
 }
 
-// AD 7709: a 10-bit successive approximation converter over two groups of
-// four channels, started by ADST or by a falling edge on ADTRG
 void sh3_base_device::sh3_adc_irq_update()
 {
 	if ((m_adcsr & 0xc0) == 0xc0)
@@ -1327,9 +1346,6 @@ void sh3_base_device::dadcr_w(offs_t offset, uint8_t data, uint8_t mem_mask)
 
 // PORT 7709
 
-// each pin of a port control register: 00 other function, 01 output, 10 input
-// with pull-up, 11 input.  The I/O space sees the output pins' data in the
-// low byte with the control register above it, and supplies the input pins.
 uint8_t sh3_base_device::port_direction(uint16_t cr)
 {
 	uint8_t dir = 0;

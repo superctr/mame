@@ -3,23 +3,22 @@
 /***************************************************************************
 
     SH-3 serial communication interface (SCI), channel 0 of the SH7708
-    and SH7709 families, asynchronous mode.
+    and SH7709 families
 
-    Double-buffered transmitter and receiver on the internal baud rate
-    generator, the status flags with their read-before-clear rule, and the
-    four interrupt outputs (receive error, receive data full, transmit
-    data empty, transmit end), each a level that the SCSCR enables gate.
-    Synchronous mode, the multiprocessor format, the SCK pin and the smart
-    card interface are not modelled.  The SH-3's SCI has no DMAC request.
+    - asynchronous mode on the internal baud rate generator
+    - double-buffered transmitter and receiver
+    - ERI, RXI, TXI and TEI interrupt outputs
+
+    TODO:
+    - synchronous mode, the multiprocessor format, the SCK pin
+    - the smart card interface
 
 ***************************************************************************/
 
 #include "emu.h"
 #include "sh3_sci.h"
 
-#define LOG_UNIMPL  (1U << 1)
-
-#define VERBOSE (LOG_UNIMPL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
@@ -89,17 +88,17 @@ void sh3_sci_device::device_clock_changed()
 
 
 //-------------------------------------------------
-//  the line format and rate, from SCSMR and SCBRR
+//  the line format and rate
 //-------------------------------------------------
 
 void sh3_sci_device::update_format()
 {
 	if (m_scsmr & SMR_CA)
-		LOGMASKED(LOG_UNIMPL, "synchronous mode is not supported\n");
+		logerror("synchronous mode is not supported\n");
 	if (m_scsmr & SMR_MP)
-		LOGMASKED(LOG_UNIMPL, "multiprocessor format is not supported\n");
+		logerror("multiprocessor format is not supported\n");
 	if (m_scscr & 0x02)
-		LOGMASKED(LOG_UNIMPL, "external clock is not supported\n");
+		logerror("external clock is not supported\n");
 
 	const parity_t parity = (m_scsmr & SMR_PE) ? ((m_scsmr & SMR_OE) ? PARITY_ODD : PARITY_EVEN) : PARITY_NONE;
 	set_data_frame(1, (m_scsmr & SMR_CHR) ? 7 : 8, parity, (m_scsmr & SMR_STOP) ? STOP_BITS_2 : STOP_BITS_1);
@@ -110,10 +109,7 @@ void sh3_sci_device::update_format()
 
 
 //-------------------------------------------------
-//  the transmitter: SCTDR moves into the shift
-//  register once TDRE has been cleared, setting
-//  TDRE again; with TDRE still set when the frame
-//  ends, TEND is set and the line idles at mark
+//  the transmitter
 //-------------------------------------------------
 
 void sh3_sci_device::tx_start()
@@ -146,9 +142,7 @@ void sh3_sci_device::tra_complete()
 
 
 //-------------------------------------------------
-//  the receiver: a frame is lost to an overrun
-//  while RDRF is set, and nothing is received at
-//  all while an error flag is set
+//  the receiver
 //-------------------------------------------------
 
 void sh3_sci_device::rcv_complete()
@@ -301,6 +295,6 @@ u8 sh3_sci_device::scscmr_r()
 void sh3_sci_device::scscmr_w(u8 data)
 {
 	if (data & 0x01)
-		LOGMASKED(LOG_UNIMPL, "smart card interface is not supported\n");
+		logerror("smart card interface is not supported\n");
 	m_scscmr = data;
 }

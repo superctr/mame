@@ -16,6 +16,7 @@
 // To generalize eventually
 class sh_mcu_device;
 class sh_intc_device;
+class sh_dmac_channel_device;
 
 class sh_dmac_device : public device_t {
 public:
@@ -32,11 +33,11 @@ public:
 	u16 dmaor_r();
 	void dmaor_w(offs_t, u16 data, u16 mem_mask);
 
-	// the master enable is set and neither the NMI nor the address error flag is
 	bool transfer_allowed() const { return (m_dmaor & 7) == 1; }
 
 protected:
 	required_device<sh_mcu_device> m_cpu;
+	optional_device_array<sh_dmac_channel_device, 4> m_channel;
 
 	u16 m_dmaor;
 
@@ -70,11 +71,9 @@ public:
 	u32 chcr_r();
 	void chcr_w(offs_t, u32 data, u32 mem_mask);
 
-	// the DREQ pin, 1 = request asserted
 	void dreq_w(int state);
-
-	// a change of the master enable
 	void dmaor_changed();
+	u64 internal_update(u64 current_time);
 
 protected:
 	enum {
@@ -100,7 +99,7 @@ protected:
 	u32 m_sar, m_dar, m_dmatcr, m_chcr;
 	bool m_dreq;
 	bool m_edge;
-	emu_timer *m_timer;
+	u64 m_next_unit;
 
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
@@ -110,7 +109,6 @@ protected:
 	bool armed() const;
 	void transfer_unit();
 	void request_check();
-	TIMER_CALLBACK_MEMBER(tick);
 };
 
 DECLARE_DEVICE_TYPE(SH_DMAC, sh_dmac_device)

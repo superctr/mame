@@ -13,6 +13,7 @@
 #include "sh_itu.h"
 #include "sh_port.h"
 #include "sh_sci.h"
+#include "sh_wdt.h"
 
 class sh7034_device : public sh_mcu_device
 {
@@ -48,49 +49,52 @@ protected:
 	virtual void execute_set_input(int irqline, int state) override;
 
 	virtual void internal_update(u64 current_time) override;
+	using sh_mcu_device::internal_update;
 
 	void sh7034_map(address_map &map) ATTR_COLD;
 	void peripheral_map(address_map &map) ATTR_COLD;
 
 private:
+	enum
+	{
+		VECTOR_DMAC0 = 72,
+		VECTOR_ITU0  = 80,
+		VECTOR_SCI0  = 100,
+		VECTOR_ADC   = 109,
+		VECTOR_WDT   = 112
+	};
+
 	required_device<sh_intc_device> m_intc;
 	required_device<sh_itu_device> m_itu;
 	required_device_array<sh_itu_channel_device, 5> m_itu_channel;
 	required_device_array<sh_sci_device, 2> m_sci;
 	required_device<sh_port16_device> m_porta;
 	required_device<sh_port16_device> m_portb;
+	required_device<sh_wdt_device> m_wdt;
 
 	devcb_write_line::array<2> m_sci_tx, m_sci_clk;
 	devcb_read16::array<3> m_read_port16;
 	devcb_read16::array<8> m_read_adc;
 	devcb_write16::array<2> m_write_port16;
 
-	// Direct memory access controller (DMAC)
 	u32 m_dma_sar[4], m_dma_dar[4];
 	u16 m_dma_tcr[4], m_dma_chcr[4];
 	u16 m_dmaor;
 	bool m_dreq[4];
-	bool m_dma_running;
+	u64 m_dma_next[4];
 
-	// A/D converter
 	u16 m_addr[4];
 	u8 m_adcsr, m_adcr;
 	emu_timer *m_adc_timer;
 
-	// Bus state controller (BSC)
 	u16 m_bcr, m_wcr[3], m_dcr, m_pcr, m_rcr, m_rtcsr, m_rtcnt, m_rtcor;
 
-	// User break controller (UBC)
 	u16 m_bar[2], m_bamr[2], m_bbr;
 
-	// Watchdog timer (WDT)
-	u8 m_wdt_tcsr, m_wdt_tcnt, m_wdt_rstcsr;
 	u8 m_sbycr;
 
-	// Pin function controller (PFC)
 	u16 m_pacr[2], m_pbcr[2], m_cascr;
 
-	// Programmable timing pattern controller (TPC)
 	u8 m_tpmr, m_tpcr, m_nder[2], m_ndr[2];
 
 	template <int Channel> u32 dma_sar_r() { return m_dma_sar[Channel]; }
@@ -103,8 +107,9 @@ private:
 	template <int Channel> void dma_chcr_w(offs_t, u16 data, u16 mem_mask);
 	u16 dmaor_r() { return m_dmaor; }
 	void dmaor_w(offs_t, u16 data, u16 mem_mask);
+	bool dma_armed(int channel) const;
 	void dma_check();
-	void dma_run(int channel);
+	u64 dma_update(int channel, u64 current_time);
 
 	u16 bcr_r() { return m_bcr; }
 	void bcr_w(offs_t, u16 data, u16 mem_mask) { COMBINE_DATA(&m_bcr); }
@@ -130,11 +135,6 @@ private:
 	u16 bbr_r() { return m_bbr; }
 	void bbr_w(offs_t, u16 data, u16 mem_mask) { COMBINE_DATA(&m_bbr); }
 
-	u8 wdt_tcsr_r() { return m_wdt_tcsr | 0x18; }
-	u8 wdt_tcnt_r() { return m_wdt_tcnt; }
-	u8 wdt_rstcsr_r() { return m_wdt_rstcsr | 0x1f; }
-	void wdt_w(offs_t, u16 data, u16 mem_mask);
-	void wdt_rstcsr_w(offs_t, u16 data, u16 mem_mask);
 	u8 sbycr_r() { return m_sbycr | 0x7f; }
 	void sbycr_w(u8 data) { m_sbycr = data & 0x80; }
 

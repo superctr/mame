@@ -107,7 +107,6 @@ public:
 	void set_enable(bool enable);
 	u64 internal_update(u64 current_time);
 
-	void set_unit(sh_mtu_device *mtu, int index) { m_mtu = mtu; m_index = index; }
 	int own_clearing_cycle() const;
 	void sync_changed();
 	void sync_preset(u16 data);
@@ -116,8 +115,7 @@ protected:
 	required_device<sh_mcu_device> m_cpu;
 	required_device<sh_intc_device> m_intc;
 	optional_device<sh_mtu_channel_device> m_chained_timer;
-	sh_mtu_device *m_mtu = nullptr;
-	int m_index = 0;
+	required_device<sh_mtu_device> m_mtu;
 	int m_interrupt[6];
 	u8 m_tier_mask;
 
@@ -173,9 +171,9 @@ public:
 	void tcbr_w(offs_t, u16 data, u16 mem_mask);
 
 	bool synchronized(int index) const;
-	int sync_clearing_cycle(int index) const;
-	void sync_changed(int index);
-	void sync_preset(int index, u16 data);
+	int sync_clearing_cycle(const sh_mtu_channel_device &channel) const;
+	void sync_changed(const sh_mtu_channel_device &channel);
+	void sync_preset(const sh_mtu_channel_device &channel, u16 data);
 
 protected:
 	required_device<sh_mcu_device> m_cpu;
@@ -188,6 +186,8 @@ protected:
 
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+
+	int index_of(const sh_mtu_channel_device &channel) const;
 };
 
 DECLARE_DEVICE_TYPE(SH_MTU, sh_mtu_device)

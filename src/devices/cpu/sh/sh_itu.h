@@ -78,9 +78,9 @@ protected:
 	int m_interrupt[3];
 	int m_br_count;
 
-	int m_gr_clearing;
+	s8 m_gr_clearing;
 	u8 m_tcr, m_tior, m_tier, m_tsr;
-	int m_clock_type, m_clock_divider;
+	u8 m_clock_type, m_clock_divider;
 	u16 m_tcnt;
 	std::array<u16, 2> m_gr, m_br;
 	u64 m_last_clock_update, m_event_time;

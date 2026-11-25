@@ -958,10 +958,10 @@ sh3_base_device::sh3_base_device(const machine_config &mconfig, device_type type
 void sh3_base_device::device_add_mconfig(machine_config &config)
 {
 	SH3_SCI(config, m_sci, 0);
-	m_sci->eri_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1ERI) : sh4_exception_unrequest(SH4_INTC_SCI1ERI); });
-	m_sci->rxi_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1RXI) : sh4_exception_unrequest(SH4_INTC_SCI1RXI); });
-	m_sci->txi_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1TXI) : sh4_exception_unrequest(SH4_INTC_SCI1TXI); });
-	m_sci->tei_handler().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCI1TEI) : sh4_exception_unrequest(SH4_INTC_SCI1TEI); });
+	m_sci->eri_handler().set(FUNC(sh3_base_device::irq_w<SH4_INTC_SCI1ERI>));
+	m_sci->rxi_handler().set(FUNC(sh3_base_device::irq_w<SH4_INTC_SCI1RXI>));
+	m_sci->txi_handler().set(FUNC(sh3_base_device::irq_w<SH4_INTC_SCI1TXI>));
+	m_sci->tei_handler().set(FUNC(sh3_base_device::irq_w<SH4_INTC_SCI1TEI>));
 }
 
 sh3_base_device::~sh3_base_device()
@@ -981,16 +981,16 @@ void sh7709_base_device::device_add_mconfig(machine_config &config)
 	sh3_base_device::device_add_mconfig(config);
 
 	SH7709_SCIF(config, m_irda, 0);
-	m_irda->write_eri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDAERI) : sh4_exception_unrequest(SH4_INTC_IRDAERI); });
-	m_irda->write_rxi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDARXI) : sh4_exception_unrequest(SH4_INTC_IRDARXI); });
-	m_irda->write_bri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDABRI) : sh4_exception_unrequest(SH4_INTC_IRDABRI); });
-	m_irda->write_txi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_IRDATXI) : sh4_exception_unrequest(SH4_INTC_IRDATXI); });
+	m_irda->write_eri().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_IRDAERI>));
+	m_irda->write_rxi().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_IRDARXI>));
+	m_irda->write_bri().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_IRDABRI>));
+	m_irda->write_txi().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_IRDATXI>));
 
 	SH7709_SCIF(config, m_scif, 0);
-	m_scif->write_eri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFERI) : sh4_exception_unrequest(SH4_INTC_SCIFERI); });
-	m_scif->write_rxi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFRXI) : sh4_exception_unrequest(SH4_INTC_SCIFRXI); });
-	m_scif->write_bri().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFBRI) : sh4_exception_unrequest(SH4_INTC_SCIFBRI); });
-	m_scif->write_txi().set([this](int state) { state ? sh4_exception_request(SH4_INTC_SCIFTXI) : sh4_exception_unrequest(SH4_INTC_SCIFTXI); });
+	m_scif->write_eri().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_SCIFERI>));
+	m_scif->write_rxi().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_SCIFRXI>));
+	m_scif->write_bri().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_SCIFBRI>));
+	m_scif->write_txi().set(FUNC(sh7709_base_device::irq_w<SH4_INTC_SCIFTXI>));
 }
 
 

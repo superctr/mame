@@ -248,9 +248,11 @@ int sh34_base_device::sh4_dma_transfer_device(int channel, uint32_t chcr, uint32
 	return 1;
 }
 
-// the SH-3's DS bit: DREQ is detected on its falling edge, a transfer unit
-// per request, rather than on its low level
-static constexpr uint32_t SH3_CHCR_DS = 0x00000040;
+namespace {
+
+constexpr uint32_t SH3_CHCR_DS = 0x00000040;
+
+} // anonymous namespace
 
 void sh34_base_device::sh4_dreq_w(int channel, int state)
 {

@@ -305,7 +305,6 @@ void sh7042_device::device_add_mconfig(machine_config &config)
 	SH_BSC(config, m_bsc);
 	SH_CMT(config, m_cmt, *this, m_intc, 144, 148);
 	SH_DMAC(config, m_dmac, *this);
-	// the interval timer interrupt is vector 152
 	SH_WDT(config, m_wdt, DERIVED_CLOCK(1, 1), m_intc, 152);
 	SH_DMAC_CHANNEL(config, m_dmac0, *this, m_intc, m_dmac, 0);
 	SH_DMAC_CHANNEL(config, m_dmac1, *this, m_intc, m_dmac, 1);
@@ -383,6 +382,10 @@ void sh7042_device::internal_update(u64 current_time)
 	add_event(event_time, m_mtu4->internal_update(current_time));
 	add_event(event_time, m_sci[0]->internal_update(current_time));
 	add_event(event_time, m_sci[1]->internal_update(current_time));
+	add_event(event_time, m_dmac0->internal_update(current_time));
+	add_event(event_time, m_dmac1->internal_update(current_time));
+	add_event(event_time, m_dmac2->internal_update(current_time));
+	add_event(event_time, m_dmac3->internal_update(current_time));
 
 	recompute_timer(event_time);
 }

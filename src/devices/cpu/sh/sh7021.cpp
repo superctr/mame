@@ -199,6 +199,12 @@ sh7021_device::sh7021_device(const machine_config &mconfig, const char *tag, dev
 
 void sh7021_device::execute_run()
 {
+	if (m_test_irq && !m_sh2_state->m_delay)
+	{
+		check_pending_irq("mame_sh2_execute");
+		m_test_irq = 0;
+	}
+
 	int consumed_cycles = 0;
 	do
 	{

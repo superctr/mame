@@ -13,13 +13,6 @@
 
 DEFINE_DEVICE_TYPE(SH7034, sh7034_device, "sh7034", "Hitachi SH-1 (SH7034)")
 
-enum {
-	VECTOR_DMAC0 = 72,
-	VECTOR_ITU0  = 80,
-	VECTOR_SCI0  = 100,
-	VECTOR_ADC   = 112
-};
-
 sh7034_device::sh7034_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	sh_mcu_device(mconfig, SH7034, tag, owner, clock, CPU_TYPE_SH1, address_map_constructor(FUNC(sh7034_device::sh7034_map), this), 28, 0xc7ffffff),
 	m_intc(*this, "intc"),
@@ -28,20 +21,22 @@ sh7034_device::sh7034_device(const machine_config &mconfig, const char *tag, dev
 	m_sci(*this, "sci%d", 0),
 	m_porta(*this, "porta"),
 	m_portb(*this, "portb"),
+	m_wdt(*this, "wdt"),
 	m_sci_tx(*this),
 	m_sci_clk(*this),
 	m_read_port16(*this, 0xffff),
 	m_read_adc(*this, 0),
-	m_write_port16(*this)
+	m_write_port16(*this),
+	m_dreq{ false, false, false, false }
 {
 	m_isdrc = false;
 
-	for(unsigned int i = 0; i != m_read_adc.size(); i++)
+	for(u32 i = 0; i != m_read_adc.size(); i++)
 		m_read_adc[i].bind().set([this, i]() { return adc_default(i); });
 
-	for(unsigned int i = 0; i != m_read_port16.size(); i++)
+	for(u32 i = 0; i != m_read_port16.size(); i++)
 		m_read_port16[i].bind().set([this, i]() { return port16_default_r(i); });
-	for(unsigned int i = 0; i != m_write_port16.size(); i++)
+	for(u32 i = 0; i != m_write_port16.size(); i++)
 		m_write_port16[i].bind().set([this, i](u16 data) { port16_default_w(i, data); });
 }
 
@@ -68,6 +63,7 @@ void sh7034_device::device_start()
 	sh_mcu_device::device_start();
 
 	m_adc_timer = timer_alloc(FUNC(sh7034_device::adc_done), this);
+	m_dmaor = 0;
 
 	save_item(NAME(m_addr));
 	save_item(NAME(m_adcsr));
@@ -78,6 +74,7 @@ void sh7034_device::device_start()
 	save_item(NAME(m_dma_chcr));
 	save_item(NAME(m_dmaor));
 	save_item(NAME(m_dreq));
+	save_item(NAME(m_dma_next));
 	save_item(NAME(m_bcr));
 	save_item(NAME(m_wcr));
 	save_item(NAME(m_dcr));
@@ -89,9 +86,6 @@ void sh7034_device::device_start()
 	save_item(NAME(m_bar));
 	save_item(NAME(m_bamr));
 	save_item(NAME(m_bbr));
-	save_item(NAME(m_wdt_tcsr));
-	save_item(NAME(m_wdt_tcnt));
-	save_item(NAME(m_wdt_rstcsr));
 	save_item(NAME(m_sbycr));
 	save_item(NAME(m_pacr));
 	save_item(NAME(m_pbcr));
@@ -100,8 +94,6 @@ void sh7034_device::device_start()
 	save_item(NAME(m_tpcr));
 	save_item(NAME(m_nder));
 	save_item(NAME(m_ndr));
-
-	m_dma_running = false;
 }
 
 void sh7034_device::device_reset()
@@ -112,7 +104,7 @@ void sh7034_device::device_reset()
 	std::fill(std::begin(m_dma_dar), std::end(m_dma_dar), 0);
 	std::fill(std::begin(m_dma_tcr), std::end(m_dma_tcr), 0);
 	std::fill(std::begin(m_dma_chcr), std::end(m_dma_chcr), 0);
-	std::fill(std::begin(m_dreq), std::end(m_dreq), true);
+	std::fill(std::begin(m_dma_next), std::end(m_dma_next), 0);
 	m_dmaor = 0;
 
 	std::fill(std::begin(m_addr), std::end(m_addr), 0);
@@ -133,9 +125,6 @@ void sh7034_device::device_reset()
 	std::fill(std::begin(m_bamr), std::end(m_bamr), 0);
 	m_bbr = 0;
 
-	m_wdt_tcsr = 0;
-	m_wdt_tcnt = 0;
-	m_wdt_rstcsr = 0;
 	m_sbycr = 0;
 
 	std::fill(std::begin(m_pacr), std::end(m_pacr), 0);
@@ -162,6 +151,8 @@ void sh7034_device::device_add_mconfig(machine_config &config)
 
 	SH_PORT16(config, m_porta, *this, 0, 0x0000, 0x0000);
 	SH_PORT16(config, m_portb, *this, 1, 0x0000, 0x0000);
+
+	SH_WDT(config, m_wdt, DERIVED_CLOCK(1, 1), m_intc, VECTOR_WDT);
 }
 
 void sh7034_device::execute_set_input(int irqline, int state)
@@ -186,6 +177,8 @@ void sh7034_device::internal_update(u64 current_time)
 		add_event(event_time, m_itu_channel[i]->internal_update(current_time));
 	add_event(event_time, m_sci[0]->internal_update(current_time));
 	add_event(event_time, m_sci[1]->internal_update(current_time));
+	for(int i = 0; i != 4; i++)
+		add_event(event_time, dma_update(i, current_time));
 
 	recompute_timer(event_time);
 }
@@ -273,11 +266,7 @@ void sh7034_device::peripheral_map(address_map &map)
 	map(0x05ffffb0, 0x05ffffb1).rw(FUNC(sh7034_device::rtcnt_r), FUNC(sh7034_device::rtcnt_w));
 	map(0x05ffffb2, 0x05ffffb3).rw(FUNC(sh7034_device::rtcor_r), FUNC(sh7034_device::rtcor_w));
 
-	map(0x05ffffb8, 0x05ffffb9).w(FUNC(sh7034_device::wdt_w));
-	map(0x05ffffb8, 0x05ffffb8).r(FUNC(sh7034_device::wdt_tcsr_r));
-	map(0x05ffffb9, 0x05ffffb9).r(FUNC(sh7034_device::wdt_tcnt_r));
-	map(0x05ffffba, 0x05ffffbb).w(FUNC(sh7034_device::wdt_rstcsr_w));
-	map(0x05ffffbb, 0x05ffffbb).r(FUNC(sh7034_device::wdt_rstcsr_r));
+	map(0x05ffffb8, 0x05ffffbb).m(m_wdt, FUNC(sh_wdt_device::map));
 	map(0x05ffffbc, 0x05ffffbc).rw(FUNC(sh7034_device::sbycr_r), FUNC(sh7034_device::sbycr_w));
 
 	map(0x05ffffc0, 0x05ffffc1).rw(m_porta, FUNC(sh_port16_device::dr_r), FUNC(sh_port16_device::dr_w));
@@ -317,7 +306,6 @@ void sh7034_device::adcsr_w(u8 data)
 
 void sh7034_device::adc_start()
 {
-	// 266 or 134 states per channel, four channels in scan mode
 	const int states = (BIT(m_adcsr, 3) ? 134 : 266) * (BIT(m_adcsr, 4) ? (m_adcsr & 3) + 1 : 1);
 	m_adc_timer->adjust(attotime::from_ticks(states, clock()));
 }
@@ -369,28 +357,6 @@ void sh7034_device::rtcor_w(offs_t, u16 data, u16 mem_mask)
 }
 
 
-// Watchdog timer
-
-void sh7034_device::wdt_w(offs_t, u16 data, u16 mem_mask)
-{
-	switch(data & 0xff00) {
-	case 0x5a00:
-		m_wdt_tcnt = data & 0xff;
-		break;
-	case 0xa500:
-		m_wdt_tcsr = data & 0xff;
-		break;
-	}
-}
-
-void sh7034_device::wdt_rstcsr_w(offs_t, u16 data, u16 mem_mask)
-{
-	if((data & 0xff00) == 0xa500)
-		m_wdt_rstcsr = (m_wdt_rstcsr & data & 0x80) | (data & 0x60);
-	else if((data & 0xff00) == 0x5a00)
-		m_wdt_rstcsr = (m_wdt_rstcsr & 0x80) | (data & 0x60);
-}
-
 
 // Direct memory access controller
 
@@ -425,51 +391,64 @@ void sh7034_device::dmaor_w(offs_t, u16 data, u16 mem_mask)
 	dma_check();
 }
 
-void sh7034_device::dma_check()
+bool sh7034_device::dma_armed(int channel) const
 {
-	if(m_dma_running || !BIT(m_dmaor, 0) || (m_dmaor & 6))
-		return;
-
-	m_dma_running = true;
-	for(int channel = 0; channel != 4; channel++) {
-		const u16 chcr = m_dma_chcr[channel];
-		if((chcr & 3) != 1)
-			continue;
-
-		const int rs = (chcr >> 8) & 15;
-		if(rs >= 4 && rs != 12)
-			continue;
-		if(rs < 4 && !m_dreq[channel])
-			continue;
-
-		dma_run(channel);
-	}
-	m_dma_running = false;
+	if(!BIT(m_dmaor, 0) || (m_dmaor & 6) || (m_dma_chcr[channel] & 3) != 1)
+		return false;
+	const int rs = (m_dma_chcr[channel] >> 8) & 15;
+	return rs == 12 || (rs < 4 && m_dreq[channel]);
 }
 
-void sh7034_device::dma_run(int channel)
+void sh7034_device::dma_check()
 {
-	const u16 chcr = m_dma_chcr[channel];
-	const int size = BIT(chcr, 3) ? 2 : 1;
-	const int dm = (chcr >> 14) & 3;
-	const int sm = (chcr >> 12) & 3;
-	const int dd = dm == 1 ? size : dm == 2 ? -size : 0;
-	const int sd = sm == 1 ? size : sm == 2 ? -size : 0;
+	bool started = false;
+	for(int channel = 0; channel != 4; channel++) {
+		if(!dma_armed(channel))
+			m_dma_next[channel] = 0;
+		else if(!m_dma_next[channel]) {
+			m_dma_next[channel] = current_cycles() + 2;
+			started = true;
+		}
+	}
+	if(started)
+		internal_update();
+}
 
-	u32 count = m_dma_tcr[channel] ? m_dma_tcr[channel] : 0x10000;
-	LOGMASKED(LOG_DMA, "dma %d %08x -> %08x, %x %s\n", channel, m_dma_sar[channel], m_dma_dar[channel], count, size == 2 ? "words" : "bytes");
+u64 sh7034_device::dma_update(int channel, u64 current_time)
+{
+	while(m_dma_next[channel] && current_time >= m_dma_next[channel]) {
+		const u64 unit = m_dma_next[channel];
+		m_dma_next[channel] = 0;
+		if(!dma_armed(channel))
+			break;
 
-	while(count--) {
+		const u16 chcr = m_dma_chcr[channel];
+		const int size = BIT(chcr, 3) ? 2 : 1;
+		const int dm = (chcr >> 14) & 3;
+		const int sm = (chcr >> 12) & 3;
+
+		LOGMASKED(LOG_DMA, "dma %d %08x -> %08x, %04x left\n", channel, m_dma_sar[channel], m_dma_dar[channel], m_dma_tcr[channel]);
 		if(size == 2)
 			m_program->write_word(m_dma_dar[channel] & m_am, m_program->read_word(m_dma_sar[channel] & m_am));
 		else
 			m_program->write_byte(m_dma_dar[channel] & m_am, m_program->read_byte(m_dma_sar[channel] & m_am));
-		m_dma_sar[channel] += sd;
-		m_dma_dar[channel] += dd;
-	}
+		if(sm == 1)
+			m_dma_sar[channel] += size;
+		else if(sm == 2)
+			m_dma_sar[channel] -= size;
+		if(dm == 1)
+			m_dma_dar[channel] += size;
+		else if(dm == 2)
+			m_dma_dar[channel] -= size;
 
-	m_dma_tcr[channel] = 0;
-	m_dma_chcr[channel] |= 2;
-	if(BIT(chcr, 2))
-		m_intc->internal_interrupt(VECTOR_DMAC0 + 2*channel);
+		m_dma_tcr[channel]--;
+		if(m_dma_tcr[channel])
+			m_dma_next[channel] = unit + 2;
+		else {
+			m_dma_chcr[channel] |= 2;
+			if(BIT(chcr, 2))
+				m_intc->internal_interrupt(VECTOR_DMAC0 + 2*channel);
+		}
+	}
+	return m_dma_next[channel];
 }

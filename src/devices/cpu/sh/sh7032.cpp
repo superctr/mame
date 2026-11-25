@@ -8,12 +8,7 @@ DEFINE_DEVICE_TYPE(SH7032,  sh7032_device,  "sh7032",  "Hitachi SH-1 (SH7032)")
 
 
 sh7032_device::sh7032_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: sh7032_device(mconfig, SH7032, tag, owner, clock, address_map_constructor(FUNC(sh7032_device::sh7032_map), this))
-{
-}
-
-sh7032_device::sh7032_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_map)
-	: sh2_device(mconfig, type, tag, owner, clock, CPU_TYPE_SH1, internal_map, 28, 0xc7ffffff)
+	: sh2_device(mconfig, SH7032, tag, owner, clock, CPU_TYPE_SH1, address_map_constructor(FUNC(sh7032_device::sh7032_map), this), 28, 0xc7ffffff)
 {
 }
 

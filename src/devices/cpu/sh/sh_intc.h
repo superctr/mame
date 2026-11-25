@@ -24,7 +24,6 @@ public:
 		m_cpu.set_tag(std::forward<T>(cpu));
 	}
 
-	// ICR bit value that selects low-level sensing; the SH-1 and SH-2 families disagree
 	void set_level_sense_bit(bool value) { m_level_sense_bit = value; }
 
 	void interrupt_taken(int irqline, int vector);
@@ -47,7 +46,7 @@ protected:
 	u16 m_icr;
 
 	u8 m_lines, m_edge, m_isr_read;
-	bool m_level_sense_bit = true;
+	bool m_level_sense_bit;
 
 	required_device<sh_mcu_device> m_cpu;
 

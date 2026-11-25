@@ -48,7 +48,8 @@ private:
 		TCSR_CKS   = 0x07,
 
 		RSTCSR_WOVF = 0x80,
-		RSTCSR_RSTE = 0x40
+		RSTCSR_RSTE = 0x40,
+		RSTCSR_RSTS = 0x20
 	};
 
 	TIMER_CALLBACK_MEMBER(overflow);

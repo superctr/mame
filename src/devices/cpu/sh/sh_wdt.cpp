@@ -6,14 +6,9 @@
 
     SH watchdog timer
 
-    An eight bit up counter off a divided peripheral clock.  In interval
-    timer mode, the mode it comes out of reset in, an overflow raises the
-    interval timer interrupt and the counter carries on; in watchdog timer
-    mode it sets WOVF instead and, with RSTE, resets the chip.
-
-    The three registers are written as words with a key in the upper byte,
-    0x5a for the counter and 0xa5 for the two control registers, and read
-    as bytes.
+    - eight-bit up counter, eight prescaler taps of the peripheral clock
+    - interval timer mode (ITI) and watchdog timer mode (WOVF, RSTE, RSTS)
+    - word writes with a key byte, byte reads
 
     TODO list (not comprehensive):
     - the reset RSTE asks for, and the WDTOVF pin
@@ -134,9 +129,7 @@ void sh_wdt_device::timer_w(offs_t offset, u16 data, u16 mem_mask)
 	else if ((data >> 8) == 0xa5)
 	{
 		m_tcnt = counter();
-		// OVF only clears, and only by a zero written over a one
 		m_tcsr = (m_tcsr & data & TCSR_OVF) | (data & ~TCSR_OVF) | 0x18;
-		// clearing TME initialises the counter
 		if (!(m_tcsr & TCSR_TME))
 			m_tcnt = 0;
 		update_timer();
@@ -146,8 +139,11 @@ void sh_wdt_device::timer_w(offs_t offset, u16 data, u16 mem_mask)
 void sh_wdt_device::reset_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	LOGMASKED(LOG_WRITE, "reset_w %04x\n", data);
-	if ((data >> 8) == 0x5a)
-		m_rstcsr &= ~RSTCSR_WOVF;
-	else if ((data >> 8) == 0xa5)
-		m_rstcsr = (data & RSTCSR_RSTE) | 0x1f;
+	if ((data >> 8) == 0xa5)
+	{
+		if (!(data & RSTCSR_WOVF))
+			m_rstcsr &= ~RSTCSR_WOVF;
+	}
+	else if ((data >> 8) == 0x5a)
+		m_rstcsr = (m_rstcsr & RSTCSR_WOVF) | (data & (RSTCSR_RSTE | RSTCSR_RSTS)) | 0x1f;
 }

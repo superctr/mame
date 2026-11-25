@@ -6,10 +6,12 @@
 
     SH DMA controller
 
-    Dual address transfers by auto-request and by external request on the
-    DREQ pins (level or falling edge sampling), one unit every two clocks,
-    the transfer end flag and its interrupt.  The on-chip module requests
-    (MTU, A/D, SCI) are not connected yet.
+    - dual address transfers, one unit every two clocks
+    - auto-request, and external request on the DREQ pins (level or edge)
+    - the transfer end flag and its interrupt
+
+    TODO:
+    - the on-chip module requests (MTU, A/D, SCI)
 
 ***************************************************************************/
 
@@ -30,7 +32,8 @@ DEFINE_DEVICE_TYPE(SH_DMAC_CHANNEL, sh_dmac_channel_device, "sh_dmac_channel", "
 
 sh_dmac_device::sh_dmac_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	device_t(mconfig, SH_DMAC, tag, owner, clock),
-	m_cpu(*this, finder_base::DUMMY_TAG)
+	m_cpu(*this, finder_base::DUMMY_TAG),
+	m_channel(*this, "%u", 0U)
 {
 }
 
@@ -49,15 +52,14 @@ u16 sh_dmac_device::dmaor_r()
 	return m_dmaor;
 }
 
-// the NMI and address error flags only clear, by a write of 0 after a read of 1
 void sh_dmac_device::dmaor_w(offs_t, u16 data, u16 mem_mask)
 {
 	u16 value = m_dmaor;
 	COMBINE_DATA(&value);
 	m_dmaor = (value & 0x0301) | (m_dmaor & value & 0x0006);
 	LOGMASKED(LOG_REGS, "dmaor_w %04x\n", m_dmaor);
-	for (int i = 0; i < 4; i++) {
-		auto *channel = subdevice<sh_dmac_channel_device>(util::string_format("%d", i).c_str());
+	for (auto &channel : m_channel)
+	{
 		if (channel)
 			channel->dmaor_changed();
 	}
@@ -69,20 +71,20 @@ sh_dmac_channel_device::sh_dmac_channel_device(const machine_config &mconfig, co
 	m_cpu(*this, finder_base::DUMMY_TAG),
 	m_intc(*this, finder_base::DUMMY_TAG),
 	m_dmac(*this, finder_base::DUMMY_TAG),
-	m_id(0)
+	m_id(0),
+	m_dreq(false)
 {
 }
 
 void sh_dmac_channel_device::device_start()
 {
-	m_timer = timer_alloc(FUNC(sh_dmac_channel_device::tick), this);
-
 	save_item(NAME(m_sar));
 	save_item(NAME(m_dar));
 	save_item(NAME(m_dmatcr));
 	save_item(NAME(m_chcr));
 	save_item(NAME(m_dreq));
 	save_item(NAME(m_edge));
+	save_item(NAME(m_next_unit));
 }
 
 void sh_dmac_channel_device::device_reset()
@@ -91,9 +93,8 @@ void sh_dmac_channel_device::device_reset()
 	m_dar = 0;
 	m_dmatcr = 0;
 	m_chcr = 0;
-	m_dreq = false;
 	m_edge = false;
-	m_timer->adjust(attotime::never);
+	m_next_unit = 0;
 }
 
 u32 sh_dmac_channel_device::sar_r()
@@ -135,7 +136,6 @@ u32 sh_dmac_channel_device::chcr_r()
 	return m_chcr;
 }
 
-// the transfer end flag only clears, by a write of 0 after a read of 1
 void sh_dmac_channel_device::chcr_w(offs_t, u32 data, u32 mem_mask)
 {
 	u32 value = m_chcr;
@@ -155,7 +155,6 @@ bool sh_dmac_channel_device::armed() const
 	return m_dmac->transfer_allowed() && (m_chcr & (CHCR_DE | CHCR_TE)) == CHCR_DE;
 }
 
-// the pin is sampled on its falling edge or its low level, as DS says
 void sh_dmac_channel_device::dreq_w(int state)
 {
 	const bool asserted = state != 0;
@@ -171,7 +170,7 @@ void sh_dmac_channel_device::dreq_w(int state)
 void sh_dmac_channel_device::request_check()
 {
 	if (!armed()) {
-		m_timer->adjust(attotime::never);
+		m_next_unit = 0;
 		return;
 	}
 	bool wanted = false;
@@ -188,24 +187,32 @@ void sh_dmac_channel_device::request_check()
 		logerror("channel %d: on-chip module request %d not supported\n", m_id, resource());
 		break;
 	}
-	if (wanted && m_timer->remaining().is_never())
-		m_timer->adjust(attotime::from_ticks(2, m_cpu->clock()));
+	if (wanted && !m_next_unit) {
+		m_next_unit = m_cpu->current_cycles() + 2;
+		m_cpu->internal_update();
+	}
 }
 
-TIMER_CALLBACK_MEMBER(sh_dmac_channel_device::tick)
+u64 sh_dmac_channel_device::internal_update(u64 current_time)
 {
-	if (!armed())
-		return;
-	m_edge = false;
-	transfer_unit();
-	// a level sampled request keeps going while the pin is held; an edge sampled
-	// one takes one unit a request, including an edge made during the unit
-	if (!armed())
-		return;
-	if (resource() == RS_AUTO || (external() && m_dreq && (!(m_chcr & CHCR_DS) || m_edge)))
-		m_timer->adjust(attotime::from_ticks(2, m_cpu->clock()));
-	else if (external())
-		m_dreq = false;
+	while (m_next_unit && current_time >= m_next_unit) {
+		const u64 unit = m_next_unit;
+		m_next_unit = 0;
+		if (!armed())
+			break;
+		m_edge = false;
+		transfer_unit();
+		if (!armed())
+			m_next_unit = 0;
+		else if (resource() == RS_AUTO || (external() && m_dreq && (!(m_chcr & CHCR_DS) || m_edge)))
+			m_next_unit = unit + 2;
+		else {
+			if (external())
+				m_dreq = false;
+			m_next_unit = 0;
+		}
+	}
+	return m_next_unit;
 }
 
 void sh_dmac_channel_device::transfer_unit()
