@@ -2,108 +2,34 @@
 // copyright-holders:superctr
 /****************************************************************************
 
-    Roland Fantom (FA-76), 2001.
+    Roland Fantom (FA-76)
 
-    An SH7709A carrying one XV tone generator -- the XV-5080's chip and the
-    XV-5080's 32 MB wave set, wave list and sample records byte for byte --
-    with a 76-note keyboard, a sequencer, a floppy drive and three wave
-    expansion sockets: one SR-JV80 and two SRX.
+    Main board:
+    - IC3 HD6417709AF133 SH-3, 16.5 MHz x 8 = 132 MHz
+    - IC5 TC58FVB321FT-10 program flash, 4 MB
+    - IC4/IC7 HY57V641620HGT-P SDRAM, 16 MB
+    - IC12 BR24C08F serial EEPROM, 8 kbit
+    - IC13 M66273FP LCD controller; LM320191 LCD, 320 x 240
+    - IC24 S1L50282F32H000 key scan, 24 MHz
+    - IC25 FDC37C78 floppy disk controller
+    - IC31 TC223C660CF-503 XV tone generator, 16.9344 MHz
+    - IC37 GM71V18163CT-6 effect DRAM
+    - IC48/IC51 uPD23C128040LGY wave mask ROMs, 16 MB each
+    - IC59/IC62 AK4393-VF-E2 DACs, IC68 TC9271FS digital output
+    - CN7 SR-JV80 socket, CN10/CN11 SRX sockets
 
-    The flash holds a boot block and then the program, zlib packed in the
-    same container the SD-90 uses; the boot block inflates it into the
-    SDRAM at 0x0c000000 and jumps to 0x0c001000.  There is no on-chip ROM:
-    the first instruction of the flash is the reset vector.
+    76-note keyboard, D-Beam, 3.5" floppy drive, one MIDI IN and OUT.
 
-    Main board, from the service notes:
-
-        IC3     HD6417709AF133      SH-3, 16.5 MHz x 8 = 132 MHz
-        IC5     TC58FVB321FT-10     program flash, 32 Mbit, 2M x 16
-        IC4/7   HY57V641620HGT-P    SDRAM, 64 Mbit each, 4M x 16, 16 MB
-        IC12    BR24C08F            EEPROM, 8 kbit, serial
-        IC13    M66273FP            LCD controller
-        IC24    S1L50282F32H000     key scan, 24 MHz
-        IC25    FDC37C78            floppy disk controller
-        IC31    TC223C660CF-503     the XV, 16.9344 MHz
-        IC37    GM71V18163CT-6      the XV's effect DRAM, 16 Mbit, 1M x 16
-        IC48/51 uPD23C128040LGY     wave mask ROM, 128 Mbit each, 8M x 16
-        IC59/62 AK4393-VF-E2        D/A
-        IC68    TC9271FS            digital out
-
-    The display is an LM320191, 320 x 240 dots, backlit, driven by the
-    M66273FP out of its own 19 200-byte VRAM.  CN7 is the SR-JV80 socket
-    and CN10 and CN11 the two SRX, which the test mode calls slots A, B
-    and C.
-
-    The wave mask ROMs are the XV-3080's and the XV-5080's, the same two
-    Roland stock numbers (02010023 and 02010056) in all three machines, and
-    the machine's own wave list and sample records -- which its firmware
-    carries in the clear -- are those machines' byte for byte.
-
-    The interrupt inputs, from the service notes and confirmed by the
-    firmware's own vector table: IRQ0 the tone generator, IRQ2 the key
-    scan, IRQ3 the floppy controller, IRQ4 one phase of the value encoder,
-    and DREQ0/DACK0/TCLK the floppy controller's DMA.  MIDI is the IrDA
-    serial channel, the serial EEPROM is bit-banged on port C (PC6 SCL,
-    PC7 SDA) and the encoder is read on port F.
-
-    The key scan chip presents two words: an event, its status in the high
-    byte and the key in the low byte, and a 14-bit time stamp.  The status
-    bits, as the firmware's own state machine reads them: bit 6 a keyboard
-    event, bit 4 the first contact closed, bit 5 the second contact closed,
-    bit 2 the time stamp wrapped since the last event.  The firmware takes
-    the velocity from the time between the two contacts, in eighths, with
-    767 the slowest stroke it distinguishes.  The unit of that time is not
-    known; 100 us is assumed here.
-
-    The panel buttons are scanned by the XV itself: its SWD0-7 inputs and
-    two strobe outputs, decoded by IC75 into SLS0-3, and its LEDD0-7 pins,
-    three of which drive the panel's LEDs.  The firmware reads the 32
-    switches as eight nibble words behind the chip's FIFO, takes a
-    changed switch's number from word 0x1c on interrupt reason 14, and
-    writes the LEDs as brightness nibbles behind the same FIFO, one word
-    pair a strobe from 0x260.  The chip numbers a switch as its
-    strobe times eight plus its data line, and the service notes' panel
-    schematics give the matrix: SS3..SS0 on SD2/SD1/SD0 are D BEAM,
-    ARPEGGIO, RHYTHM, REC / RESET, BWD, FWD, STOP-PLAY / REALTIME CONTROL
-    1-4, and on SD3..SD7 MODE, MENU, LIST and the favourites 1 and 5 (SS0),
-    DEC, LEFT, SHIFT, 2 and 6 (SS1), UP, DOWN, JUMP, 3 and 7 (SS2), INC,
-    RIGHT, EXIT, 4 and 8 (SS3); the cursor keys were placed by pressing
-    them.  The LEDs sit on the same strobes: line 0 carries the two colours
-    of BEAT (LS0, LS1) and REC (LS2), line 1 the REALTIME CONTROL LEDs 2,
-    3, 4, 1 (LS0-LS3) and line 2 ARPEGGIO, RHYTHM, PLAY and D BEAM.
-
-    The firmware composes every screen after the splash in SDRAM and moves
-    it to the LCD controller's VRAM on DMA channel 1, with the controller's
-    cycle-steal enable as the request.  The program flash keeps the
-    machine's user data in its top half, and the firmware identifies the
-    chip by manufacturer code before it will program it.  It reads the
-    flash's ready line on PTE1 before every erase and program and gives
-    up while it reads busy; the flash here finishes each command at once,
-    so the line reads ready.  Every store raises PTE3 first and ends in the
-    sector protect of all 71 sectors, then lowers it: PTE3 is taken as the
-    flash's RESET# at the high voltage, under which the protected sectors
-    are writable and the protect cycle is taken.  PTE2, raised around an
-    erase or program of the two lowest sectors only, is left unconnected.
-
-    The value encoder is polled on port F every millisecond, a count per
-    whole quadrature cycle.  The A/D converter reads the bender, the
-    modulation lever, the D-Beam, aftertouch, the hold pedal and, behind a
-    4053 that PTD7 switches, the two control pedals and the four realtime
-    control knobs; it converts a group of four channels on each falling
-    edge of ADTRG, which is the D-Beam emitter's drive inverted: the
-    firmware drives the emitter from the SCI, sending 0xff about 180 times
-    a second, so each frame's start bit is one pulse.
-
-    The floppy drive is on the FDC37C78's DS1 and MTR1, and the firmware
-    moves its sectors on DMA channel 0, edge-triggered, one byte a request.
-
-    State: boots to the PERFORMANCE PLAY screen, takes MIDI and plays, and
-    the keyboard, panel buttons, value encoder, analogue controls and the
-    floppy drive work.
+    TODO:
+    - the performance mode plays about 20 dB above the GM mode and clips;
+      what the firmware writes to the XV there is unchecked on a real unit
+    - the key scan's time stamp unit, so the key velocity, is a guess
 
 ****************************************************************************/
 
 #include "emu.h"
+
+#include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
@@ -115,32 +41,26 @@
 #include "machine/upd765.h"
 #include "sound/roland_xv.h"
 #include "video/m66273.h"
-#include "wavecard.h"
 
 #include "emupal.h"
 #include "screen.h"
 #include "speaker.h"
 
-#include <deque>
+#include <algorithm>
 
 
-//**************************************************************************
-//  the S1L50282F key scan
-//**************************************************************************
+namespace {
 
 class fantom_keyscan_device : public device_t
 {
 public:
+	static constexpr feature_type imperfect_features() { return feature::CONTROLS; }
+
 	fantom_keyscan_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_handler() { return m_int_cb.bind(); }
 
 	u16 read(offs_t offset);
-
-	// a key going down closes its first contact at once and its second
-	// after the travel time; going up, the second opens at once and the
-	// first after the travel time; a key's changes follow one another, so
-	// one let go before its second contact has closed closes it first
 	void key_w(int key, int state, const attotime &travel);
 
 protected:
@@ -148,26 +68,14 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 private:
-	static constexpr unsigned KEYS = 88;
-	static constexpr unsigned TIME_BITS = 14;
-
-	struct event
-	{
-		u8 status = 0;
-		u8 key = 0;
-		u16 time = 0;
-	};
-
-	struct pending
-	{
-		attotime when;
-		u8 key;
-		u8 contact;
-		u8 state;
-	};
+	static constexpr u32 KEYS = 88;
+	static constexpr u32 TIME_BITS = 14;
+	static constexpr u32 FIFO_SIZE = 64;
+	static constexpr u32 PENDING = 256;
 
 	void contact_w(int key, int contact, int state);
 	void push(u8 status, u8 key);
+	void pend(const attotime &when, int key, int contact, int state);
 	void update_int();
 	void arm_travel();
 	u16 stamp() const;
@@ -178,20 +86,41 @@ private:
 	emu_timer *m_wrap_timer;
 	emu_timer *m_travel_timer;
 
-	util::fifo<event, 64> m_fifo;
-	std::deque<pending> m_pending;
-	event m_latch;
+	u8 m_fifo_status[FIFO_SIZE];
+	u8 m_fifo_key[FIFO_SIZE];
+	u16 m_fifo_time[FIFO_SIZE];
+	u8 m_fifo_head;
+	u8 m_fifo_count;
+	attotime m_pending_when[PENDING];
+	u8 m_pending_key[PENDING];
+	u8 m_pending_contact[PENDING];
+	u8 m_pending_state[PENDING];
+	u16 m_pending_count;
+	u8 m_latch_status;
+	u8 m_latch_key;
+	u16 m_latch_time;
 	u8 m_contacts[KEYS];
 	u8 m_int;
 };
 
-DEFINE_DEVICE_TYPE(FANTOM_KEYSCAN, fantom_keyscan_device, "fantom_keyscan", "Roland Fantom key scan")
+} // anonymous namespace
+
+DEFINE_DEVICE_TYPE_PRIVATE(FANTOM_KEYSCAN, fantom_keyscan_device, fantom_keyscan_device, "fantom_keyscan", "Roland Fantom key scan")
+
+namespace {
 
 fantom_keyscan_device::fantom_keyscan_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: device_t(mconfig, FANTOM_KEYSCAN, tag, owner, clock)
 	, m_int_cb(*this)
 	, m_wrap_timer(nullptr)
 	, m_travel_timer(nullptr)
+	, m_fifo_head(0)
+	, m_fifo_count(0)
+	, m_pending_count(0)
+	, m_latch_status(0)
+	, m_latch_key(0)
+	, m_latch_time(0)
+	, m_int(0)
 {
 }
 
@@ -200,19 +129,38 @@ void fantom_keyscan_device::device_start()
 	m_wrap_timer = timer_alloc(FUNC(fantom_keyscan_device::wrap), this);
 	m_travel_timer = timer_alloc(FUNC(fantom_keyscan_device::travel), this);
 
-	save_item(NAME(m_latch.status));
-	save_item(NAME(m_latch.key));
-	save_item(NAME(m_latch.time));
+	save_item(NAME(m_fifo_status));
+	save_item(NAME(m_fifo_key));
+	save_item(NAME(m_fifo_time));
+	save_item(NAME(m_fifo_head));
+	save_item(NAME(m_fifo_count));
+	save_item(NAME(m_pending_when));
+	save_item(NAME(m_pending_key));
+	save_item(NAME(m_pending_contact));
+	save_item(NAME(m_pending_state));
+	save_item(NAME(m_pending_count));
+	save_item(NAME(m_latch_status));
+	save_item(NAME(m_latch_key));
+	save_item(NAME(m_latch_time));
 	save_item(NAME(m_contacts));
 	save_item(NAME(m_int));
 }
 
 void fantom_keyscan_device::device_reset()
 {
-	while (!m_fifo.empty())
-		m_fifo.dequeue();
-	m_pending.clear();
-	m_latch = event();
+	std::fill(std::begin(m_fifo_status), std::end(m_fifo_status), 0);
+	std::fill(std::begin(m_fifo_key), std::end(m_fifo_key), 0);
+	std::fill(std::begin(m_fifo_time), std::end(m_fifo_time), 0);
+	m_fifo_head = 0;
+	m_fifo_count = 0;
+	std::fill(std::begin(m_pending_when), std::end(m_pending_when), attotime::zero);
+	std::fill(std::begin(m_pending_key), std::end(m_pending_key), 0);
+	std::fill(std::begin(m_pending_contact), std::end(m_pending_contact), 0);
+	std::fill(std::begin(m_pending_state), std::end(m_pending_state), 0);
+	m_pending_count = 0;
+	m_latch_status = 0;
+	m_latch_key = 0;
+	m_latch_time = 0;
 	std::fill(std::begin(m_contacts), std::end(m_contacts), 0);
 	m_int = 0;
 	m_int_cb(0);
@@ -224,20 +172,24 @@ void fantom_keyscan_device::device_reset()
 
 u16 fantom_keyscan_device::stamp() const
 {
-	return attotime_to_clocks(machine().time()) & ((1 << TIME_BITS) - 1);
+	return attotime_to_clocks(machine().time()) & util::make_bitmask<u16>(TIME_BITS);
 }
 
 void fantom_keyscan_device::push(u8 status, u8 key)
 {
-	if (m_fifo.full())
+	if (m_fifo_count == FIFO_SIZE)
 		return;
-	m_fifo.enqueue(event{ status, key, stamp() });
+	const u32 at = (m_fifo_head + m_fifo_count) % FIFO_SIZE;
+	m_fifo_status[at] = status;
+	m_fifo_key[at] = key;
+	m_fifo_time[at] = stamp();
+	m_fifo_count++;
 	update_int();
 }
 
 void fantom_keyscan_device::update_int()
 {
-	const u8 state = m_fifo.empty() ? 0 : 1;
+	const u8 state = m_fifo_count ? 1 : 0;
 	if (state != m_int)
 	{
 		m_int = state;
@@ -260,6 +212,17 @@ void fantom_keyscan_device::contact_w(int key, int contact, int state)
 	push(0x40 | (contacts << 4), key);
 }
 
+void fantom_keyscan_device::pend(const attotime &when, int key, int contact, int state)
+{
+	if (m_pending_count == PENDING)
+		return;
+	m_pending_when[m_pending_count] = when;
+	m_pending_key[m_pending_count] = key;
+	m_pending_contact[m_pending_count] = contact;
+	m_pending_state[m_pending_count] = state;
+	m_pending_count++;
+}
+
 void fantom_keyscan_device::key_w(int key, int state, const attotime &travel)
 {
 	if (key < 0 || key >= int(KEYS))
@@ -267,63 +230,71 @@ void fantom_keyscan_device::key_w(int key, int state, const attotime &travel)
 
 	const attotime now = machine().time();
 	attotime at = now;
-	for (const pending &p : m_pending)
-		if (p.key == key && p.when > at)
-			at = p.when;
+	for (u32 n = 0; n < m_pending_count; n++)
+		if (m_pending_key[n] == key && m_pending_when[n] > at)
+			at = m_pending_when[n];
 
 	if (at == now)
 		contact_w(key, state ? 0 : 1, state);
 	else
-		m_pending.push_back(pending{ at, u8(key), u8(state ? 0 : 1), u8(state ? 1 : 0) });
-	m_pending.push_back(pending{ at + travel, u8(key), u8(state ? 1 : 0), u8(state ? 1 : 0) });
+		pend(at, key, state ? 0 : 1, state ? 1 : 0);
+	pend(at + travel, key, state ? 1 : 0, state ? 1 : 0);
 	arm_travel();
 }
 
 void fantom_keyscan_device::arm_travel()
 {
 	attotime next = attotime::never;
-	for (const pending &p : m_pending)
-		if (p.when < next)
-			next = p.when;
+	for (u32 n = 0; n < m_pending_count; n++)
+		if (m_pending_when[n] < next)
+			next = m_pending_when[n];
 	m_travel_timer->adjust(next.is_never() ? attotime::never : next - machine().time());
 }
 
 TIMER_CALLBACK_MEMBER(fantom_keyscan_device::travel)
 {
 	const attotime now = machine().time();
-	for (auto it = m_pending.begin(); it != m_pending.end(); )
+	u32 kept = 0;
+	for (u32 n = 0; n < m_pending_count; n++)
 	{
-		if (it->when <= now)
-		{
-			contact_w(it->key, it->contact, it->state);
-			it = m_pending.erase(it);
-		}
+		if (m_pending_when[n] <= now)
+			contact_w(m_pending_key[n], m_pending_contact[n], m_pending_state[n]);
 		else
-			++it;
+		{
+			m_pending_when[kept] = m_pending_when[n];
+			m_pending_key[kept] = m_pending_key[n];
+			m_pending_contact[kept] = m_pending_contact[n];
+			m_pending_state[kept] = m_pending_state[n];
+			kept++;
+		}
 	}
+	m_pending_count = kept;
 	arm_travel();
 }
 
 u16 fantom_keyscan_device::read(offs_t offset)
 {
-	if (offset == 0)
+	if (offset)
+		return m_latch_time;
+
+	const bool empty = !m_fifo_count;
+	const u8 status = empty ? 0 : m_fifo_status[m_fifo_head];
+	const u8 key = empty ? 0 : m_fifo_key[m_fifo_head];
+	if (!machine().side_effects_disabled())
 	{
-		if (!machine().side_effects_disabled())
+		m_latch_status = status;
+		m_latch_key = key;
+		m_latch_time = empty ? 0 : m_fifo_time[m_fifo_head];
+		if (!empty)
 		{
-			m_latch = m_fifo.empty() ? event() : m_fifo.dequeue();
-			update_int();
+			m_fifo_head = (m_fifo_head + 1) % FIFO_SIZE;
+			m_fifo_count--;
 		}
-		return (m_latch.status << 8) | m_latch.key;
+		update_int();
 	}
-	return m_latch.time;
+	return (status << 8) | key;
 }
 
-
-namespace {
-
-//**************************************************************************
-//  the machine
-//**************************************************************************
 
 class fantom_state : public driver_device
 {
@@ -348,7 +319,7 @@ public:
 
 	void fantom(machine_config &config) ATTR_COLD;
 
-	void init_waverom() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
+	void init_waverom() ATTR_COLD;
 
 	DECLARE_INPUT_CHANGED_MEMBER(key_changed);
 
@@ -357,6 +328,8 @@ protected:
 	virtual void machine_reset() override ATTR_COLD;
 
 private:
+	enum { LED_BEAT_A, LED_BEAT_B, LED_REC, LED_RTC1, LED_RTC2, LED_RTC3, LED_RTC4, LED_ARPEGGIO, LED_RHYTHM, LED_PLAY, LED_DBEAM, LEDS };
+
 	void fantom_map(address_map &map) ATTR_COLD;
 	void fantom_io_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
@@ -393,19 +366,23 @@ private:
 	required_ioport m_velocity;
 	required_ioport m_encoder;
 	required_ioport_array<11> m_analog;
-	enum { LED_BEAT_A, LED_BEAT_B, LED_REC, LED_RTC1, LED_RTC2, LED_RTC3, LED_RTC4, LED_ARPEGGIO, LED_RHYTHM, LED_PLAY, LED_DBEAM, LEDS };
 	output_finder<LEDS> m_leds;
 
 	emu_timer *m_encoder_timer = nullptr;
 	emu_timer *m_fdc_dack_timer = nullptr;
 	u8 m_encoder_last = 0;
-	int m_encoder_pending = 0;
+	s32 m_encoder_pending = 0;
 	u8 m_encoder_phase = 0;
 	u8 m_adsel = 0;
 	u8 m_lcdenb = 0;
 	u8 m_fdc_drq = 0;
 };
 
+
+void fantom_state::init_waverom()
+{
+	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
+}
 
 void fantom_state::machine_start()
 {
@@ -428,23 +405,14 @@ void fantom_state::machine_reset()
 	m_encoder_timer->adjust(attotime::from_msec(2), 0, attotime::from_msec(2));
 }
 
-
 void fantom_state::lcd_palette(palette_device &palette) const
 {
-	// the panel transmits where it is driven
 	for (int i = 0; i < m66273_device::LEVELS; i++)
 	{
 		const int level = 0xff * i / (m66273_device::LEVELS - 1);
 		palette.set_pen_color(i, rgb_t(level, level, level));
 	}
 }
-
-
-//-------------------------------------------------
-//  the display: the M66273FP drives the LM320191 on
-//  its four-bit bus, and its LCDENB output switches
-//  the panel on
-//-------------------------------------------------
 
 u32 fantom_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
@@ -456,13 +424,6 @@ u32 fantom_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, con
 	return m_lcdc->screen_update(screen, bitmap, cliprect);
 }
 
-
-//-------------------------------------------------
-//  port C: the serial EEPROM's I2C bus, PC6 the clock and PC7 the data,
-//  which the firmware drives as an open drain by switching the pin
-//  between output and input
-//-------------------------------------------------
-
 u64 fantom_state::portc_r()
 {
 	return 0x3f | (m_eeprom->read_sda() << 7);
@@ -471,31 +432,16 @@ u64 fantom_state::portc_r()
 void fantom_state::portc_w(u64 data)
 {
 	const u16 pccr = data >> 16;
-	const bool sda_out = ((pccr >> 14) & 3) == 1;
-	const bool scl_out = ((pccr >> 12) & 3) == 1;
+	const bool sda_out = BIT(pccr, 14, 2) == 1;
+	const bool scl_out = BIT(pccr, 12, 2) == 1;
 	m_eeprom->write_sda(sda_out ? BIT(data, 7) : 1);
 	m_eeprom->write_scl(scl_out ? BIT(data, 6) : 1);
 }
-
-
-//-------------------------------------------------
-//  port D: PTD7 is ADSEL, which switches the
-//  TC74HC4053 in front of AN5 to AN7 between CTL1,
-//  VR1 and VR3 (low) and CTL2, VR2 and VR4 (high)
-//-------------------------------------------------
 
 void fantom_state::portd_w(u64 data)
 {
 	m_adsel = BIT(data, 7);
 }
-
-
-//-------------------------------------------------
-//  the value encoder on PTF0 (ENCB) and PTF1 (ENCA),
-//  which the firmware polls every millisecond and
-//  counts a step per whole quadrature cycle.  The
-//  dial is played out at a phase every 2 ms.
-//-------------------------------------------------
 
 TIMER_CALLBACK_MEMBER(fantom_state::encoder_tick)
 {
@@ -529,22 +475,9 @@ void fantom_state::porte_w(u64 data)
 
 u64 fantom_state::portf_r()
 {
-	// ENCA, ENCB through a turn from rest: 11, 01, 00, 10
-	static const u8 phases[4] = { 0x3, 0x1, 0x0, 0x2 };
-	const u8 ab = phases[m_encoder_phase];
-	return 0xfc | BIT(ab, 0) | (BIT(ab, 1) << 1);
+	constexpr u8 PHASES[4] = { 0x3, 0x1, 0x0, 0x2 };
+	return 0xfc | PHASES[m_encoder_phase];
 }
-
-
-//-------------------------------------------------
-//  the A/D inputs: AN0 the bender, AN1 modulation,
-//  AN2 the D-Beam, AN3 aftertouch, AN4 the hold
-//  pedal, and AN5 to AN7 the two pedal jacks and the
-//  four realtime control knobs behind ADSEL.  The
-//  converter is triggered by ADTRG, the inverse of the
-//  D-Beam emitter's drive XDBPLS, which is the SCI's
-//  transmit data line.
-//-------------------------------------------------
 
 template <int N>
 u16 fantom_state::adc_r()
@@ -557,18 +490,6 @@ u16 fantom_state::adc_r()
 	default: return m_analog[N]->read();
 	}
 }
-
-
-//-------------------------------------------------
-//  the floppy controller's DMA: XFDCREQ is DREQ0,
-//  which the firmware runs edge-triggered in dual
-//  address mode against the data register, with DACK
-//  marking the controller's side of each transfer, so
-//  an access to the data register while the request
-//  is up is the DMA's.  Each DACK releases the request
-//  until the controller raises it for the next byte.
-//  PTH7 is its terminal count.
-//-------------------------------------------------
 
 void fantom_state::fdc_drq_w(int state)
 {
@@ -616,45 +537,24 @@ void fantom_state::porth_w(u64 data)
 	m_fdc->tc_w(BIT(data, 7));
 }
 
-
-//-------------------------------------------------
-//  the panel LEDs, a matrix on the scan strobes LS0-LS3 and the lines
-//  LD0-LD2 as the panel schematic draws it; the BEAT LED is two colours
-//  on line 0 of strobes 0 and 1
-//-------------------------------------------------
-
 void fantom_state::led_w(offs_t offset, u8 data)
 {
-	static const int led[4][3] = {
+	constexpr s8 LED_MAP[4][3] = {
 		{ LED_BEAT_A, LED_RTC2, LED_ARPEGGIO },
 		{ LED_BEAT_B, LED_RTC3, LED_RHYTHM },
 		{ LED_REC, LED_RTC4, LED_PLAY },
-		{ -1, LED_RTC1, LED_DBEAM }
-	};
-	const int strobe = offset >> 3, line = offset & 7;
-	if (strobe < 4 && line < 3 && led[strobe][line] >= 0)
-		m_leds[led[strobe][line]] = data;
+		{ -1, LED_RTC1, LED_DBEAM } };
+	const u32 strobe = offset >> 3, line = offset & 7;
+	if (strobe < 4 && line < 3 && LED_MAP[strobe][line] >= 0)
+		m_leds[LED_MAP[strobe][line]] = data;
 }
-
-
-//-------------------------------------------------
-//  the keyboard: E1 to G7, key 0 to 75 to the scan chip
-//-------------------------------------------------
 
 INPUT_CHANGED_MEMBER(fantom_state::key_changed)
 {
-	static const int travel_units[8] = { 760, 480, 320, 200, 136, 80, 16, 16 };
-	const attotime travel = m_keyscan->clocks_to_attotime(travel_units[m_velocity->read() & 7]);
+	constexpr u32 TRAVEL_UNITS[8] = { 760, 480, 320, 200, 136, 80, 16, 16 };
+	const attotime travel = m_keyscan->clocks_to_attotime(TRAVEL_UNITS[m_velocity->read() & 7]);
 	m_keyscan->key_w(param, newval, travel);
 }
-
-
-//-------------------------------------------------
-//  the CPU's own bus.  Each chip select carries one part, and the service
-//  notes name them: CS0 the flash, CS3 the SDRAM, CS4 the key scan, CS5
-//  the floppy controller, CS6 the tone generator and the display, which
-//  two gates split by A15.
-//-------------------------------------------------
 
 void fantom_state::fantom_map(address_map &map)
 {
@@ -676,27 +576,18 @@ void fantom_state::fantom_io_map(address_map &map)
 	map(SH3_PORT_H, SH3_PORT_H + 7).w(FUNC(fantom_state::porth_w));
 }
 
-
-//-------------------------------------------------
-//  the wave memory as the XV sees it.  The chip's own chip selects, as on
-//  the XV-5080: 0 and 1 the two mask ROMs, 2 and 3 the SR-JV80 sockets and
-//  4 to 7 the SRX connectors.  Which sub-slot each of this machine's three
-//  connectors takes is unread; the first of each kind is assumed.
-//-------------------------------------------------
-
 void fantom_state::xv_wave_map(address_map &map)
 {
 	map.unmap_value_high();
 	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
-	map(0x02000000, 0x027fffff).r(m_exp, FUNC(roland_srjv80_slot_device::read)).umask16(0x00ff);
+	map(0x02000000, 0x027fffff).umask16(0x00ff).r(m_exp, FUNC(roland_srjv80_slot_device::read));
 	map(0x04000000, 0x04ffffff).r(m_srx[0], FUNC(roland_srx_slot_device::read16));
 	map(0x07000000, 0x07ffffff).r(m_srx[1], FUNC(roland_srx_slot_device::read16));
 }
 
-
 void fantom_state::fantom(machine_config &config)
 {
-	SH7709(config, m_maincpu, 16.5_MHz_XTAL * 8, ENDIANNESS_BIG);   // HD6417709AF133
+	SH7709(config, m_maincpu, 16.5_MHz_XTAL * 8, ENDIANNESS_BIG);
 	m_maincpu->set_addrmap(AS_PROGRAM, &fantom_state::fantom_map);
 	m_maincpu->set_addrmap(AS_IO, &fantom_state::fantom_io_map);
 	m_maincpu->read_adc<0>().set(FUNC(fantom_state::adc_r<0>));
@@ -708,19 +599,18 @@ void fantom_state::fantom(machine_config &config)
 	m_maincpu->read_adc<6>().set(FUNC(fantom_state::adc_r<6>));
 	m_maincpu->read_adc<7>().set(FUNC(fantom_state::adc_r<7>));
 
-	TC58FVB321(config, m_flash);    // the program flash, whose top half the firmware keeps its user data in
+	TC58FVB321(config, m_flash);
 
-	I2C_24C08(config, m_eeprom);    // BR24C08F
+	I2C_24C08(config, m_eeprom);
 
-	FANTOM_KEYSCAN(config, m_keyscan, 10000);     // the time stamp unit, a choice
-	m_keyscan->int_handler().set_inputline(m_maincpu, 2);   // IRQ2, low level
+	FANTOM_KEYSCAN(config, m_keyscan, 10'000);
+	m_keyscan->int_handler().set_inputline(m_maincpu, 2);
 
 	SMC37C78(config, m_fdc, 24_MHz_XTAL);
-	m_fdc->intrq_wr_callback().set_inputline(m_maincpu, 3);               // IRQ3
-	m_fdc->drq_wr_callback().set(FUNC(fantom_state::fdc_drq_w));          // DREQ0
-	FLOPPY_CONNECTOR(config, "fdc:1", "35hd", FLOPPY_35_HD, true, floppy_image_device::default_pc_floppy_formats);    // on DS1 and MTR1
+	m_fdc->intrq_wr_callback().set_inputline(m_maincpu, 3);
+	m_fdc->drq_wr_callback().set(FUNC(fantom_state::fdc_drq_w));
+	FLOPPY_CONNECTOR(config, "fdc:1", "35hd", FLOPPY_35_HD, true, floppy_image_device::default_pc_floppy_formats);
 
-	// the LM320191 panel on the M66273FP's four-bit output
 	screen_device &screen(SCREEN(config, "screen").set_lcd());
 	screen.set_refresh_hz(62.5);
 	screen.set_size(320, 240);
@@ -729,23 +619,21 @@ void fantom_state::fantom(machine_config &config)
 	screen.set_palette("palette");
 	PALETTE(config, "palette", FUNC(fantom_state::lcd_palette), m66273_device::LEVELS);
 
-	// MPUCLK is LCDCCK, a clock out of the key scan chip, at a rate that is a guess
 	M66273(config, m_lcdc, 24_MHz_XTAL / 2);
 	m_lcdc->set_screen("screen");
 	m_lcdc->cse_callback().set([this] (int state) { m_maincpu->dreq_w<1>(!state); });
 	m_lcdc->lcdenb_callback().set([this] (int state) { m_lcdenb = state; });
 
-	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("xp-a", "xp-a").set_open(0xffff);   // CN7, slot A
-	for (int slot = 0; slot < 2; slot++)                                     // CN10 and CN11, slots B and C
+	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("xp-a", "xp-a").set_open(0xffff);
+	for (int slot = 0; slot < 2; slot++)
 		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'b' + slot), util::string_format("xp-%c", 'b' + slot)).set_open(0xffff);
 
-	// OUTPUT A and OUTPUT B, one AK4393 each
 	SPEAKER(config, "outa", 2).front();
 	SPEAKER(config, "outb", 2).front();
 
 	ROLAND_XV(config, m_xv, 16.9344_MHz_XTAL);
 	m_xv->set_addrmap(roland_xv_device::AS_WAVE, &fantom_state::xv_wave_map);
-	m_xv->int_callback().set_inputline(m_maincpu, 0);   // IRQ0, the falling edge
+	m_xv->int_callback().set_inputline(m_maincpu, 0);
 	m_xv->switch_callback().set_ioport("PANEL");
 	m_xv->led_callback().set(FUNC(fantom_state::led_w));
 	m_xv->add_route(0, "outa", 1.0, 0);
@@ -753,53 +641,49 @@ void fantom_state::fantom(machine_config &config)
 	m_xv->add_route(2, "outb", 1.0, 0);
 	m_xv->add_route(3, "outb", 1.0, 1);
 
-	// SCPT0, the SCI's TxD, is XDBPLS, the D-Beam emitter's drive, and
-	// through IC6C the A/D converter's ADTRG
 	m_maincpu->sci_txd_handler().set([this] (int state) { m_maincpu->adtrg_w(!state); });
 
-	// MIDI on the SH7709's IrDA channel
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(sh7709_device::irda_rxd_w));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
-	m_maincpu->irda_txd_handler().set("mdout", FUNC(midi_port_device::write_txd));
+	midi_port_device &mdout(MIDI_PORT(config, "mdout", midiout_slot, "midiout"));
+	m_maincpu->irda_txd_handler().set(mdout, FUNC(midi_port_device::write_txd));
 }
 
 
-static INPUT_PORTS_START(fantom)
-	// the switch matrix as the XV numbers it: strobe SS0-SS3 times eight, plus the data line SD0-SD7
+INPUT_PORTS_START(fantom)
 	PORT_START("PANEL")
-	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 4")
-	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Stop/Play") PORT_CODE(KEYCODE_SPACE)
-	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Rec") PORT_CODE(KEYCODE_R)
-	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Mode") PORT_CODE(KEYCODE_F1)
-	PORT_BIT(0x00000010, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Menu") PORT_CODE(KEYCODE_F2)
-	PORT_BIT(0x00000020, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("List") PORT_CODE(KEYCODE_F3)
-	PORT_BIT(0x00000040, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 1")
-	PORT_BIT(0x00000080, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 5")
-	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 3")
-	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Fwd")
-	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Rhythm")
-	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Dec") PORT_CODE(KEYCODE_MINUS)
-	PORT_BIT(0x00001000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
-	PORT_BIT(0x00002000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
-	PORT_BIT(0x00004000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 2")
-	PORT_BIT(0x00008000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 6")
-	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 2")
-	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Bwd")
-	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Arpeggio")
-	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Up") PORT_CODE(KEYCODE_UP)
-	PORT_BIT(0x00100000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Down") PORT_CODE(KEYCODE_DOWN)
-	PORT_BIT(0x00200000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Jump") PORT_CODE(KEYCODE_F4)
-	PORT_BIT(0x00400000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 3")
-	PORT_BIT(0x00800000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 7")
-	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Realtime Control 1")
-	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Reset")
-	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("D Beam")
-	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Inc") PORT_CODE(KEYCODE_EQUALS)
-	PORT_BIT(0x10000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
-	PORT_BIT(0x20000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Exit") PORT_CODE(KEYCODE_ESC)
-	PORT_BIT(0x40000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 4")
-	PORT_BIT(0x80000000, IP_ACTIVE_HIGH, IPT_BUTTON1) PORT_NAME("Favorite 8")
+	PORT_BIT(0x00000001, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Realtime Control 4")
+	PORT_BIT(0x00000002, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Stop/Play") PORT_CODE(KEYCODE_SPACE)
+	PORT_BIT(0x00000004, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rec") PORT_CODE(KEYCODE_R)
+	PORT_BIT(0x00000008, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Mode") PORT_CODE(KEYCODE_F1)
+	PORT_BIT(0x00000010, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Menu") PORT_CODE(KEYCODE_F2)
+	PORT_BIT(0x00000020, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("List") PORT_CODE(KEYCODE_F3)
+	PORT_BIT(0x00000040, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 1")
+	PORT_BIT(0x00000080, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 5")
+	PORT_BIT(0x00000100, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Realtime Control 3")
+	PORT_BIT(0x00000200, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Fwd")
+	PORT_BIT(0x00000400, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Rhythm")
+	PORT_BIT(0x00000800, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Dec") PORT_CODE(KEYCODE_MINUS)
+	PORT_BIT(0x00001000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x00002000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT)
+	PORT_BIT(0x00004000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 2")
+	PORT_BIT(0x00008000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 6")
+	PORT_BIT(0x00010000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Realtime Control 2")
+	PORT_BIT(0x00020000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Bwd")
+	PORT_BIT(0x00040000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Arpeggio")
+	PORT_BIT(0x00080000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x00100000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x00200000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Jump") PORT_CODE(KEYCODE_F4)
+	PORT_BIT(0x00400000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 3")
+	PORT_BIT(0x00800000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 7")
+	PORT_BIT(0x01000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Realtime Control 1")
+	PORT_BIT(0x02000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Reset")
+	PORT_BIT(0x04000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("D Beam")
+	PORT_BIT(0x08000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Inc") PORT_CODE(KEYCODE_EQUALS)
+	PORT_BIT(0x10000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Cursor Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x20000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exit") PORT_CODE(KEYCODE_ESC)
+	PORT_BIT(0x40000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 4")
+	PORT_BIT(0x80000000, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Favorite 8")
 
 	PORT_START("VELOCITY")
 	PORT_CONFNAME(0x07, 0x03, "Key velocity")
@@ -814,7 +698,6 @@ static INPUT_PORTS_START(fantom)
 	PORT_START("ENCODER")
 	PORT_BIT(0xff, 0x00, IPT_DIAL) PORT_NAME("Value") PORT_SENSITIVITY(25) PORT_KEYDELTA(2) PORT_CODE_DEC(KEYCODE_PGDN) PORT_CODE_INC(KEYCODE_PGUP)
 
-	// the A/D inputs, ten bits each
 	PORT_START("AN0")
 	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Pitch Bend") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
 
@@ -953,9 +836,6 @@ INPUT_PORTS_END
 
 
 ROM_START(fantom)
-	// out of Roland's own updaters, the 1.20 floppy set and Fantom118_SMF.exe:
-	// a boot block, then the program in two zlib containers, and the top half
-	// left erased
 	ROM_REGION16_BE(0x400000, "flash", 0)
 	ROM_DEFAULT_BIOS("v120")
 	ROM_SYSTEM_BIOS(0, "v120", "Version 1.20")
@@ -964,8 +844,6 @@ ROM_START(fantom)
 	ROMX_LOAD("fantom_v1.18.ic5", 0x000000, 0x400000, CRC(f9fae390) SHA1(86f6924893d1496b491fc124173d349694c30c1b), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
-	// the XV-3080's and XV-5080's two parts, which this machine's own wave
-	// list and sample records say it shares byte for byte
 	ROM_LOAD("upd23c128040lgy-849.ic48", 0x0000000, 0x1000000, CRC(528aad5b) SHA1(5ced38ba29f9e6188ac1767933dc2bd9eac172fd))
 	ROM_LOAD("upd23c128040lgy-850.ic51", 0x1000000, 0x1000000, CRC(17163f60) SHA1(4f360f09fe4e9185cf4a52df6aeb1e72c477fcff))
 ROM_END
@@ -973,5 +851,5 @@ ROM_END
 } // anonymous namespace
 
 
-//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT          COMPANY   FULLNAME        FLAGS
+//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT          COMPANY   FULLNAME          FLAGS
 SYST( 2001, fantom, 0,      0,      fantom,  fantom, fantom_state, init_waverom, "Roland", "Fantom (FA-76)", MACHINE_NOT_WORKING )
