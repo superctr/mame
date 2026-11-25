@@ -21,8 +21,8 @@
 #include "cpu/mcs96/i80c196kb.h"
 #include "imagedev/floppy.h"
 #include "formats/flopimg.h"
+#include "machine/28fxxx.h"
 #include "machine/eepromser.h"
-#include "machine/i28f010.h"
 #include "machine/mb87030.h"
 #include "machine/nscsi_bus.h"
 #include "machine/upd765.h"
@@ -306,6 +306,9 @@ void roland_s770_state::machine_start()
 	set_data_frame(1, 8, PARITY_NONE, STOP_BITS_1);
 	set_rcv_rate(31250);
 	set_tra_rate(31250);
+
+	if (m_flash)
+		m_flash->vpp(ASSERT_LINE);
 }
 
 void roland_s770_state::wave_map()
@@ -760,10 +763,11 @@ u16 roland_s770_state::bus_r(u16 bank, offs_t offset, u16 mem_mask)
 		if (m_flash && (adr & 0xe0000) == 0x40000)
 		{
 			u16 data = 0;
+			address_space &space = m_maincpu->space(AS_PROGRAM);
 			if (ACCESSING_BITS_0_7)
-				data |= m_flash->read(adr);
+				data |= m_flash->read(space, adr & 0x1ffff);
 			if (ACCESSING_BITS_8_15)
-				data |= m_flash->read(adr + 1) << 8;
+				data |= m_flash->read(space, (adr + 1) & 0x1ffff) << 8;
 			return data;
 		}
 		return m_boot[(adr & (m_boot.bytes() - 1)) >> 1];
@@ -777,9 +781,9 @@ void roland_s770_state::bus_w(u16 bank, offs_t offset, u16 data, u16 mem_mask)
 	if (BIT(bank, 10) && m_flash && (adr & 0xe0000) == 0x40000)
 	{
 		if (ACCESSING_BITS_0_7)
-			m_flash->write(adr, data);
+			m_flash->write(adr & 0x1ffff, data);
 		if (ACCESSING_BITS_8_15)
-			m_flash->write(adr + 1, data >> 8);
+			m_flash->write((adr + 1) & 0x1ffff, data >> 8);
 	}
 	else if (BIT(bank, 10))
 		LOGMASKED(LOG_GA, "write to boot ROM %05x = %04x (%04x)\n", adr, data, m_maincpu->pc());
