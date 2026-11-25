@@ -251,7 +251,7 @@ s32 roland_ep_device::run_voice(int n)
 			m_irq_pending |= 1U << n;
 			irq_update();
 		}
-		v.predictor = wrap20(v.predictor + (c.mantissa << c.exponent));
+		v.predictor = saturate17(v.predictor + (c.mantissa << c.exponent));
 	}
 	return sample;
 }

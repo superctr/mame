@@ -78,6 +78,7 @@ private:
 	void irq_update();
 
 	static s32 wrap20(s32 value) { return s32(u32(value) << 12) >> 12; }
+	static s32 saturate17(s32 value) { return value > 0xffff ? 0xffff : value < -0x10000 ? -0x10000 : value; }
 
 	address_space_config m_wave_config;
 	memory_access<24, 0, 0, ENDIANNESS_LITTLE>::specific m_wave;
