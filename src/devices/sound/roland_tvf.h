@@ -52,10 +52,12 @@ private:
 		s32 value = 0;
 		s32 start = 0;
 		s32 target = 0;
-		int remaining = 0;
-		int length = 0;
+		s32 elapsed = 0;
+		s32 rate = 0;
+		s32 shift = 0;
 
-		void set(u16 data, int samples);
+		void set(u16 data, u16 command);
+		void jump(u16 data);
 		void advance();
 	};
 
@@ -70,7 +72,6 @@ private:
 
 	void voice_w(int n, int word, u16 data);
 	void service(voice &v);
-	static int ramp_samples(u16 command);
 	static s64 rounded_shift(s64 value, int bits);
 	static s32 saturate(s64 value) { return s32(std::clamp(value, -s64(FULL_SCALE), s64(FULL_SCALE))); }
 	s32 filter(voice &v, s64 sample) const;

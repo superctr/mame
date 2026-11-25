@@ -7,6 +7,7 @@
 
     TODO:
     - the arithmetic widths and rounding are provisional
+    - the key mask, which holds a channel's ramps in giulioz's reading
     - the command's bits 15-5, the four zero pairs, and the readback's layout
 
 ***************************************************************************/
@@ -39,13 +40,15 @@ void roland_tvf_device::device_start()
 		save_item(NAME(m_voices[i].cutoff.value), i);
 		save_item(NAME(m_voices[i].cutoff.start), i);
 		save_item(NAME(m_voices[i].cutoff.target), i);
-		save_item(NAME(m_voices[i].cutoff.remaining), i);
-		save_item(NAME(m_voices[i].cutoff.length), i);
+		save_item(NAME(m_voices[i].cutoff.elapsed), i);
+		save_item(NAME(m_voices[i].cutoff.rate), i);
+		save_item(NAME(m_voices[i].cutoff.shift), i);
 		save_item(NAME(m_voices[i].amplitude.value), i);
 		save_item(NAME(m_voices[i].amplitude.start), i);
 		save_item(NAME(m_voices[i].amplitude.target), i);
-		save_item(NAME(m_voices[i].amplitude.remaining), i);
-		save_item(NAME(m_voices[i].amplitude.length), i);
+		save_item(NAME(m_voices[i].amplitude.elapsed), i);
+		save_item(NAME(m_voices[i].amplitude.rate), i);
+		save_item(NAME(m_voices[i].amplitude.shift), i);
 	}
 	save_item(STRUCT_MEMBER(m_voices, low));
 	save_item(STRUCT_MEMBER(m_voices, band));
@@ -125,25 +128,25 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 	case STATE_E:
 		v.low = 0;
 		v.band = 0;
-		v.amplitude.set(data, 0);
+		v.amplitude.jump(data);
 		break;
 
 	case CUTOFF_INITIAL:
-		v.cutoff.set(data, 0);
+		v.cutoff.jump(data);
 		break;
 
 	case CUTOFF:
 		if (BIT(data, 15))
-			v.cutoff.set(data & 0x7fff, 0);
+			v.cutoff.jump(data & 0x7fff);
 		else
-			v.cutoff.set(data, ramp_samples(m_regs[COMMAND]));
+			v.cutoff.set(data, m_regs[COMMAND]);
 		break;
 
 	case AMPLITUDE:
 		if (BIT(data, 15))
-			v.amplitude.set(data & 0x7fff, 0);
+			v.amplitude.jump(data & 0x7fff);
 		else
-			v.amplitude.set(data, ramp_samples(m_regs[COMMAND]));
+			v.amplitude.set(data, m_regs[COMMAND]);
 		break;
 	}
 }
@@ -153,27 +156,40 @@ void roland_tvf_device::voice_w(int n, int word, u16 data)
 //  the channels
 //-------------------------------------------------
 
-void roland_tvf_device::ramp::set(u16 data, int samples)
+void roland_tvf_device::ramp::jump(u16 data)
 {
-	target = s32(data) << (COEFFICIENT_FRACTION_BITS - 14);
-	start = value;
-	length = samples;
-	remaining = value == target ? 0 : samples;
-	if (!remaining)
-		value = target;
+	target = value = s32(data) << (COEFFICIENT_FRACTION_BITS - 14);
+	rate = 0;
 }
 
-int roland_tvf_device::ramp_samples(u16 command)
+void roland_tvf_device::ramp::set(u16 data, u16 command)
 {
-	return (4 | (command & 3)) << (((command >> 2) & 7) + 1);
+	static constexpr s32 MANTISSA[4] = { 16, 13, 11, 9 };
+	target = s32(data) << (COEFFICIENT_FRACTION_BITS - 14);
+	start = value;
+	elapsed = 0;
+	switch (command & 0x1f)
+	{
+	case 0x00: rate = 128; shift = 7; break;
+	case 0x1f: rate = 1; shift = 11; break;
+	default: rate = MANTISSA[command & 3]; shift = 7 + ((command >> 2) & 7); break;
+	}
+	if (value == target)
+		rate = 0;
 }
 
 void roland_tvf_device::ramp::advance()
 {
-	if (remaining)
+	if (rate)
 	{
-		--remaining;
-		value = start + s64(target - start) * (length - remaining) / length;
+		const s64 progress = s64(++elapsed) * rate;
+		if (progress >= (s64(1) << shift))
+		{
+			value = target;
+			rate = 0;
+		}
+		else
+			value = start + s64(target - start) * progress / (s64(1) << shift);
 	}
 }
 
