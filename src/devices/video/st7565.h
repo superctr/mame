@@ -19,11 +19,8 @@ class st7565_device : public device_t
 public:
 	st7565_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-	// the dots of the glass, and the SEG pin behind the leftmost one; the
-	// step is -1 for a panel wired the other way round
-	void set_panel(unsigned columns, unsigned lines, int first_segment = 0, int segment_step = 1);
+	void set_panel(u32 columns, u32 lines, int first_segment = 0, int segment_step = 1);
 
-	// A0 is the low address line: 0 the command register, 1 the display data
 	void write(offs_t offset, uint8_t data);
 	uint8_t read(offs_t offset);
 
@@ -41,11 +38,11 @@ protected:
 	virtual void device_reset() override ATTR_COLD;
 
 private:
-	static constexpr unsigned SEGS = 132;
-	static constexpr unsigned PAGES = 9;
+	static constexpr u32 SEGS = 132;
+	static constexpr u32 PAGES = 9;
 
-	unsigned m_columns;
-	unsigned m_lines;
+	u32 m_columns;
+	u32 m_lines;
 	int m_first_segment;
 	int m_segment_step;
 
@@ -67,7 +64,7 @@ private:
 	bool m_bias;
 	bool m_modify_write;
 
-	std::unique_ptr<uint8_t[]> m_ddr;
+	uint8_t m_ddr[PAGES * SEGS];
 };
 
 

@@ -4,9 +4,8 @@
 
     Sitronix ST7565 / Epson SED1565 LCD controller
 
-    A 65 x 132 dot column driver with the display data RAM on the chip:
-    nine pages of 132 bytes, one byte to a column of eight commons, the
-    ninth page one line deep for the static indicator.
+    - 65 x 132 dot driver with on-chip display data RAM
+    - nine pages of 132 bytes, the ninth one line deep for the indicator
 
     TODO:
     - the static indicator, the power saver and the busy flag
@@ -22,7 +21,7 @@
 #define LOG_COMMAND (1U << 1)
 #define LOG_DATA    (1U << 2)
 
-#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
@@ -49,7 +48,7 @@ sed1565_device::sed1565_device(const machine_config &mconfig, const char *tag, d
 {
 }
 
-void st7565_device::set_panel(unsigned columns, unsigned lines, int first_segment, int segment_step)
+void st7565_device::set_panel(u32 columns, u32 lines, int first_segment, int segment_step)
 {
 	m_columns = columns;
 	m_lines = lines;
@@ -60,7 +59,7 @@ void st7565_device::set_panel(unsigned columns, unsigned lines, int first_segmen
 
 void st7565_device::device_start()
 {
-	m_ddr = std::make_unique<uint8_t[]>(PAGES * SEGS);
+	std::fill(std::begin(m_ddr), std::end(m_ddr), 0);
 
 	save_item(NAME(m_page));
 	save_item(NAME(m_column));
@@ -79,7 +78,7 @@ void st7565_device::device_start()
 	save_item(NAME(m_all_on));
 	save_item(NAME(m_bias));
 	save_item(NAME(m_modify_write));
-	save_pointer(NAME(m_ddr), PAGES * SEGS);
+	save_item(NAME(m_ddr));
 }
 
 void st7565_device::device_reset()
@@ -134,7 +133,6 @@ void st7565_device::data_write(uint8_t data)
 
 uint8_t st7565_device::data_read()
 {
-	// the read is a word behind the column address, so the first one is a dummy
 	const uint8_t data = m_data;
 	if (machine().side_effects_disabled())
 		return data;
@@ -152,56 +150,56 @@ void st7565_device::control_write(uint8_t data)
 
 	switch (m_pending)
 	{
-	case 0x81:                               // electronic volume register
+	case 0x81:
 		m_contrast = data & 0x3f;
 		m_pending = 0;
 		return;
 
-	case 0xad:                               // static indicator register
+	case 0xad:
 		m_indicator = data & 0x03;
 		m_pending = 0;
 		return;
 	}
 
-	if (data == 0x81 || data == 0xad)        // the two double byte commands
+	if (data == 0x81 || data == 0xad)
 		m_pending = data;
-	else if ((data & 0xf0) == 0x00)          // column address, low four bits
+	else if ((data & 0xf0) == 0x00)
 		m_column = (m_column & 0xf0) | (data & 0x0f);
-	else if ((data & 0xf0) == 0x10)          // column address, high four bits
+	else if ((data & 0xf0) == 0x10)
 		m_column = (m_column & 0x0f) | ((data & 0x0f) << 4);
-	else if ((data & 0xf8) == 0x20)          // V5 regulator internal resistor ratio
+	else if ((data & 0xf8) == 0x20)
 		m_resistor_ratio = data & 0x07;
-	else if ((data & 0xf8) == 0x28)          // booster, regulator and follower
+	else if ((data & 0xf8) == 0x28)
 		m_power = data & 0x07;
-	else if ((data & 0xc0) == 0x40)          // display start line
+	else if ((data & 0xc0) == 0x40)
 		m_start_line = data & 0x3f;
-	else if ((data & 0xfe) == 0xa0)          // segment driver direction
+	else if ((data & 0xfe) == 0xa0)
 		m_column_reverse = BIT(data, 0);
-	else if ((data & 0xfe) == 0xa2)          // bias
+	else if ((data & 0xfe) == 0xa2)
 		m_bias = BIT(data, 0);
-	else if ((data & 0xfe) == 0xa4)          // display all points
+	else if ((data & 0xfe) == 0xa4)
 		m_all_on = BIT(data, 0);
-	else if ((data & 0xfe) == 0xa6)          // normal or reverse display
+	else if ((data & 0xfe) == 0xa6)
 		m_display_reverse = BIT(data, 0);
-	else if (data == 0xac)                   // static indicator off
+	else if (data == 0xac)
 		m_indicator = 0;
-	else if ((data & 0xfe) == 0xae)          // display on or off
+	else if ((data & 0xfe) == 0xae)
 		m_lcd_on = BIT(data, 0);
-	else if ((data & 0xf0) == 0xb0)          // page address
+	else if ((data & 0xf0) == 0xb0)
 		m_page = data & 0x0f;
-	else if ((data & 0xf0) == 0xc0)          // common output direction
+	else if ((data & 0xf0) == 0xc0)
 		m_common_reverse = BIT(data, 3);
-	else if (data == 0xe0)                   // read/modify/write
+	else if (data == 0xe0)
 	{
 		m_modify_write = true;
 		m_old_column = m_column;
 	}
-	else if (data == 0xee)                   // end
+	else if (data == 0xee)
 	{
 		m_modify_write = false;
 		m_column = m_old_column;
 	}
-	else if (data == 0xe2)                   // reset, which leaves the RAM alone
+	else if (data == 0xe2)
 	{
 		m_page = 0;
 		m_column = 0;
@@ -212,9 +210,7 @@ void st7565_device::control_write(uint8_t data)
 		m_common_reverse = false;
 		m_modify_write = false;
 	}
-	else if (data == 0xe3)                   // NOP
-		;
-	else
+	else if (data != 0xe3)
 		logerror("%s: invalid ST7565 command: %02x\n", machine().describe_context(), data);
 }
 
@@ -224,16 +220,16 @@ uint32_t st7565_device::screen_update(screen_device &screen, bitmap_ind16 &bitma
 	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
 	{
 		const int common = m_common_reverse ? (m_lines - 1 - y) : y;
-		// the start line scrolls the 64 display lines; the 65th is the indicator's
 		const int line = (common < 64) ? ((common + m_start_line) & 0x3f) : 64;
 		const uint8_t *const page = &m_ddr[(line >> 3) * SEGS];
+		uint16_t *const dst = &bitmap.pix(y);
 
 		for (int x = cliprect.left(); x <= cliprect.right(); x++)
 		{
 			const int segment = m_first_segment + x * m_segment_step;
 			const int column = m_column_reverse ? (int(SEGS) - 1 - segment) : segment;
 			const bool on = m_lcd_on && (m_all_on || (column >= 0 && column < int(SEGS) && BIT(page[column], line & 7)));
-			bitmap.pix(y, x) = on != m_display_reverse;
+			dst[x] = on != m_display_reverse;
 		}
 	}
 
