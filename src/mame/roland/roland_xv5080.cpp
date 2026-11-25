@@ -2,96 +2,43 @@
 // copyright-holders:superctr
 /****************************************************************************
 
-    Roland XV-3080 and XV-5080 128-voice synthesizer modules.
+    Roland XV-3080 and XV-5080 synthesizer modules
 
-    Both run the same SH7042 platform: a 256 kB on-chip mask ROM that boots
-    the machine and carries the flash updater, a 2 MB program flash, battery
-    backed SRAM for the user banks, DRAM for the edit buffers, the
-    TC160G22AF gate array (IC4) for the panel, the LEDs and the interrupt
-    sources, and two tone generator chips side by side on CS0.
-
-    XV-3080 main board (service notes, parts list):
-    - IC3 HD6437042F33 SH-2, 8.25 MHz crystal, x4 PLL, on-chip ROM enabled
-    - IC92/IC93 RA09-002 (XP6, TC203C180AF) PCM chips at 24.576 MHz
-    - IC4 TC160G22AF-1253 gate array
-    - IC6/IC84 uPD431000 SRAM, 256 kB, battery backed
-    - IC5 VG2618165 DRAM, 2 MB; IC95/IC96 LC324260 are the XPs' effect RAM
+    XV-3080 main board:
+    - IC3 HD6437042F33 SH-2 with its own ROM, 8.25 MHz crystal, x4 PLL
+    - IC4 TC160G22AF-1253 gate array: the panel, the LEDs, the interrupts
     - IC1 LH28F160S5T program flash, 2 MB
-    - IC26/IC29 uPD23C128040 wave mask ROMs, 16 MB each (undumped; the
-      set is in hand descrambled, see the ROM definitions)
+    - IC6/IC84 uPD431000 SRAM, 256 KB, battery backed
+    - IC5 VG2618165 DRAM, 2 MB
+    - IC92/IC93 RA09-002 (TC203C180AF) XP PCM chips, 24.576 MHz
+    - IC95/IC96 LC324260 effect RAM
+    - IC26/IC29 uPD23C128040 wave mask ROMs, 16 MB each
     - IC71/IC74/IC79 AK4324 DACs
-    - a 40 x 2 character LCD (L4052B1J000) behind the gate array
+    - L4052B1J000 LCD, 40 x 2 characters
 
     XV-5080 main board:
-    - IC3 HD6437042AA13F SH-2, the same crystal
-    - IC12/IC13 TC223C660CF-503 (RA08-503) "XV" tone generators
+    - IC3 HD6437042AA13F SH-2 with its own ROM, 8.25 MHz crystal, x4 PLL
     - IC4 TC160G22AF-1253 gate array
-    - IC6/IC84 uPD431000 SRAM, 256 kB; IC117/IC118 MSM5117805 DRAM, 4 MB;
-      IC18/IC19 VG2618165 are the XVs' RAM
     - IC1 LH28F160S5T program flash, 2 MB
-    - IC26/IC29 the same two wave mask ROMs
-    - IC51 SED1335F0B LCD controller with a 32 kB TC55257 (IC52) of its
-      own, driving a 320 x 80 graphic LCD (RCM6048T-A)
-    - IC71/IC74/IC79/IC82 AK4324 DACs
+    - IC6/IC84 uPD431000 SRAM, 256 KB; IC117/IC118 MSM5117805 DRAM, 4 MB
+    - IC12/IC13 TC223C660CF-503 (RA08-503) XV tone generators, 384 fs
+    - IC18/IC19 VG2618165 effect RAM
+    - IC26/IC29 uPD23C128040 wave mask ROMs, 16 MB each
+    - IC51 SED1335F0B LCD controller, IC52 TC55257 32 KB, RCM6048T-A LCD
     - IC53 SYM53CF92 SCSI controller, 25 MHz
-    - IC107 M38881M2 sub-CPU (undumped)
-    - two 72-pin SIMM slots for sample RAM, 16, 32 or 64 MB each
-    - the MEMORY CARD slot, a SmartMedia of 2 to 128 MB
+    - IC107 M38881M2 sub CPU
+    - IC71/IC74/IC79/IC82 AK4324 DACs
+    - two 72-pin SIMM slots, 16 to 64 MB each; SmartMedia slot
 
-    XV-5080 tone-generator clock (service notes, page 23): IC24's PLL
-    locks its VCO to 768*fs using IC23's divide-by-three feedback from
-    the 256*fs reference. IC21B divides the VCO by two, so XVCLK at both
-    chips' CKI pins is 384*fs: 16.9344 MHz at 44.1 kHz or 18.432 MHz at
-    48 kHz.  SYSTEM, F2, Master Freq picks the rate, and the firmware
-    follows it with bit 0 of gate array register 0x38 - clear for 44.1 kHz,
-    set for 48 kHz - which the driver passes on to both chips as their
-    clock.  The external master clocks (R-BUS and WORD CLOCK IN), which the
-    firmware selects with bit 2 of that register and tests through bit 3 of
-    register 0x3b, are not modelled.
-
-    The bus map follows giulioz's emulator of both machines: the two tone
-    generator windows at 0x00200000 and 0x00280000 (CS0), the graphic LCD
-    at 0x005c0000 and the gate array at 0x006c0000 (CS1), the battery SRAM
-    at 0x00800000 (CS2), the program flash at 0x00d00000 (CS3) and the DRAM
-    at 0x01000000.  IRQ0 is the gate array, IRQ1 and IRQ2 the two chips.
-    The XV-5080 adds the SCSI controller at 0x00680000 on IRQ3, its DMA
-    port at 0x00500000 on DMA channel 0, the sub-CPU's window at
-    0x00540000, which nothing answers yet, and the memory card: the
-    SmartMedia's I/O pins at 0x00640000, its ALE, /CE, CLE and /WP from
-    gate array register 0x39, and card detect, write enable and ready on
-    PE6, PE7 and PE8.  A read-only card image is a write-protected card.
-
-    Both machines boot their firmware to their play screens and play MIDI.
-    The display bytes travel by DMA, channel 0 under DREQ0 on the
-    XV-3080 (with the transfer end interrupt), one request every 40 us for
-    the character LCD, and channel 1 under DREQ1 on the XV-5080 (polled),
-    a request a microsecond after each byte the SED1335 takes, since that
-    controller accepts data at bus speed; the firmware's kernel
-    dispatches its tasks from the watchdog's interval timer interrupt and
-    ticks from MTU1 (XV-3080) or MTU2 (XV-5080).  The XV-3080 also bit
-    bangs a serial link on port E (PE12 clock, PE9 out, PE13 in, PE10/PE11
-    selects) to read the expansion boards' ID PROMs; nothing answers it.
-
-    The XV-3080 plays MIDI once its battery SRAM holds a factory reset
-    (UTILITY, cursor right to UTIL 2, FACTORY RESET, ENTER, DEC to lift the
-    write protect, ENTER, ENTER, ENTER); on a blank SRAM it boots to "User
-    Memory Damaged" and no part takes a note.  XP6 #0 drives all three
-    DACs, port B being MIX OUT and the phones, C and D the two DIRECT OUT
-    pairs; #1 has no DAC and reaches them through #0 over the port A bus.
-
-    The XV-5080's two MIDI inputs are RXD0 (IN 1) and RXD1 (IN 2), and each
-    Part has a receive switch for either.
-
-    Not emulated: the XV-5080's R-BUS and S/PDIF digital outputs, R-BUS
-    control, and its external master clocks (R-BUS, WORD CLOCK IN), for
-    which MAME offers no digital audio link or clock input.  Also open: the
-    XV chips' effect DSP arithmetic is unmeasured on silicon, the XV-5080's
-    blank SRAM still wants its factory reset, and neither wave ROM is
-    dumped (the descrambled set stands in).
+    TODO:
+    - the XV-5080's sub CPU, R-BUS, S/PDIF output and external word clocks
+    - the XV-3080's link to the expansion boards' ID PROMs on port E
 
 ****************************************************************************/
 
 #include "emu.h"
+
+#include "wavecard.h"
 
 #include "bus/midi/midiinport.h"
 #include "bus/midi/midioutport.h"
@@ -105,60 +52,79 @@
 #include "sound/roland_xv.h"
 #include "video/hd44780.h"
 #include "video/sed1330.h"
-#include "wavecard.h"
 
 #include "emupal.h"
 #include "screen.h"
 #include "softlist_dev.h"
 #include "speaker.h"
 
+#include <algorithm>
+#include <memory>
+
 #include "roland_xv3080.lh"
 #include "roland_xv5080.lh"
-
-#include <algorithm>
 
 #define LOG_GA      (1U << 1)
 #define LOG_PORT    (1U << 2)
 
-#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
 namespace {
 
-class xv3080_state : public driver_device
+class xv_state : public driver_device
 {
 public:
-	xv3080_state(const machine_config &mconfig, device_type type, const char *tag)
+	void init_waverom() ATTR_COLD;
+
+protected:
+	static constexpr int GA_SOURCE_KEY = 0;
+	static constexpr int GA_SOURCE_ENCODER = 1;
+	static constexpr int GA_SOURCE_SENSING = 7;
+	static constexpr int GA_SOURCE_TICK = 9;
+
+	static constexpr int GA_TICK_HZ = 1000;
+	static constexpr int GA_SENSING_HZ = 10;
+	static constexpr int GA_SCAN_HZ = 120;
+
+	static constexpr int DISPLAY_REQUEST_US = 40;
+	static constexpr int LCDC_REQUEST_NS = 1000;
+
+	static constexpr u8 GA_LEDS = 0x10;
+	static constexpr u8 GA_LCD_COMMAND = 0x38;
+	static constexpr u8 GA_LCD_DATA = 0x39;
+	static constexpr u8 GA_CLOCK = 0x38;
+	static constexpr u8 GA_CARD = 0x39;
+	static constexpr u8 GA_DIRECT_ROW = 0x3a;
+	static constexpr u8 GA_SWITCHES = 0x3b;
+	static constexpr u8 GA_ENABLE_LOW = 0x3e;
+	static constexpr u8 GA_ENABLE_HIGH = 0x3f;
+	static constexpr u8 GA_SOURCE = 0x40;
+	static constexpr u8 GA_ENCODER = 0x42;
+	static constexpr u8 GA_KEY = 0x43;
+
+	xv_state(const machine_config &mconfig, device_type type, const char *tag, int display_channel)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
-		, m_xp(*this, "xp%u", 0U)
 		, m_exp(*this, "exp%u", 0U)
-		, m_srx(*this, "srx%u", 0U)
-		, m_lcd(*this, "lcd")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_dial(*this, "VALUE")
 		, m_panel(*this, "PANEL")
 		, m_leds(*this, "led%u", 0U)
+		, m_display_channel(display_channel)
 	{
 	}
 
-	void xv3080(machine_config &config) ATTR_COLD;
-
-	void init_waverom() ATTR_COLD { roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes()); }
-
-protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
 
 	void common(machine_config &config) ATTR_COLD;
 	void common_map(address_map &map) ATTR_COLD;
-	void xv3080_map(address_map &map) ATTR_COLD;
-	void xp_rom_map(address_map &map) ATTR_COLD;
 
 	u8 ga_r(offs_t offset);
 	virtual void ga_w(offs_t offset, u8 data);
-	virtual u8 ga_switches_r(u8 reg);
+	virtual u8 ga_switches_r(u8 reg) = 0;
 	void ga_raise(int source);
 	void ga_lower(int source);
 	void ga_update();
@@ -167,29 +133,21 @@ protected:
 	void key_deliver();
 	TIMER_CALLBACK_MEMBER(ga_scan);
 	TIMER_CALLBACK_MEMBER(ga_tick);
-	TIMER_CALLBACK_MEMBER(ga_sensing);
 	TIMER_CALLBACK_MEMBER(display_request);
 	void porte_w(offs_t offset, u16 data, u16 ddr);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
-	void pump_slave(int state);
-	u32 master_link_r(offs_t strobe);
-	u32 slave_link_r(offs_t strobe);
 
 	required_device<sh7042_device> m_maincpu;
-	optional_device_array<roland_xp_device, 2> m_xp;
 	required_device_array<roland_srjv80_slot_device, 4> m_exp;
-	optional_device_array<roland_srx_slot_device, 4> m_srx;
-	optional_device<hd44780_device> m_lcd;
 	required_ioport_array<8> m_keys;
 	required_ioport m_dial;
 	required_ioport m_panel;
 	output_finder<32> m_leds;
 
+	const int m_display_channel;
 	emu_timer *m_ga_scan_timer = nullptr;
 	emu_timer *m_ga_tick_timer = nullptr;
-	emu_timer *m_ga_sensing_timer = nullptr;
 	emu_timer *m_display_timer = nullptr;
-	int m_display_channel = 0;
 	u8 m_ga_regs[0x100]{};
 	u16 m_ga_requests = 0;
 	u8 m_ga_key = 0;
@@ -202,12 +160,48 @@ protected:
 	s32 m_encoder = 0;
 };
 
-class xv5080_state : public xv3080_state
+class xv3080_state : public xv_state
+{
+public:
+	xv3080_state(const machine_config &mconfig, device_type type, const char *tag)
+		: xv_state(mconfig, type, tag, 0)
+		, m_xp(*this, "xp%u", 0U)
+		, m_srx(*this, "srx%u", 0U)
+		, m_lcd(*this, "lcd")
+	{
+	}
+
+	void xv3080(machine_config &config) ATTR_COLD;
+
+protected:
+	virtual void machine_start() override ATTR_COLD;
+	virtual void machine_reset() override ATTR_COLD;
+	virtual void ga_w(offs_t offset, u8 data) override;
+	virtual u8 ga_switches_r(u8 reg) override;
+
+private:
+	void xv3080_map(address_map &map) ATTR_COLD;
+	void xp_rom_map(address_map &map) ATTR_COLD;
+
+	TIMER_CALLBACK_MEMBER(ga_sensing);
+	void pump_slave(int state);
+	u32 master_link_r(offs_t strobe);
+	u32 slave_link_r(offs_t strobe);
+
+	required_device_array<roland_xp_device, 2> m_xp;
+	required_device_array<roland_srx_slot_device, 2> m_srx;
+	required_device<hd44780_device> m_lcd;
+
+	emu_timer *m_ga_sensing_timer = nullptr;
+};
+
+class xv5080_state : public xv_state
 {
 public:
 	xv5080_state(const machine_config &mconfig, device_type type, const char *tag)
-		: xv3080_state(mconfig, type, tag)
+		: xv_state(mconfig, type, tag, 1)
 		, m_xv(*this, "xv%u", 0U)
+		, m_srx(*this, "srx%u", 0U)
 		, m_lcdc(*this, "lcdc")
 		, m_scsi(*this, "scsic")
 		, m_card(*this, "card")
@@ -222,6 +216,13 @@ protected:
 	virtual void machine_reset() override ATTR_COLD;
 	virtual void ga_w(offs_t offset, u8 data) override;
 	virtual u8 ga_switches_r(u8 reg) override;
+
+private:
+	static constexpr XTAL XV_CLOCK_44K = 33.8688_MHz_XTAL / 2;
+	static constexpr XTAL XV_CLOCK_48K = 36.864_MHz_XTAL / 2;
+
+	static constexpr offs_t SIMM_BASE = 0x0c000000;
+	static constexpr offs_t SIMM_WINDOW = 0x02000000;
 
 	void xv5080_map(address_map &map) ATTR_COLD;
 	void xv_wave_map(address_map &map) ATTR_COLD;
@@ -240,59 +241,27 @@ protected:
 	void lcdc_taken();
 
 	required_device_array<roland_xv_device, 2> m_xv;
+	required_device_array<roland_srx_slot_device, 4> m_srx;
 	required_device<sed1330_device> m_lcdc;
 	required_device<ncr53cf94_device> m_scsi;
 	required_device<smartmedia_image_device> m_card;
 	required_ioport m_simm;
 
-	std::unique_ptr<u16[]> m_simm_ram[2];
+	std::unique_ptr<u16 []> m_simm_ram[2];
 	bool m_scsi_drq = false;
 };
 
 
-// the gate array's sources
-static constexpr int GA_SOURCE_KEY = 0;
-static constexpr int GA_SOURCE_ENCODER = 1;
-static constexpr int GA_SOURCE_SENSING = 7;
-static constexpr int GA_SOURCE_TICK = 9;
-
-static constexpr int GA_TICK_HZ = 1000;
-static constexpr int GA_SENSING_HZ = 10;
-static constexpr int GA_SCAN_HZ = 120;
-
-// XVCLK, the XV-5080's tone generator clock: the PLL's 768*fs halved
-static constexpr XTAL XV_CLOCK_44K = 33.8688_MHz_XTAL / 2;
-static constexpr XTAL XV_CLOCK_48K = 36.864_MHz_XTAL / 2;
-
-// the character LCD takes a byte by DMA every 40 us; the graphic LCD's
-// controller takes one within a bus cycle, and the next request follows it.
-// Both rates are stand-ins: gate array registers 0x23, 0x2f and 0x46, which
-// the firmware sets at power-on to 0x00, 0x08 and 0x04 on the XV-3080 and
-// 0x50, 0x0b and 0x09 on the XV-5080, likely set the display's timing
-static constexpr int DISPLAY_REQUEST_US = 40;
-static constexpr int LCDC_REQUEST_NS = 1000;
-
-// the gate array's registers, by the byte offset in its window
-static constexpr u8 GA_LEDS = 0x10;         // 0x10-0x13
-static constexpr u8 GA_LCD_COMMAND = 0x38;  // XV-3080: the character LCD's instruction and data registers
-static constexpr u8 GA_LCD_DATA = 0x39;
-static constexpr u8 GA_CLOCK = 0x38;        // XV-5080: bit 0 the tone generators' clock, clear for 44.1 kHz and set for 48 kHz
-static constexpr u8 GA_CARD = 0x39;         // XV-5080: the memory card's ALE (bit 0), /CE (bit 1), CLE (bit 2) and /WP (bit 3)
-static constexpr u8 GA_DIRECT_ROW = 0x3a;
-static constexpr u8 GA_SWITCHES = 0x3b;
-static constexpr u8 GA_ENABLE_LOW = 0x3e;
-static constexpr u8 GA_ENABLE_HIGH = 0x3f;
-static constexpr u8 GA_SOURCE = 0x40;
-static constexpr u8 GA_ENCODER = 0x42;
-static constexpr u8 GA_KEY = 0x43;
-
-
-void xv3080_state::machine_start()
+void xv_state::init_waverom()
 {
-	m_ga_scan_timer = timer_alloc(FUNC(xv3080_state::ga_scan), this);
-	m_ga_tick_timer = timer_alloc(FUNC(xv3080_state::ga_tick), this);
-	m_ga_sensing_timer = timer_alloc(FUNC(xv3080_state::ga_sensing), this);
-	m_display_timer = timer_alloc(FUNC(xv3080_state::display_request), this);
+	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
+}
+
+void xv_state::machine_start()
+{
+	m_ga_scan_timer = timer_alloc(FUNC(xv_state::ga_scan), this);
+	m_ga_tick_timer = timer_alloc(FUNC(xv_state::ga_tick), this);
+	m_display_timer = timer_alloc(FUNC(xv_state::display_request), this);
 
 	save_item(NAME(m_ga_regs));
 	save_item(NAME(m_ga_requests));
@@ -306,7 +275,7 @@ void xv3080_state::machine_start()
 	save_item(NAME(m_encoder));
 }
 
-void xv3080_state::machine_reset()
+void xv_state::machine_reset()
 {
 	std::fill(std::begin(m_ga_regs), std::end(m_ga_regs), 0);
 	std::fill(std::begin(m_key_state), std::end(m_key_state), 0);
@@ -319,22 +288,28 @@ void xv3080_state::machine_reset()
 
 	m_ga_scan_timer->adjust(attotime::from_hz(GA_SCAN_HZ), 0, attotime::from_hz(GA_SCAN_HZ));
 	m_ga_tick_timer->adjust(attotime::from_hz(GA_TICK_HZ), 0, attotime::from_hz(GA_TICK_HZ));
-	if (m_xp[0])
-		m_ga_sensing_timer->adjust(attotime::from_hz(GA_SENSING_HZ), 0, attotime::from_hz(GA_SENSING_HZ));
 	m_display_timer->adjust(attotime::from_usec(DISPLAY_REQUEST_US), 0, attotime::from_usec(DISPLAY_REQUEST_US));
 }
 
-// a SIMM slot's window is 32 Mi cells, 64 MB
-static constexpr offs_t SIMM_BASE = 0x0c000000;
-static constexpr offs_t SIMM_WINDOW = 0x02000000;
+void xv3080_state::machine_start()
+{
+	xv_state::machine_start();
+	m_ga_sensing_timer = timer_alloc(FUNC(xv3080_state::ga_sensing), this);
+}
+
+void xv3080_state::machine_reset()
+{
+	xv_state::machine_reset();
+	m_ga_sensing_timer->adjust(attotime::from_hz(GA_SENSING_HZ), 0, attotime::from_hz(GA_SENSING_HZ));
+}
 
 void xv5080_state::machine_start()
 {
-	xv3080_state::machine_start();
+	xv_state::machine_start();
 
 	for (int slot = 0; slot < 2; slot++)
 	{
-		m_simm_ram[slot] = make_unique_clear<u16[]>(SIMM_WINDOW);
+		m_simm_ram[slot] = make_unique_clear<u16 []>(SIMM_WINDOW);
 		save_pointer(NAME(m_simm_ram[slot]), SIMM_WINDOW, slot);
 	}
 	save_item(NAME(m_scsi_drq));
@@ -342,18 +317,12 @@ void xv5080_state::machine_start()
 
 void xv5080_state::machine_reset()
 {
-	xv3080_state::machine_reset();
+	xv_state::machine_reset();
 	simm_install();
 	for (auto &xv : m_xv)
 		xv->set_unscaled_clock(XV_CLOCK_44K);
 }
 
-
-//-------------------------------------------------
-//  the two SIMM slots, 16, 32 or 64 MB of FP or EDO DRAM each, in both
-//  chips' wave space; a module smaller than its slot repeats through it,
-//  which is how the firmware's size test finds it
-//-------------------------------------------------
 
 void xv5080_state::simm_install()
 {
@@ -372,13 +341,6 @@ void xv5080_state::simm_install()
 		}
 	}
 }
-
-
-//-------------------------------------------------
-//  the SYM53CF92 (IC53) moves its data by DMA channel 0, which samples
-//  DREQ0 on its edge: each byte taken while the chip still asks for more
-//  is a new request
-//-------------------------------------------------
 
 u8 xv5080_state::scsi_dma_r()
 {
@@ -408,17 +370,9 @@ void xv5080_state::scsi_dack()
 	}
 }
 
-
-//-------------------------------------------------
-//  the memory card slot: the SmartMedia's I/O pins at 0x00640000, its
-//  control lines driven from a gate array register, and card detect,
-//  write enable and ready on PE6, PE7 and PE8
-//-------------------------------------------------
-
 u8 xv5080_state::card_r()
 {
-	const u8 lines = m_ga_regs[GA_CARD];
-	if (machine().side_effects_disabled() || BIT(lines, 1))
+	if (BIT(m_ga_regs[GA_CARD], 1))
 		return 0xff;
 	return m_card->data_r();
 }
@@ -451,26 +405,7 @@ u16 xv5080_state::porte_r()
 }
 
 
-//-------------------------------------------------
-//  the TC160G22AF gate array
-//
-//  Sixteen sources share IRQ0.  Reading 0x40 names the highest one waiting
-//  and takes it; a source's own data register - the key code at 0x43, the
-//  encoder movement at 0x42 - is read by its handler.  0x3e enables the key
-//  (bit 0) and encoder (bit 1) sources, 0x3f the 1 kHz tick, source 9
-//  (bit 0), and the XV-3080's active sensing, source 7 (bit 1): the boot
-//  ROM's key scan polls IRQ0 with only the key source enabled, so a
-//  periodic source raising the line there would read as a key.
-//
-//  A key event is a code with bit 7 set on press, delivered one at a time:
-//  the next waits until the firmware has read the last.  0x00-0x07 read the
-//  matrix's rows as they stand, bit n the switch on PDn, which the XV-5080
-//  checks at power-on for EXIT held alone.  0x10-0x13 are the 32 LED
-//  drives.  0x3a and 0x3b are direct inputs: 0x3b carries PREVIEW and the
-//  encoder's push, at different bits on the two machines.
-//-------------------------------------------------
-
-bool xv3080_state::ga_enabled(int source) const
+bool xv_state::ga_enabled(int source) const
 {
 	switch (source)
 	{
@@ -482,12 +417,12 @@ bool xv3080_state::ga_enabled(int source) const
 	}
 }
 
-void xv3080_state::ga_update()
+void xv_state::ga_update()
 {
 	m_maincpu->set_input_line(0, m_ga_requests ? ASSERT_LINE : CLEAR_LINE);
 }
 
-void xv3080_state::ga_raise(int source)
+void xv_state::ga_raise(int source)
 {
 	if (!ga_enabled(source))
 		return;
@@ -495,16 +430,14 @@ void xv3080_state::ga_raise(int source)
 	ga_update();
 }
 
-// the acknowledge ends the pulse; another waiting source starts a fresh one
-// so an edge triggered IRQ0 sees it too
-void xv3080_state::ga_lower(int source)
+void xv_state::ga_lower(int source)
 {
 	m_ga_requests &= ~(1 << source);
 	m_maincpu->set_input_line(0, CLEAR_LINE);
 	ga_update();
 }
 
-void xv3080_state::key_enqueue(u8 code)
+void xv_state::key_enqueue(u8 code)
 {
 	const u8 next = (m_key_tail + 1) % std::size(m_key_fifo);
 	if (next == m_key_head)
@@ -513,7 +446,7 @@ void xv3080_state::key_enqueue(u8 code)
 	m_key_tail = next;
 }
 
-void xv3080_state::key_deliver()
+void xv_state::key_deliver()
 {
 	if (m_key_busy || m_key_head == m_key_tail)
 		return;
@@ -523,7 +456,7 @@ void xv3080_state::key_deliver()
 	ga_raise(GA_SOURCE_KEY);
 }
 
-TIMER_CALLBACK_MEMBER(xv3080_state::ga_scan)
+TIMER_CALLBACK_MEMBER(xv_state::ga_scan)
 {
 	const u8 dial = m_dial->read();
 	const s8 moved = s8(dial - m_dial_position);
@@ -546,7 +479,7 @@ TIMER_CALLBACK_MEMBER(xv3080_state::ga_scan)
 	key_deliver();
 }
 
-TIMER_CALLBACK_MEMBER(xv3080_state::ga_tick)
+TIMER_CALLBACK_MEMBER(xv_state::ga_tick)
 {
 	ga_raise(GA_SOURCE_TICK);
 }
@@ -556,14 +489,12 @@ TIMER_CALLBACK_MEMBER(xv3080_state::ga_sensing)
 	ga_raise(GA_SOURCE_SENSING);
 }
 
-void xv3080_state::porte_w(offs_t offset, u16 data, u16 ddr)
+void xv_state::porte_w(offs_t offset, u16 data, u16 ddr)
 {
 	LOGMASKED(LOG_PORT, "%s: port E = %04x (ddr %04x)\n", machine().describe_context(), data, ddr);
 }
 
-// the display's bytes travel by DMA, one for each request the gate array
-// pulses on the channel's DREQ pin: channel 0 on the XV-3080, 1 on the XV-5080
-TIMER_CALLBACK_MEMBER(xv3080_state::display_request)
+TIMER_CALLBACK_MEMBER(xv_state::display_request)
 {
 	m_maincpu->dreq_w(m_display_channel, 1);
 	m_maincpu->dreq_w(m_display_channel, 0);
@@ -613,7 +544,7 @@ u8 xv5080_state::ga_switches_r(u8 reg)
 	return data;
 }
 
-u8 xv3080_state::ga_r(offs_t offset)
+u8 xv_state::ga_r(offs_t offset)
 {
 	const u8 reg = offset & 0xff;
 	u8 data = m_ga_regs[reg];
@@ -664,7 +595,7 @@ u8 xv3080_state::ga_r(offs_t offset)
 	return data;
 }
 
-void xv3080_state::ga_w(offs_t offset, u8 data)
+void xv_state::ga_w(offs_t offset, u8 data)
 {
 	const u8 reg = offset & 0xff;
 	m_ga_regs[reg] = data;
@@ -683,62 +614,42 @@ void xv3080_state::ga_w(offs_t offset, u8 data)
 		LOGMASKED(LOG_GA, "%s: gate array enables %02x = %02x\n", machine().describe_context(), reg, data);
 		break;
 
-	case GA_LCD_COMMAND:
-	case GA_LCD_DATA:
-		if (m_lcd)
-		{
-			if (reg == GA_LCD_DATA)
-				m_lcd->data_w(data);
-			else
-				m_lcd->control_w(data);
-		}
-		else
-			LOGMASKED(LOG_GA, "%s: gate array write %03x = %02x\n", machine().describe_context(), offset, data);
-		break;
-
 	default:
 		LOGMASKED(LOG_GA, "%s: gate array write %03x = %02x\n", machine().describe_context(), offset, data);
 		break;
 	}
 }
 
+void xv3080_state::ga_w(offs_t offset, u8 data)
+{
+	xv_state::ga_w(offset, data);
+	switch (offset & 0xff)
+	{
+	case GA_LCD_COMMAND: m_lcd->control_w(data); break;
+	case GA_LCD_DATA:    m_lcd->data_w(data);    break;
+	}
+}
 
-// the XV-5080's clock select: both tone generators run from XVCLK
 void xv5080_state::ga_w(offs_t offset, u8 data)
 {
-	xv3080_state::ga_w(offset, data);
+	xv_state::ga_w(offset, data);
 	if ((offset & 0xff) == GA_CLOCK)
 		for (auto &xv : m_xv)
 			xv->set_unscaled_clock(BIT(data, 0) ? XV_CLOCK_48K : XV_CLOCK_44K);
 }
 
 
-//-------------------------------------------------
-//  the XV-5080's wave memory as its chips see it, one space for both: the
-//  two mask ROMs at cell 0, two bytes a cell, the low byte first; the four
-//  SR-JV80 slots at 0x02000000, 0x02800000, 0x03000000 and 0x03800000 (one
-//  byte a cell), the four SRX slots at 0x04000000, 0x07000000, 0x08000000
-//  and 0x0b000000 (a word a cell, 16 Mi of them, the odd bases what the
-//  transfer engine's halving makes of byte 0x06000000 and 0x0a000000) and
-//  the two SIMM slots at 0x0c000000 and 0x0e000000
-//-------------------------------------------------
-
 void xv5080_state::xv_wave_map(address_map &map)
 {
+	constexpr offs_t SRX_BASE[4] = { 0x04000000, 0x07000000, 0x08000000, 0x0b000000 };
+
 	map.unmap_value_high();
 	map(0x00000000, 0x00ffffff).mirror(0x01000000).rom().region("waverom", 0);
 	for (int slot = 0; slot < 4; slot++)
-		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read)).umask16(0x00ff);
-	static const offs_t srx_base[4] = { 0x04000000, 0x07000000, 0x08000000, 0x0b000000 };
+		map(0x02000000 + slot * 0x800000, 0x027fffff + slot * 0x800000).umask16(0x00ff).r(m_exp[slot], FUNC(roland_srjv80_slot_device::read));
 	for (int slot = 0; slot < 4; slot++)
-		map(srx_base[slot], srx_base[slot] + 0xffffff).r(m_srx[slot], FUNC(roland_srx_slot_device::read16));
+		map(SRX_BASE[slot], SRX_BASE[slot] + 0xffffff).r(m_srx[slot], FUNC(roland_srx_slot_device::read16));
 }
-
-
-//-------------------------------------------------
-//  the two XP6s read each other over the port A bus, and #0's frame
-//  clocks #1's
-//-------------------------------------------------
 
 void xv3080_state::pump_slave(int state)
 {
@@ -756,15 +667,11 @@ u32 xv3080_state::slave_link_r(offs_t strobe)
 }
 
 
-//-------------------------------------------------
-//  address maps
-//-------------------------------------------------
-
-void xv3080_state::common_map(address_map &map)
+void xv_state::common_map(address_map &map)
 {
 	map(0x00000000, 0x0003ffff).rom().region("cpurom", 0);
 	map(0x00400000, 0x007fffff).ram();
-	map(0x006c0000, 0x006c0fff).rw(FUNC(xv3080_state::ga_r), FUNC(xv3080_state::ga_w));
+	map(0x006c0000, 0x006c0fff).rw(FUNC(xv_state::ga_r), FUNC(xv_state::ga_w));
 	map(0x00800000, 0x0083ffff).mirror(0x003c0000).ram().share("nvram");
 	map(0x00d00000, 0x00efffff).rom().region("progrom", 0);
 }
@@ -790,10 +697,6 @@ void xv5080_state::xv5080_map(address_map &map)
 	map(0x01000000, 0x013fffff).ram();
 }
 
-// IC26 on chip select 0 and IC29 on chip select 1, word-wide, the
-// descrambled set's 32 regions of 1 MB in order; chip selects 2 and 3 are
-// the four SR-JV80 sockets (8 MB each) and 4 to 7 the two EXP connectors,
-// a 32 MB SRX board on each pair
 void xv3080_state::xp_rom_map(address_map &map)
 {
 	map.unmap_value_high();
@@ -806,30 +709,18 @@ void xv3080_state::xp_rom_map(address_map &map)
 
 void xv5080_state::lcdc_map(address_map &map)
 {
-	map(0x0000, 0x7fff).mirror(0x8000).ram(); // TC55257 32 KB
+	map(0x0000, 0x7fff).mirror(0x8000).ram();
 }
 
 
-//-------------------------------------------------
-//  displays
-//-------------------------------------------------
-
-void xv3080_state::lcd_palette(palette_device &palette) const
+void xv_state::lcd_palette(palette_device &palette) const
 {
-	palette.set_pen_color(0, rgb_t(0x50, 0xc8, 0x60)); // backlight
-	palette.set_pen_color(1, rgb_t(0x00, 0x20, 0x08)); // dot on
+	palette.set_pen_color(0, rgb_t(0x50, 0xc8, 0x60));
+	palette.set_pen_color(1, rgb_t(0x00, 0x20, 0x08));
 }
 
 
-//-------------------------------------------------
-//  inputs
-//-------------------------------------------------
-
-static INPUT_PORTS_START(xv3080)
-	// the switch matrix of the panel boards (service notes page 28), coded
-	// by the gate array as the scan line YSS0-YSS5 in bits 5-3 and the data
-	// line PD0-PD7 in bits 2-0; sixteen of the codes checked against the
-	// display, the rest follow the schematic
+INPUT_PORTS_START(xv3080)
 	PORT_START("KEY0")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exp")
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset")
@@ -894,11 +785,7 @@ static INPUT_PORTS_START(xv3080)
 	PORT_BIT(0xfc, IP_ACTIVE_LOW, IPT_UNUSED)
 INPUT_PORTS_END
 
-static INPUT_PORTS_START(xv5080)
-	// the XV-5080's matrix (service notes page 36): PANEL-A's five rows on
-	// YSS0-YSS4 in the same order and column order as the XV-3080's, the
-	// function keys of PANEL-B on YSS5; read off the schematic, one code
-	// checked against the display
+INPUT_PORTS_START(xv5080)
 	PORT_START("KEY0")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Exp")
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Preset")
@@ -979,20 +866,14 @@ static INPUT_PORTS_START(xv5080)
 INPUT_PORTS_END
 
 
-//-------------------------------------------------
-//  machine configuration
-//-------------------------------------------------
-
-void xv3080_state::common(machine_config &config)
+void xv_state::common(machine_config &config)
 {
-	// every unwired port pin reads high, except on port E where only PE14
-	// and PE15 are pulled up; every analog input reads a healthy battery
 	m_maincpu->read_porta().set_constant(0xffffffff);
 	m_maincpu->read_portb().set_constant(0xffff);
 	m_maincpu->read_portc().set_constant(0xffff);
 	m_maincpu->read_portd().set_constant(0xffffffff);
 	m_maincpu->read_porte().set_constant(0xc000);
-	m_maincpu->write_porte().set(FUNC(xv3080_state::porte_w));
+	m_maincpu->write_porte().set(FUNC(xv_state::porte_w));
 	m_maincpu->read_portf().set_constant(0xffff);
 	m_maincpu->read_adc<0>().set_constant(0x266);
 	m_maincpu->read_adc<1>().set_constant(0x266);
@@ -1003,22 +884,19 @@ void xv3080_state::common(machine_config &config)
 	m_maincpu->read_adc<6>().set_constant(0x266);
 	m_maincpu->read_adc<7>().set_constant(0x266);
 
-	// MIDI IN (IN 1 on the XV-5080) on RXD0, MIDI OUT on TXD0
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(m_maincpu, FUNC(sh7042_device::sci_rx_w<0>));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
-	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
+	midi_port_device &mdout(MIDI_PORT(config, "mdout", midiout_slot, "midiout"));
+	m_maincpu->write_sci_tx<0>().set(mdout, FUNC(midi_port_device::write_txd));
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
-	// EXP A to EXP D, one 8 MB board each, filling the 1 MB wave regions
-	// 0x20 to 0x3f that the boot scan probes
 	for (int slot = 0; slot < 4; slot++)
 		ROLAND_SRJV80_SLOT(config, m_exp[slot], 0).set_image_names(util::string_format("xp-%c", 'a' + slot), util::string_format("xp-%c", 'a' + slot)).set_open(0xffff);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 	SOFTWARE_LIST(config, "srx_list").set_original("roland_srx");
 
-	PALETTE(config, "palette", FUNC(xv3080_state::lcd_palette), 2);
+	PALETTE(config, "palette", FUNC(xv_state::lcd_palette), 2);
 }
 
 void xv3080_state::xv3080(machine_config &config)
@@ -1027,14 +905,13 @@ void xv3080_state::xv3080(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &xv3080_state::xv3080_map);
 	common(config);
 
-	// EXP E and EXP F, one 32 MB SRX board each on a pair of chip selects
 	for (int slot = 0; slot < 2; slot++)
 		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'e' + slot), util::string_format("xp-%c", 'e' + slot)).set_open(0xffff);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
 	screen.set_refresh_hz(60);
-	screen.set_screen_update("lcd", FUNC(hd44780_device::screen_update));
+	screen.set_screen_update(m_lcd, FUNC(hd44780_device::screen_update));
 	screen.set_size(6 * 40, 9 * 2);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
@@ -1043,9 +920,6 @@ void xv3080_state::xv3080(machine_config &config)
 	HD44780(config, m_lcd, 270'000);
 	m_lcd->set_lcd_size(2, 40);
 
-	// the three AK4324s all hang off XP6 #0 (IC92): SDOB is MIX OUT and the
-	// phones, SDOC and SDOD DIRECT OUT 1 and 2; #1 (IC93) has no DAC and
-	// reaches them through #0 over the port A bus, its frame clocked by #0
 	SPEAKER(config, "mix", 2).front();
 	SPEAKER(config, "direct1", 2).front();
 	SPEAKER(config, "direct2", 2).front();
@@ -1075,32 +949,26 @@ void xv5080_state::xv5080(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &xv5080_state::xv5080_map);
 	common(config);
 	m_maincpu->read_porte().set(FUNC(xv5080_state::porte_r));
-	m_display_channel = 1;
 
-	// MIDI IN 2 on RXD1
 	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
 	mdin2.rxd_handler().set(m_maincpu, FUNC(sh7042_device::sci_rx_w<1>));
 
-	// EXP E to EXP H, one 32 MB SRX board each
 	for (int slot = 0; slot < 4; slot++)
 		ROLAND_SRX_SLOT(config, m_srx[slot], 0).set_image_names(util::string_format("xp-%c", 'e' + slot), util::string_format("xp-%c", 'e' + slot)).set_open(0xffff);
 
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
 	screen.set_refresh_hz(60);
-	screen.set_screen_update("lcdc", FUNC(sed1330_device::screen_update));
+	screen.set_screen_update(m_lcdc, FUNC(sed1330_device::screen_update));
 	screen.set_size(320, 80);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
 	config.set_default_layout(layout_roland_xv5080);
 
-	SED1330(config, m_lcdc, 10_MHz_XTAL); // SED1335F0B
+	SED1330(config, m_lcdc, 10_MHz_XTAL);
 	m_lcdc->set_screen("screen");
 	m_lcdc->set_addrmap(0, &xv5080_state::lcdc_map);
 
-	// the four AK4324s all hang off XV #0 (IC13): OUTPUT A is MIX OUT and
-	// the phones, then OUTPUT B, C and D; #1 (IC12) has no DAC and reaches
-	// them through #0 over the transport link, its frame run by #0
 	SPEAKER(config, "mix", 2).front();
 	SPEAKER(config, "outb", 2).front();
 	SPEAKER(config, "outc", 2).front();
@@ -1131,7 +999,7 @@ void xv5080_state::xv5080(machine_config &config)
 	NSCSI_CONNECTOR(config, "scsi:4", default_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:5", default_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:6", default_scsi_devices, nullptr);
-	NCR53CF94(config, m_scsi, 25_MHz_XTAL); // SYM53CF92
+	NCR53CF94(config, m_scsi, 25_MHz_XTAL);
 	scsi.set_external_device(7, m_scsi);
 	m_scsi->irq_handler_cb().set_inputline(m_maincpu, 3);
 	m_scsi->drq_handler_cb().set(FUNC(xv5080_state::scsi_drq_w));
@@ -1139,10 +1007,6 @@ void xv5080_state::xv5080(machine_config &config)
 	SMARTMEDIA(config, m_card);
 }
 
-
-//-------------------------------------------------
-//  ROM definitions
-//-------------------------------------------------
 
 ROM_START(xv3080)
 	ROM_REGION32_BE(0x40000, "cpurom", 0)
@@ -1166,7 +1030,6 @@ ROM_START(xv5080)
 
 	ROM_REGION32_BE(0x200000, "progrom", 0)
 	ROMX_LOAD("xv-5080_v1.30.ic1", 0x000000, 0x200000, CRC(598f5c14) SHA1(14fdb7464c718a074530439235f92199a25e2ee3), ROM_BIOS(0))
-	// out of Roland's own updater, XV5080128.exe on the SRX-06 to SRX-09 disc
 	ROMX_LOAD("xv-5080_v1.28.ic1", 0x000000, 0x200000, CRC(91da248e) SHA1(cc928f20c7367d1cee789f30af50434381a8e4c7), ROM_BIOS(1))
 
 	ROM_REGION16_LE(0x2000000, "waverom", ROMREGION_ERASE00)
