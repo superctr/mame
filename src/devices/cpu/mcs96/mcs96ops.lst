@@ -3,17 +3,7 @@
 fetch
 	m_long_index = false;
 	if(irq_requested) {
-		int level;
-		if(int_mask1 & pending_irq1) {
-			for(level = 7; level >= 0 && !(int_mask1 & pending_irq1 & (1<<level)); level--);
-			pending_irq1 &= ~(1<<level);
-			OP1 = 0x18 + level;
-		} else {
-			for(level = 7; level >= 0 && !(PSW & pending_irq & (1<<level)); level--);
-			if(level != 7)
-				pending_irq &= ~(1<<level);
-			OP1 = level;
-		}
+		OP1 = take_irq();
 		standard_irq_callback(OP1, PC);
 		TMP = reg_r16(0x18);
 		TMP -= 2;
@@ -1886,18 +1876,16 @@ f4    pusha none 196
 	TMP -= 2;
 	any_w16(TMP, PSW);
 	TMP -= 2;
-	any_w16(TMP, int_mask1 | (wsr << 8));
+	any_w16(TMP, int_mask1_wsr_r());
 	reg_w16(0x18, TMP);
 	PSW = 0x0000;
-	int_mask1 = 0x00;
+	int_mask1_wsr_w(int_mask1_wsr_r() & 0xff00);
 	check_irq();
 	next_noirq(12); // +6 for external sp
 
 f5    popa  none 196
 	TMP = reg_r16(0x18);
-	OP1 = any_r16(TMP);
-	int_mask1 = OP1;
-	wsr = OP1 >> 8;
+	int_mask1_wsr_w(any_r16(TMP));
 	PSW = any_r16(TMP+2);
 	reg_w16(0x18, TMP+4);
 	check_irq();

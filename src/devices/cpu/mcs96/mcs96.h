@@ -72,7 +72,7 @@ protected:
 	required_shared_ptr<u16> register_file;
 
 	int icount, bcount, inst_state, cycles_scaling;
-	uint8_t pending_irq, pending_irq1, int_mask1, wsr;
+	uint8_t pending_irq;
 	uint16_t PC, PPC, PSW;
 	uint16_t OP1;
 	uint8_t OP2, OP3, OPI;
@@ -88,17 +88,16 @@ protected:
 
 	inline void next(int cycles) { icount -= cycles_scaling*cycles; inst_state = STATE_FETCH; }
 	inline void next_noirq(int cycles) { icount -= cycles_scaling*cycles; inst_state = STATE_FETCH_NOIRQ; }
-	void check_irq();
+	virtual void check_irq();
+	virtual int take_irq();
+	virtual u16 int_mask1_wsr_r() const { return 0; }
+	virtual void int_mask1_wsr_w(u16 data) { }
 	inline uint8_t read_pc() { return m_pr8(PC++); }
 
 	void int_mask_w(u8 data);
 	u8 int_mask_r();
 	void int_pending_w(u8 data);
 	u8 int_pending_r();
-	void int_mask1_w(u8 data);
-	u8 int_mask1_r();
-	void int_pending1_w(u8 data);
-	u8 int_pending1_r();
 
 	void reg_w8(uint8_t adr, uint8_t data);
 	void reg_w16(uint8_t adr, uint16_t data);

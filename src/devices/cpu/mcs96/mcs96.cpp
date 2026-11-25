@@ -19,7 +19,7 @@ mcs96_device::mcs96_device(const machine_config &mconfig, device_type type, cons
 	regs_config("register", ENDIANNESS_LITTLE, 16, 8, 0, regs_map),
 	opcodes_config("opcodes", ENDIANNESS_LITTLE, data_width, 16),
 	program(nullptr), regs(nullptr), register_file(*this, "register_file"),
-	icount(0), bcount(0), inst_state(0), cycles_scaling(0), pending_irq(0), pending_irq1(0), int_mask1(0), wsr(0),
+	icount(0), bcount(0), inst_state(0), cycles_scaling(0), pending_irq(0),
 	PC(0), PPC(0), PSW(0), OP1(0), OP2(0), OP3(0), OPI(0), TMP(0), irq_requested(false), m_long_index(false)
 {
 }
@@ -62,9 +62,6 @@ void mcs96_device::device_start()
 
 	save_item(NAME(inst_state));
 	save_item(NAME(pending_irq));
-	save_item(NAME(pending_irq1));
-	save_item(NAME(int_mask1));
-	save_item(NAME(wsr));
 	save_item(NAME(PC));
 	save_item(NAME(PPC));
 	save_item(NAME(PSW));
@@ -82,9 +79,6 @@ void mcs96_device::device_reset()
 	PC = 0x2080;
 	PPC = PC;
 	PSW = 0;
-	pending_irq1 = 0;
-	int_mask1 = 0;
-	wsr = 0;
 	irq_requested = false;
 	inst_state = STATE_FETCH;
 }
@@ -110,7 +104,16 @@ void mcs96_device::recompute_bcount(uint64_t event_time)
 
 void mcs96_device::check_irq()
 {
-	irq_requested = ((PSW & pending_irq) || (int_mask1 & pending_irq1)) && (PSW & F_I);
+	irq_requested = (PSW & pending_irq) && (PSW & F_I);
+}
+
+int mcs96_device::take_irq()
+{
+	int level;
+	for(level = 7; level >= 0 && !(PSW & pending_irq & (1<<level)); level--);
+	if(level != 7)
+		pending_irq &= ~(1<<level);
+	return level;
 }
 
 void mcs96_device::int_mask_w(u8 data)
@@ -133,28 +136,6 @@ void mcs96_device::int_pending_w(u8 data)
 u8 mcs96_device::int_pending_r()
 {
 	return pending_irq;
-}
-
-void mcs96_device::int_mask1_w(u8 data)
-{
-	int_mask1 = data;
-	check_irq();
-}
-
-u8 mcs96_device::int_mask1_r()
-{
-	return int_mask1;
-}
-
-void mcs96_device::int_pending1_w(u8 data)
-{
-	pending_irq1 = data;
-	check_irq();
-}
-
-u8 mcs96_device::int_pending1_r()
-{
-	return pending_irq1;
 }
 
 void mcs96_device::execute_run()

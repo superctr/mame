@@ -21,6 +21,7 @@ i8x9x_device::i8x9x_device(const machine_config &mconfig, device_type type, cons
 
 i8x9x_device::i8x9x_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int data_width, address_map_constructor regs_map) :
 	mcs96_device(mconfig, type, tag, owner, clock, data_width, regs_map),
+	t2updn_level(false),
 	m_ach_cb(*this, 0),
 	m_hso_cb(*this),
 	m_serial_tx_cb(*this),
@@ -29,7 +30,7 @@ i8x9x_device::i8x9x_device(const machine_config &mconfig, device_type type, cons
 	m_out_p1_cb(*this), m_in_p1_cb(*this, 0xff),
 	m_out_p2_cb(*this), m_in_p2_cb(*this, 0xc2),
 	m_p1_driven_mask(0),
-	base_timer2(0), ad_done(0), m_t2_external(false), timer2_count(0), t2clk_level(false), t2updn_level(false), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0),
+	base_timer2(0), ad_done(0), m_t2_external(false), timer2_count(0), t2clk_level(false), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0),
 	port1(0), port2(0),
 	ios0(0), ios1(0), ioc0(0), ioc1(0), extint(false),
 	sbuf(0), sp_con(0), sp_stat(0), serial_send_buf(0), baud_reg(0), brh(false),
@@ -714,23 +715,30 @@ u64 i8x9x_device::timer_time_until(int timer, u64 current_time, u16 timer_value)
 	return timer_base + ((delta + tdelta) * (8 * cycles_scaling));
 }
 
+void i8x9x_device::timer2_retime(u64 current_time)
+{
+	for(int i=0; i<8; i++)
+		if(BIT(hso_active, i) && BIT(hso_info[i].command, 6))
+			hso_info[i].fire_at = timer_time_until(2, current_time, hso_info[i].time);
+}
+
 void i8x9x_device::timer2_reset(u64 current_time)
 {
 	base_timer2 = current_time;
 	timer2_count = 0;
-	// hso_info[].time holds a timer value, not a deadline, so timer2-relative
-	// entries need fire_at recomputed against the new base.
-	for(int i=0; i<8; i++)
-		if(BIT(hso_active, i) && BIT(hso_info[i].command, 6))
-			hso_info[i].fire_at = timer_time_until(2, current_time, hso_info[i].time);
+	timer2_retime(current_time);
 }
 
 void i8x9x_device::timer2_w(u16 data)
 {
 	if(m_t2_external)
 		timer2_count = data;
-	else
-		base_timer2 = total_cycles() - u64(data) * 8 * cycles_scaling;
+	else {
+		const u64 current_time = total_cycles();
+		base_timer2 = current_time - u64(data) * 8 * cycles_scaling;
+		timer2_retime(current_time);
+		internal_update(current_time);
+	}
 }
 
 void i8x9x_device::timer2_clock()

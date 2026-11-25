@@ -21,7 +21,10 @@ DEFINE_DEVICE_TYPE(I80C196KB, i80c196kb_device, "i80c196kb", "Intel 80C196KB")
 i80c196kb_device::i80c196kb_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock) :
 	i8x9x_device(mconfig, I80C196KB, tag, owner, clock, 16, address_map_constructor(FUNC(i80c196kb_device::kb_regs), this)),
 	m_ioc2(0),
-	m_extint1(false)
+	m_extint1(false),
+	m_pending_irq1(0),
+	m_int_mask1(0),
+	m_wsr(0)
 {
 }
 
@@ -37,12 +40,55 @@ void i80c196kb_device::device_start()
 
 	save_item(NAME(m_ioc2));
 	save_item(NAME(m_extint1));
+	save_item(NAME(m_pending_irq1));
+	save_item(NAME(m_int_mask1));
+	save_item(NAME(m_wsr));
 }
 
 void i80c196kb_device::device_reset()
 {
 	i8x9x_device::device_reset();
 	m_ioc2 = 0;
+	m_pending_irq1 = 0;
+	m_int_mask1 = 0;
+	m_wsr = 0;
+}
+
+void i80c196kb_device::check_irq()
+{
+	irq_requested = ((PSW & pending_irq) || (m_int_mask1 & m_pending_irq1)) && (PSW & F_I);
+}
+
+int i80c196kb_device::take_irq()
+{
+	if(!(m_int_mask1 & m_pending_irq1))
+		return i8x9x_device::take_irq();
+	int level;
+	for(level = 7; level >= 0 && !(m_int_mask1 & m_pending_irq1 & (1<<level)); level--);
+	m_pending_irq1 &= ~(1<<level);
+	return 0x18 + level;
+}
+
+void i80c196kb_device::int_mask1_w(u8 data)
+{
+	m_int_mask1 = data;
+	check_irq();
+}
+
+u8 i80c196kb_device::int_mask1_r()
+{
+	return m_int_mask1;
+}
+
+void i80c196kb_device::int_pending1_w(u8 data)
+{
+	m_pending_irq1 = data;
+	check_irq();
+}
+
+u8 i80c196kb_device::int_pending1_r()
+{
+	return m_pending_irq1;
 }
 
 void i80c196kb_device::kb_regs(address_map &map)
@@ -67,21 +113,21 @@ bool i80c196kb_device::timer2_counts_down() const
 
 u8 i80c196kb_device::wsr_r()
 {
-	return wsr;
+	return m_wsr;
 }
 
 void i80c196kb_device::wsr_w(u8 data)
 {
 	if((data & 0x7f) && !machine().side_effects_disabled())
 		logerror("register window %d selected, not emulated (%04x)\n", data & 0x7f, PPC);
-	wsr = data;
+	m_wsr = data;
 }
 
 void i80c196kb_device::execute_set_input(int linenum, int state)
 {
 	if(linenum == EXTINT_LINE) {
 		if(!m_extint1 && state) {
-			pending_irq1 |= 0x20;
+			m_pending_irq1 |= 0x20;
 			check_irq();
 		}
 		m_extint1 = state;

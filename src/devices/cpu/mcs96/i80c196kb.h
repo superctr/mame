@@ -25,6 +25,11 @@ protected:
 
 	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
+	virtual void check_irq() override;
+	virtual int take_irq() override;
+	virtual u16 int_mask1_wsr_r() const override { return m_int_mask1 | (m_wsr << 8); }
+	virtual void int_mask1_wsr_w(u16 data) override { m_int_mask1 = data; m_wsr = data >> 8; }
+
 	virtual void do_exec_full() override;
 	virtual void do_exec_partial() override;
 
@@ -33,6 +38,10 @@ protected:
 	virtual bool timer2_counts_down() const override;
 	u8 wsr_r();
 	void wsr_w(u8 data);
+	void int_mask1_w(u8 data);
+	u8 int_mask1_r();
+	void int_pending1_w(u8 data);
+	u8 int_pending1_r();
 
 #define O(o) void o ## _196_full(); void o ## _196_partial()
 
@@ -51,6 +60,9 @@ protected:
 private:
 	u8 m_ioc2;
 	bool m_extint1;
+	u8 m_pending_irq1;
+	u8 m_int_mask1;
+	u8 m_wsr;
 };
 
 DECLARE_DEVICE_TYPE(I80C196KB, i80c196kb_device)

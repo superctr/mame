@@ -68,7 +68,6 @@ public:
 	// pulldown; these read the pin even with the latch at 0
 	void set_p1_driven_mask(u8 mask) { m_p1_driven_mask = mask; }
 
-	// Timer2 counts T2CLK (or HSI.1) edges, as on the real chip, instead of the internal clock
 	void set_timer2_external(bool external) { m_t2_external = external; }
 
 	// Byte-level receive, bypassing RXD framing and baud rate timing
@@ -81,7 +80,6 @@ public:
 	virtual u8 i8x9x_p2_mask() const noexcept { return 0xff; }
 
 protected:
-	bool t2updn_level;
 	virtual bool timer2_counts_down() const { return false; }
 	void timer2_w(u16 data);
 
@@ -126,6 +124,8 @@ protected:
 	void ioc1_w(u8 data);
 	u8 ios1_r();
 	void pwm_control_w(u8 data);
+
+	bool t2updn_level;
 
 private:
 	enum {
@@ -204,6 +204,7 @@ private:
 
 	u16 timer_value(int timer, u64 current_time) const;
 	u64 timer_time_until(int timer, u64 current_time, u16 timer_value) const;
+	void timer2_retime(u64 current_time);
 	void timer2_reset(u64 current_time);
 	void set_hsi_state(int pin, bool state);
 	void timer2_clock();
