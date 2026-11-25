@@ -1236,7 +1236,7 @@ ROM_END
 
 ROM_START(sc880)
 	ROM_REGION16_BE(0x200000, "progrom", 0)
-	ROM_LOAD("sc880_1.04", 0x000000, 0x200000, CRC(bdd297ee) SHA1(8aa92e2e8a6a221ba8d35ff54ea324ddcd304515))
+	ROM_LOAD("sc880_control.bin", 0x000000, 0x200000, CRC(bdd297ee) SHA1(8aa92e2e8a6a221ba8d35ff54ea324ddcd304515))
 
 	ROM_REGION(0x2000, "subcpu", 0)
 	ROM_LOAD("m38881m2", 0x0000, 0x2000, NO_DUMP)
@@ -1251,7 +1251,7 @@ ROM_END
 
 ROM_START(xpgs)
 	ROM_REGION16_BE(0x80000, "progrom", 0)
-	ROM_LOAD("xpgs_3.00", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
+	ROM_LOAD("xpgs_control.bin", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
 
 	ROM_REGION(0xa00000, "waverom", 0)
 	// the first four wave ROMs are undumped; the program's checksum table matches the SC-88's
@@ -1259,14 +1259,14 @@ ROM_START(xpgs)
 	ROM_LOAD("sc88-pcm-ic-326.ic8",  0x200000, 0x200000, BAD_DUMP CRC(05f939f2) SHA1(ac95c26c46c40aacb944f5d45634c93bee9e6d90))
 	ROM_LOAD("sc88-pcm-ic-327.ic7",  0x400000, 0x200000, BAD_DUMP CRC(a6fc7393) SHA1(d88bf13c3d74097991b783295d95ccfae2c9282d))
 	ROM_LOAD("sc88-pcm-ic-328.ic6",  0x600000, 0x200000, BAD_DUMP CRC(7bc514aa) SHA1(03e70ae2efd190f41af24be01b1abaa84bfa93d9))
-	ROM_LOAD("xpgs_wave4",       0x800000, 0x200000, CRC(8726d8a2) SHA1(0a4c24a70cce2fc4c2e8a1ff93e8ce858ec04a9f))
+	ROM_LOAD("xpgs_wave4.bin",       0x800000, 0x200000, CRC(8726d8a2) SHA1(0a4c24a70cce2fc4c2e8a1ff93e8ce858ec04a9f))
 ROM_END
 
 ROM_START(vegspro)
 	ROM_REGION16_BE(0x100000, "progrom", 0)
 	// program "1.00 / 0.01", 1998-08-03; tone data "SC88PRO (MK03B)" v1.02, 1997-05-19
 	// 0x0014de reads 0x05 where its copy at 0x01e1de and the SC-88Pro have 0x8d, so the bulk dumps never answer
-	ROM_LOAD16_WORD_SWAP("roland-r01780078", 0x00000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
+	ROM_LOAD16_WORD_SWAP("roland-r01780078.bin", 0x00000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
 
 	ROM_REGION(0x1400000, "waverom", 0)
 	// dumped as "R01567167 301 (Samples A).bin", "R01567178 302 (Samples B).BIN", "R01233667 314 (Samples C).BIN"
