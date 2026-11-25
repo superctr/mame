@@ -86,10 +86,10 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 	<view name="Front Panel">
 		<bounds x="0" y="0" width="4820" height="881"/>
 		<element ref="panel"><bounds x="0" y="0" width="4820" height="881"/></element>
-		<element ref="hole"><bounds x="50" y="40" width="110" height="70"/></element>
-		<element ref="hole"><bounds x="4660" y="40" width="110" height="70"/></element>
-		<element ref="hole"><bounds x="50" y="770" width="110" height="70"/></element>
-		<element ref="hole"><bounds x="4660" y="770" width="110" height="70"/></element>
+		<element ref="hole"><bounds x="29.5" y="27" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="29.5" y="789" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4680.5" y="27" width="110" height="65"/></element>
+		<element ref="hole"><bounds x="4680.5" y="789" width="110" height="65"/></element>
 		<element ref="t2"><bounds x="430" y="37.3" width="368.5" height="78.65"/></element>
 		<element ref="t3"><bounds x="800" y="43" width="430" height="71.5"/></element>
 		<element ref="t4"><bounds x="1310" y="70.36" width="470.6" height="37.18"/></element>
@@ -154,7 +154,6 @@ Coordinates are tenths of a millimetre on the 482 x 88.1 mm plate.
 		<element ref="t41"><bounds x="3380.1" y="224.32" width="91.8" height="17.16"/></element>
 		<element ref="t42"><bounds x="3385.8" y="249.32" width="80.4" height="17.16"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x01"><bounds x="3048" y="275" width="140" height="50"/></element>
-		<element name="led4" ref="win_red"><bounds x="3102" y="281" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x02"><bounds x="3202" y="275" width="140" height="50"/></element>
 		<element name="led5" ref="win_red"><bounds x="3256" y="281" width="32" height="11"/></element>
 		<element ref="key" inputtag="KEY1" inputmask="0x04"><bounds x="3356" y="275" width="140" height="50"/></element>
