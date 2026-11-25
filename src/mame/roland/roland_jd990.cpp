@@ -2,107 +2,48 @@
 // copyright-holders:superctr
 /****************************************************************************
 
-    Roland JD-990 Super JD synthesizer module.
+    Roland JD-990 Super JD synthesizer module
 
-    Main board (service notes):
-    - IC9 H8/570 (R15199852), 20 MHz crystal, mode 3: expanded maximum,
-      16-bit bus, on-chip ROM disabled
+    Main board:
+    - IC9 H8/570 (R15199852), 20 MHz, mode 3, on-chip ROM disabled; its ISP
+      sub-processor scans the panel and runs the display transfer, FXM and
+      the tones' LFOs
     - IC6 R10-0001 gate array: the chip selects, the panel scan
-    - IC31 program ROM, 256K x 16; IC30/IC32 LC36256 battery-backed RAM
-    - IC22 MB87731A "EP" PCM chip, IC25 MB87424A "TVF", IC27/IC28 TC6088AF
-      "CSP" effect processors, IC26 HG62E11R46FB "IFCS" output stage,
-      PCM61P DAC and eight sample-and-holds
-    - IC8 SED1335F0B LCD controller with IC7 SRM2064, a graphic LCD
-    - IC10 HG62E11R24FS RAM card interface
+    - IC31 program ROM, 256K x 16; IC30/IC32 LC36256 SRAM, battery backed
+    - IC22 MB87731A EP PCM chip, IC25 MB87424A TVF
+    - IC27/IC28 TC6088AF CSP effect processors
+    - IC26 HG62E11R46FB IFCS output stage, PCM61P DAC, eight sample-and-holds
+    - IC13/IC14/IC15 HN624116 wave ROMs, 2 MB each
+    - IC8 SED1335F0B LCD controller with IC7 SRM2064, 320 x 80 graphic LCD
+    - IC10 HG62E11R24FS DATA card interface
+    - a PCM card slot and CN7, an SR-JV80 expansion socket
 
-    The CPU's ISP sub-processor scans the panel, reads the encoder and
-    keeps the firmware's tick and active-sensing timers; its program is in
-    the part, so the driver models what it does.  So far: the tick, at a
-    guessed 1 ms, and on the same tick ISF4 while it is enabled, which the
-    ROM Play's song player counts after raising it once itself; the display transfer, in which the CPU sets the
-    controller's cursor, puts a work-RAM source address in DR7 and a byte
-    count in DR10 and clears DR6H bit 0, and the ISP streams the bytes
-    into the controller; the mailbox byte the ISP answers with ISF0; the
-    panel scan, one column a tick into work RAM, the scanned byte and
-    the byte before it in the two tables the firmware's handler
-    compares, with the column number in DR5H and ISF3 on a change; and
-    the encoder, its steps summed into DR31H with ISF10; and the
-    active-sensing timer, which counts in DR4H
-    while DR6H bit 4 is clear (the CPU clears it on every active-sensing
-    byte) and raises ISF8 when the count runs out.  The tick is 1 ms: the
-    tone delay parameter, whose table the owner's manual gives in
-    seconds, comes out at those seconds with it.  The timeout is a guess
-    at 300 ms.
-
-    FXM is the ISP's too: for a tone with FXM the CPU leaves, per voice,
-    a colour code (1, 2, 3, 4, 6, 8, 10, 14 for colours 1-8) and two
-    pitch ratios, the tone's pitch raised and lowered by the depth in
-    0.06 semitone steps, in work RAM at 08:FB78, 08:FFD0 and 08:FFA0,
-    writes the EP's pitch once and never again, and the ISP alternates
-    the EP's pitch register between the two ratios every colour-code
-    loops of its service loop, deferring while the CPU holds the bus.
-    The loop period is a guess at 100 us; the manual's "small values
-    metallic, large values gritty" fits a modulator from 5 kHz down to
-    360 Hz.
-
-    The tones' LFOs are the ISP's as well: the CPU keeps a 15-bit phase
-    and a rate word per voice and LFO in work RAM (08:FBC0 and 08:FBF0,
-    the rates 0x1E0 above), writes 0x8000 there to trigger, reads the
-    phase in its 10 ms walk and clears bit 15, and the ISP adds the rate
-    every 10 ms, flagging a wrap in bit 15; Jade's vibrato at two rates
-    gives 0.00306 Hz per rate unit, which is that period.
-
-    The TVF channels feed CSP1's SC bus four reads later than voice
-    order, CSP1 feeds CSP2 over the TR bus, and the IFCS demultiplexes
-    CSP2's eight output slots into the one 18-bit DAC, the low six bits
-    of each word dropped; the levels are calibrated against Jade.
-
-    The panel is 32 switches on five columns of the ISP's scan, with the
-    VALUE and VOLUME knobs' push switches on column 0; the names come
-    from pressing each position in emulation against the owner's manual.
-    The lamps are a latch on the same column selects, which the ISP
-    loads from a table the firmware keeps in work RAM.
-
-    The wave ROMs are stored with the EP's address and data lines
-    permuted, the SC-55's map per 1 MB region (ep/docs/wave_rom_lines.md);
-    the driver undoes it at start, and the three chips form one 6 MB
-    module at address 0 of the EP's wave space.  Above them the firmware
-    probes three more banks: the PCM card slot at 0x600000, which a 2 MB
-    card fills to 0x7fffff so that the bank at 0x700000 is its second
-    half, and CN7 at 0x800000, the machine's one SR-JV80 expansion board
-    socket.
-
-    The 1 MB map as the firmware uses it: the program ROM in pages 0-7,
-    except that the upper half of page 0 is RAM (the image is blank there
-    and the firmware keeps the same variables at 0:9F48 and 8:9F48); the
-    64 KB battery RAM in page 8; the EP and TVF windows in the lower half
-    of page 0E, with the RAM's upper half again above them (the voice
-    service clears flags in its voice records through that page); the
-    two CSPs, the LCD controller (0F:A000 data, 0F:A002 command) and the
-    CPU's own top-page mirror in page 0F.  While CTRL5 is high the gate
-    array puts IC10 in the CSPs' place: the DATA card's 32 KB at 0F:0000
-    and, with A15 high, IC10's status byte, the card's sense line in bit 1
-    and its protect switch in bit 0, high while the card can be written.
-    The card's cell is A/D channel 1.
+    TODO:
+    - the ISP's program is in the part and undumped; the driver stands in
+      for it, tied to firmware 1.05, with its tick and timings guessed
 
 ****************************************************************************/
 
 #include "emu.h"
 
+#include "datacard.h"
+#include "wavecard.h"
+
 #include "bus/midi/midi.h"
 #include "cpu/h8500/h8570.h"
-#include "datacard.h"
 #include "machine/nvram.h"
-#include "sound/roland_ep.h"
 #include "sound/roland_csp.h"
+#include "sound/roland_ep.h"
 #include "sound/roland_tvf.h"
 #include "video/sed1330.h"
-#include "wavecard.h"
 
 #include "emupal.h"
 #include "screen.h"
 #include "softlist_dev.h"
 #include "speaker.h"
+
+#include <algorithm>
+#include <memory>
 
 #include "roland_jd990.lh"
 
@@ -114,51 +55,59 @@
 #include "logmacro.h"
 
 
-class jd990_ifcs_device;
-DECLARE_DEVICE_TYPE(JD990_IFCS, jd990_ifcs_device)
+namespace {
 
 class jd990_ifcs_device : public device_t, public device_sound_interface
 {
 public:
-	jd990_ifcs_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-		: device_t(mconfig, JD990_IFCS, tag, owner, clock)
-		, device_sound_interface(mconfig, *this)
-		, m_csp(*this, "^csp%u", 1U)
-	{
-	}
+	jd990_ifcs_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	template <u32 N, typename T> void set_csp(T &&tag) { m_csp[N].set_tag(std::forward<T>(tag)); }
 
 	void update() { m_stream->update(); }
 
 protected:
-	virtual void device_start() override
-	{
-		m_stream = stream_alloc(24, 8, 44100);
-	}
-
-	virtual void sound_stream_update(sound_stream &stream) override
-	{
-		static constexpr unsigned slots[] = { 4, 7, 18, 21, 24, 27, 30, 1 };
-		for (int sample = 0; sample < stream.samples(); sample++)
-		{
-			for (unsigned channel = 0; channel < 24; channel++)
-				m_csp[0]->sc_w((channel + 4) % 24, s32(std::clamp(stream.get(channel, sample) * 4194304.0f, -8388608.0f, 8388607.0f)));
-			m_csp[0]->run_once(768);
-			for (unsigned channel = 0; channel < 32; channel++)
-				m_csp[1]->ser_w(channel, m_csp[0]->ser_r(channel));
-			m_csp[1]->run_once(768);
-			for (unsigned channel = 0; channel < 8; channel++)
-				stream.put_int(channel, sample, std::clamp<s32>(m_csp[1]->ser_r(slots[channel]), -8388608, 8388607) & ~0x3f, 8388608);
-		}
-	}
+	virtual void device_start() override ATTR_COLD;
+	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
 	required_device_array<roland_csp_device, 2> m_csp;
 	sound_stream *m_stream = nullptr;
 };
 
-DEFINE_DEVICE_TYPE(JD990_IFCS, jd990_ifcs_device, "jd990_ifcs", "Roland IFCS")
+} // anonymous namespace
+
+DEFINE_DEVICE_TYPE_PRIVATE(JD990_IFCS, jd990_ifcs_device, jd990_ifcs_device, "jd990_ifcs", "Roland IFCS")
 
 namespace {
+
+jd990_ifcs_device::jd990_ifcs_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: device_t(mconfig, JD990_IFCS, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
+	, m_csp(*this, std::array<char const *, 2>{ finder_base::DUMMY_TAG, finder_base::DUMMY_TAG })
+{
+}
+
+void jd990_ifcs_device::device_start()
+{
+	m_stream = stream_alloc(24, 8, 44'100);
+}
+
+void jd990_ifcs_device::sound_stream_update(sound_stream &stream)
+{
+	constexpr u32 SLOTS[8] = { 4, 7, 18, 21, 24, 27, 30, 1 };
+	for (int sample = 0; sample < stream.samples(); sample++)
+	{
+		for (u32 channel = 0; channel < 24; channel++)
+			m_csp[0]->sc_w((channel + 4) % 24, s32(std::clamp(stream.get(channel, sample) * 4194304.0f, -8388608.0f, 8388607.0f)));
+		m_csp[0]->run_once(768);
+		for (u32 channel = 0; channel < 32; channel++)
+			m_csp[1]->ser_w(channel, m_csp[0]->ser_r(channel));
+		m_csp[1]->run_once(768);
+		for (u32 channel = 0; channel < 8; channel++)
+			stream.put_int(channel, sample, std::clamp<s32>(m_csp[1]->ser_r(SLOTS[channel]), -8388608, 8388607) & ~0x3f, 8388608);
+	}
+}
 
 class roland_jd990_state : public driver_device
 {
@@ -176,7 +125,6 @@ public:
 		, m_datacard(*this, "datacard")
 		, m_waverom(*this, "waverom")
 		, m_ram(*this, "nvram")
-		, m_rambank(*this, "rambank")
 		, m_page_f(*this, "page_f")
 		, m_keys(*this, "KEY%u", 0U)
 		, m_encoder(*this, "ENCODER")
@@ -185,12 +133,27 @@ public:
 	{
 	}
 
-	void jd990(machine_config &config);
+	void jd990(machine_config &config) ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
 
 private:
+	static constexpr int FXM_VOICES = 24;
+	static constexpr attotime FXM_PERIOD = attotime::from_usec(100);
+
+	// HLE: the ISP's program is in the part and undumped; these are firmware 1.05's work RAM
+	static constexpr offs_t ISP_SEND_PENDING = 0x87e85;
+	static constexpr offs_t ISP_FXM_CODE = 0x8fb78;
+	static constexpr offs_t ISP_LFO1_PHASE = 0x8fbc0;
+	static constexpr offs_t ISP_LFO2_PHASE = 0x8fbf0;
+	static constexpr offs_t ISP_LFO_RATE = 0x1e0;
+	static constexpr offs_t ISP_LAMPS = 0x8ff80;
+	static constexpr offs_t ISP_SCAN_NEW = 0x8ff90;
+	static constexpr offs_t ISP_SCAN_OLD = 0x8ff98;
+	static constexpr offs_t ISP_FXM_PITCH_UP = 0x8ffa0;
+	static constexpr offs_t ISP_FXM_PITCH_DOWN = 0x8ffd0;
+
 	u8 port9_r();
 	u8 port11_r();
 	void port6_w(u8 data);
@@ -206,6 +169,8 @@ private:
 	void lcdc_map(address_map &map) ATTR_COLD;
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
 
+	u16 ram_alias_r(offs_t offset) { return m_ram[0x4000 + offset]; }
+	void ram_alias_w(offs_t offset, u16 data, u16 mem_mask) { COMBINE_DATA(&m_ram[0x4000 + offset]); }
 	u16 page_e_r(offs_t offset, u16 mem_mask);
 	void page_e_w(offs_t offset, u16 data, u16 mem_mask);
 	template <int Chip> u8 csp_r(offs_t offset);
@@ -222,15 +187,11 @@ private:
 	required_device<roland_datacard_device> m_datacard;
 	required_region_ptr<u8> m_waverom;
 	required_shared_ptr<u16> m_ram;
-	required_memory_bank m_rambank;
 	memory_view m_page_f;
 	required_ioport_array<8> m_keys;
 	required_ioport m_encoder;
 	required_ioport m_card_battery;
 	output_finder<20> m_leds;
-
-	static constexpr int FXM_VOICES = 24;
-	static constexpr attotime FXM_PERIOD = attotime::from_usec(100);
 
 	emu_timer *m_isp_tick = nullptr;
 	emu_timer *m_isp_fxm = nullptr;
@@ -245,17 +206,16 @@ private:
 	u8 m_fxm_count[FXM_VOICES] = {};
 	u8 m_fxm_phase[FXM_VOICES] = {};
 	u8 m_lfo_tick = 0;
-	std::unique_ptr<u8[]> m_wave;
+	std::unique_ptr<u8 []> m_wave;
 };
 
 void roland_jd990_state::machine_start()
 {
 	const u32 size = m_waverom.bytes();
-	m_wave = std::make_unique<u8[]>(size);
+	m_wave = std::make_unique<u8 []>(size);
 	std::copy_n(&m_waverom[0], size, m_wave.get());
 	roland_srjv80_slot_device::descramble_rom(m_wave.get(), size);
 	m_ep->space(roland_ep_device::AS_WAVE).install_rom(0, size - 1, m_wave.get());
-	m_rambank->set_base(&m_ram[0x4000]);
 	m_page_f.select(0);
 
 	m_isp_tick = timer_alloc(FUNC(roland_jd990_state::isp_tick), this);
@@ -273,8 +233,6 @@ void roland_jd990_state::machine_start()
 	save_item(NAME(m_lfo_tick));
 }
 
-// CTRL3 and CTRL4, the PCM card's sense and CN7's, high while something is
-// fitted; the boot scan reads a bank's header only behind its own
 u8 roland_jd990_state::port9_r()
 {
 	return m_card->sense_r() ? 0xff : 0x7f;
@@ -346,14 +304,14 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_fxm)
 	const u32 keyed = (u32(m_maincpu->dr_r(0x36)) << 24) | (u32(m_maincpu->dr_r(0x37)) << 16) | (u32(m_maincpu->dr_r(0x34)) << 8) | m_maincpu->dr_r(0x35);
 	for (int v = 0; v < FXM_VOICES; v++)
 	{
-		const u8 code = space.read_word(0x8fb78 + 2 * v) >> 8;
+		const u8 code = space.read_word(ISP_FXM_CODE + 2 * v) >> 8;
 		if (!code || !BIT(keyed, v))
 			continue;
 		if (++m_fxm_count[v] < code)
 			continue;
 		m_fxm_count[v] = 0;
 		m_fxm_phase[v] ^= 1;
-		m_ep->voice_pitch_w(v, space.read_word((m_fxm_phase[v] ? 0x8ffa0 : 0x8ffd0) + 2 * v));
+		m_ep->voice_pitch_w(v, space.read_word((m_fxm_phase[v] ? ISP_FXM_PITCH_UP : ISP_FXM_PITCH_DOWN) + 2 * v));
 	}
 }
 
@@ -364,17 +322,17 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	m_maincpu->isp_raise(9);
 	if (BIT(m_maincpu->isp_ief(), 4))
 		m_maincpu->isp_raise(4);
-	if (space.read_byte(0x87e85))
+	if (space.read_byte(ISP_SEND_PENDING))
 		m_maincpu->isp_raise(0);
 
 	if (++m_lfo_tick == 10)
 	{
 		m_lfo_tick = 0;
 		for (int v = 0; v < FXM_VOICES; v++)
-			for (offs_t lfo : { 0x8fbc0, 0x8fbf0 })
+			for (offs_t lfo : { ISP_LFO1_PHASE, ISP_LFO2_PHASE })
 			{
 				const u16 phase = space.read_word(lfo + 2 * v);
-				const u32 sum = (phase & 0x7fff) + space.read_word(lfo + 0x1e0 + 2 * v);
+				const u32 sum = (phase & 0x7fff) + space.read_word(lfo + ISP_LFO_RATE + 2 * v);
 				space.write_word(lfo + 2 * v, (sum & 0x7fff) | (phase & 0x8000) | (sum >= 0x8000 ? 0x8000 : 0));
 			}
 	}
@@ -384,7 +342,7 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 
 	for (int column = 0; column < 5; column++)
 	{
-		const u8 lamps = space.read_byte(0x8ff80 + column);
+		const u8 lamps = space.read_byte(ISP_LAMPS + column);
 		for (int row = 0; row < 4; row++)
 			m_leds[column * 4 + row] = BIT(lamps, row);
 	}
@@ -394,9 +352,9 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	const u8 keys = m_keys[column]->read();
 	if (!m_scan_held && keys != m_scan_state[column])
 	{
-		space.write_byte(0x8ff98 + column, m_scan_state[column]);
+		space.write_byte(ISP_SCAN_OLD + column, m_scan_state[column]);
 		m_scan_state[column] = keys;
-		space.write_byte(0x8ff90 + column, keys);
+		space.write_byte(ISP_SCAN_NEW + column, keys);
 		m_maincpu->dr_w(0x0a, column);
 		m_maincpu->isp_raise(3);
 	}
@@ -456,12 +414,12 @@ void roland_jd990_state::csp_w(offs_t offset, u8 data)
 void roland_jd990_state::mem_map(address_map &map)
 {
 	map(0x00000, 0x7ffff).rom().region("progrom", 0);
-	map(0x08000, 0x0ffff).bankrw(m_rambank);
+	map(0x08000, 0x0ffff).rw(FUNC(roland_jd990_state::ram_alias_r), FUNC(roland_jd990_state::ram_alias_w));
 	map(0x80000, 0x8ffff).ram().share(m_ram);
 	map(0xe0000, 0xe7fff).rw(FUNC(roland_jd990_state::page_e_r), FUNC(roland_jd990_state::page_e_w));
 	map(0xe0000, 0xe007f).rw(m_ep, FUNC(roland_ep_device::read), FUNC(roland_ep_device::write));
 	map(0xe4000, 0xe407f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
-	map(0xe8000, 0xeffff).bankrw(m_rambank);
+	map(0xe8000, 0xeffff).rw(FUNC(roland_jd990_state::ram_alias_r), FUNC(roland_jd990_state::ram_alias_w));
 	map(0xf0000, 0xf9fff).view(m_page_f);
 	m_page_f[0](0xf0000, 0xf3fff).rw(FUNC(roland_jd990_state::csp_r<0>), FUNC(roland_jd990_state::csp_w<0>));
 	m_page_f[0](0xf4000, 0xf7fff).rw(FUNC(roland_jd990_state::csp_r<1>), FUNC(roland_jd990_state::csp_w<1>));
@@ -471,8 +429,6 @@ void roland_jd990_state::mem_map(address_map &map)
 	map(0xfa002, 0xfa002).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::command_w));
 }
 
-// the internal set is installed once descrambled; the PCM card's two banks
-// and CN7's eight are the two sockets'
 void roland_jd990_state::wave_map(address_map &map)
 {
 	map.unmap_value_high();
@@ -491,7 +447,7 @@ void roland_jd990_state::lcd_palette(palette_device &palette) const
 	palette.set_pen_color(1, rgb_t(0, 0, 0));
 }
 
-static INPUT_PORTS_START(jd990)
+INPUT_PORTS_START(jd990)
 	PORT_START("KEY0")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Perform")
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_NAME("Patch")
@@ -567,10 +523,8 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_jd990_state::mem_map);
 	m_maincpu->isp_reset_cb().set(FUNC(roland_jd990_state::isp_reset_w));
 	m_maincpu->isp_dr_write_cb().set(FUNC(roland_jd990_state::isp_dr_w));
-	// the internal and the DATA card battery, 3.0 V against the 5 V reference
 	m_maincpu->read_adc<0>().set_constant(0x266);
 	m_maincpu->read_adc<1>().set([this] () -> u16 { return (m_datacard->sense_r() && BIT(m_card_battery->read(), 0)) ? 0x266 : 0; });
-	// the card and board sense lines in bit 7, low with an empty slot
 	m_maincpu->read_port9().set(FUNC(roland_jd990_state::port9_r));
 	m_maincpu->read_port11().set(FUNC(roland_jd990_state::port11_r));
 	m_maincpu->write_port6().set(FUNC(roland_jd990_state::port6_w));
@@ -582,7 +536,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	screen_device &screen(SCREEN(config, "screen"));
 	screen.set_lcd();
 	screen.set_refresh_hz(60);
-	screen.set_screen_update("lcdc", FUNC(sed1330_device::screen_update));
+	screen.set_screen_update(m_lcdc, FUNC(sed1330_device::screen_update));
 	screen.set_size(320, 80);
 	screen.set_visarea_full();
 	screen.set_palette("palette");
@@ -596,10 +550,10 @@ void roland_jd990_state::jd990(machine_config &config)
 
 	SPEAKER(config, "speaker", 2).front();
 
-	ROLAND_EP(config, m_ep, 44100);
+	ROLAND_EP(config, m_ep, 44'100);
 	m_ep->set_addrmap(roland_ep_device::AS_WAVE, &roland_jd990_state::wave_map);
 	m_ep->irq_cb().set_inputline(m_maincpu, 0);
-	ROLAND_TVF(config, m_tvf, 44100);
+	ROLAND_TVF(config, m_tvf, 44'100);
 	for (int n = 0; n < roland_ep_device::VOICES; n++)
 		m_ep->add_route(n, m_tvf, 1.0, n);
 	for (auto &csp : m_csp)
@@ -607,6 +561,8 @@ void roland_jd990_state::jd990(machine_config &config)
 	m_csp[1]->set_eram_size(0x40000);
 	m_csp[1]->set_eram_bits(18);
 	JD990_IFCS(config, m_ifcs, 0);
+	m_ifcs->set_csp<0>(m_csp[0]);
+	m_ifcs->set_csp<1>(m_csp[1]);
 	for (int n = 0; n < 24; n++)
 		m_tvf->add_route(n, m_ifcs, 1.0, n);
 	for (int pair = 0; pair < 4; pair++)
@@ -615,11 +571,9 @@ void roland_jd990_state::jd990(machine_config &config)
 		m_ifcs->add_route(pair * 2 + 1, "speaker", 1.0, 1);
 	}
 
-	// CN7, one 8 MB board at bank 8 of the EP's wave space
 	ROLAND_SRJV80_SLOT(config, m_exp, 0).set_image_names("exp", "exp").set_open(0xffff);
 	SOFTWARE_LIST(config, "exp_list").set_original("roland_srjv80");
 
-	// the PCM card, one or two 1 MB banks from 6 up
 	ROLAND_SOPCM1_SLOT(config, m_card, 0).set_image_names("card", "card").set_open(0xffff);
 	SOFTWARE_LIST(config, "card_list").set_original("roland_sopcm1");
 
@@ -643,4 +597,4 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1993, jd990, 0, 0, jd990, jd990, roland_jd990_state, empty_init, "Roland", "JD-990", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+SYST(1993, jd990, 0, 0, jd990, jd990, roland_jd990_state, empty_init, "Roland", "JD-990", MACHINE_NOT_WORKING)
