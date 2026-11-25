@@ -209,6 +209,7 @@ private:
 	u8 m_fxm_count[FXM_VOICES] = {};
 	u8 m_fxm_phase[FXM_VOICES] = {};
 	u8 m_lfo_tick = 0;
+	u8 m_song_tick = 0;
 	std::unique_ptr<u8 []> m_wave;
 };
 
@@ -234,6 +235,7 @@ void roland_jd990_state::machine_start()
 	save_item(NAME(m_fxm_count));
 	save_item(NAME(m_fxm_phase));
 	save_item(NAME(m_lfo_tick));
+	save_item(NAME(m_song_tick));
 }
 
 u8 roland_jd990_state::port9_r()
@@ -345,8 +347,12 @@ TIMER_CALLBACK_MEMBER(roland_jd990_state::isp_tick)
 	address_space &space = m_maincpu->space(AS_PROGRAM);
 
 	m_maincpu->isp_raise(9);
-	if (BIT(m_maincpu->isp_ief(), 4))
-		m_maincpu->isp_raise(4);
+	if (++m_song_tick == 5)
+	{
+		m_song_tick = 0;
+		if (BIT(m_maincpu->isp_ief(), 4))
+			m_maincpu->isp_raise(4);
+	}
 	if (space.read_byte(ISP_SEND_PENDING))
 		m_maincpu->isp_raise(0);
 
