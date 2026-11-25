@@ -1986,19 +1986,6 @@ if SOUNDS["ROLANDTVF"] then
 end
 
 ---------------------------------------------------
--- Roland XV tone generator
---@src/devices/sound/roland_xv.h,SOUNDS["ROLANDXV"] = true
----------------------------------------------------
-
-if SOUNDS["ROLANDXV"] then
-	files {
-		MAME_DIR .. "src/devices/sound/roland_xv.cpp",
-		MAME_DIR .. "src/devices/sound/roland_xv.h",
-		MAME_DIR .. "src/devices/sound/roland_xv_drc.cpp",
-	}
-end
-
----------------------------------------------------
 --
 --@src/devices/sound/vgm_visualizer.h,SOUNDS["VGMVIZ"] = true
 ---------------------------------------------------

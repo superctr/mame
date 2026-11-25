@@ -13,17 +13,13 @@
 -- Dynamic recompiler objects
 --------------------------------------------------
 
-DRC_CPUS = { "ADSP21062", "DSP16", "DSPP", "E1", "MB86235", "MIPS3", "POWERPC", "SH", "SWP30", "UNSP" }
+DRC_CPUS = { "ADSP21062", "DSP16", "DSPP", "E1", "MB86235", "MIPS3", "POWERPC", "ROLANDXV", "SH", "SWP30", "UNSP" }
 CPU_INCLUDE_DRC = false
 for i, v in ipairs(DRC_CPUS) do
 	if (CPUS[v]~=null) then
 		CPU_INCLUDE_DRC = true
 		break
 	end
-end
--- sound devices whose DSP is recompiled
-if (SOUNDS["ROLANDXV"]~=null) then
-	CPU_INCLUDE_DRC = true
 end
 CPU_INCLUDE_DRC_NATIVE = CPU_INCLUDE_DRC and (not _OPTIONS["FORCE_DRC_C_BACKEND"]) and ((_OPTIONS["PLATFORM"] == "x86") or (_OPTIONS["PLATFORM"] == "arm64"))
 
@@ -955,6 +951,8 @@ if CPUS["SH"] then
 		MAME_DIR .. "src/devices/cpu/sh/sh2.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh2fe.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh2fe.h",
+		MAME_DIR .. "src/devices/cpu/sh/sh3_sci.cpp",
+		MAME_DIR .. "src/devices/cpu/sh/sh3_sci.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh3comn.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh3comn.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh4.cpp",
@@ -1004,8 +1002,6 @@ if CPUS["SH"] then
 		MAME_DIR .. "src/devices/cpu/sh/sh_cmt.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_dmac.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_dmac.h",
-		MAME_DIR .. "src/devices/cpu/sh/sh_wdt.cpp",
-		MAME_DIR .. "src/devices/cpu/sh/sh_wdt.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_intc.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_intc.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_itu.cpp",
@@ -1016,10 +1012,10 @@ if CPUS["SH"] then
 		MAME_DIR .. "src/devices/cpu/sh/sh_mtu.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_port.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_port.h",
-		MAME_DIR .. "src/devices/cpu/sh/sh3_sci.cpp",
-		MAME_DIR .. "src/devices/cpu/sh/sh3_sci.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh_sci.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh_sci.h",
+		MAME_DIR .. "src/devices/cpu/sh/sh_wdt.cpp",
+		MAME_DIR .. "src/devices/cpu/sh/sh_wdt.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh7604_bus.cpp",
 		MAME_DIR .. "src/devices/cpu/sh/sh7604_bus.h",
 		MAME_DIR .. "src/devices/cpu/sh/sh7604_sci.cpp",
@@ -3859,6 +3855,19 @@ end
 if opt_tool(CPUS, "ROLANDLSP") then
 	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_lspd.cpp")
 	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_lspd.h")
+end
+
+--------------------------------------------------
+-- Roland XV tone generator
+--@src/devices/sound/roland_xv.h,CPUS["ROLANDXV"] = true
+--------------------------------------------------
+
+if CPUS["ROLANDXV"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_xv.cpp",
+		MAME_DIR .. "src/devices/sound/roland_xv.h",
+		MAME_DIR .. "src/devices/sound/roland_xv_drc.cpp",
+	}
 end
 
 --------------------------------------------------
