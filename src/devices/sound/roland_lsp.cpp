@@ -26,8 +26,11 @@
  *  RAM field of the six slots following an opener. The opener schedules its own access a
  *  fixed delay later, twelve slots for a read and eight for a write, and the write commits
  *  at the first external RAM store at or after that; one program in the corpus puts that
- *  store a slot late, which is why the search here is written backwards. It keeps twenty
- *  of a word's twenty-four bits. Stereo is by program
+ *  store a slot late, which is why the search here is written backwards. A word is
+ *  sixteen bits, four nibbles on a four-bit bus: a block float of the sample's top
+ *  twenty bits, a 14-bit mantissa and a 2-bit exponent counting two bits a step, so loud
+ *  material keeps fourteen significant bits (set_eram_block_float(false) keeps the
+ *  twenty linear). Stereo is by program
  *  position: the first half of a sample's 384 slots is one channel and the second half the
  *  other, counted by the slot rather than by the program counter, which a jump moves.
  *
@@ -35,6 +38,7 @@
  *  is concerned and execute_run() serves the debugger; run_once() is one sample.
  *
  *  TODO:
+ *  - the external RAM's word, which no capture yet tells from the linear twenty bits
  *  - the DRAM row/column walk, modelled here as a flat ring
  *  - what raises INT, and the busy bit's timing
  *  - the serial word width the configuration word selects
@@ -305,6 +309,15 @@ u16 roland_lsp_device::eram_address(bool read) const
 	return m_eram_pos + m_eram_base[read] + ((read && m_eram_tap2[read]) ? m_tap : 0);
 }
 
+s32 roland_lsp_device::eram_word(s32 value) const
+{
+	if (!m_eram_block_float)
+		return value;
+	const s32 magnitude = value ^ (value >> 31);
+	const int exponent = (magnitude >= 0x2000) + (magnitude >= 0x8000) + (magnitude >= 0x20000);
+	return value & ~((1 << (2 * exponent)) - 1);
+}
+
 s32 roland_lsp_device::source(const instruction &s) const
 {
 	const s32 value = m_history[s.store == 2][2];
@@ -438,7 +451,7 @@ void roland_lsp_device::step()
 	m_prev_offset = s.offset;
 
 	if (raw && s.opcode >= OP_SPECIAL_A && s.slot() == SLOT_ERAM_WRITE && s.store)
-		m_eram[eram_address(false)] = m_eram_latch >> 4;
+		m_eram[eram_address(false)] = eram_word(m_eram_latch >> 4);
 
 	if (m_jump_delay && !--m_jump_delay)
 		m_pc = m_jump_target;

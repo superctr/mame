@@ -38,6 +38,7 @@ public:
 	// TRR in and TRS0 out, channel 0 left and 1 right, one pair per sample
 	void ser_w(int channel, s32 sample) { m_serial_in[channel & 1] = sample; }
 	s32 ser_r(int channel) const { return m_serial_out[channel & 1]; }
+	void set_eram_block_float(bool on) { m_eram_block_float = on; }
 	void run_once();
 
 protected:
@@ -93,6 +94,7 @@ protected:
 
 	void eram_clock(u8 command);
 	u16 eram_address(bool read) const;
+	s32 eram_word(s32 value) const;
 	int iram_address(int offset) const { return (offset + m_buffer_pos) & 0x7f; }
 	bool first_half() const { return m_slot < PROGRAM_SIZE / 2; }
 
@@ -105,6 +107,7 @@ protected:
 	address_space_config m_program_config;
 
 	std::unique_ptr<s32[]> m_eram;
+	bool m_eram_block_float = true;
 	u32 m_program[PROGRAM_SIZE];
 	s32 m_iram[IRAM_SIZE];
 
