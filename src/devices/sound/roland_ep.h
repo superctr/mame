@@ -35,6 +35,7 @@ public:
 	void write(offs_t offset, u16 data);
 
 	void voice_pitch_w(int voice, u16 data);
+	void voice_restart(int n, u16 start_high, u16 start_low);
 
 protected:
 	// device_t implementation

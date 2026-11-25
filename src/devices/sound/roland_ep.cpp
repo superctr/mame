@@ -137,6 +137,16 @@ void roland_ep_device::voice_pitch_w(int voice, u16 data)
 	m_voices[voice & (VOICES - 1)].regs[PITCH] = data;
 }
 
+void roland_ep_device::voice_restart(int n, u16 start_high, u16 start_low)
+{
+	m_stream->update();
+	voice &v = m_voices[n & (VOICES - 1)];
+	v.address = (u32((v.regs[WAVE] >> 4) & 0xf) << 20) | (u32(start_low) << 4) | (start_high >> 12);
+	v.phase = (start_high & 0xfff) << 4;
+	v.predictor = 0;
+	v.backward = false;
+}
+
 void roland_ep_device::key_w(int word, u16 data)
 {
 	m_regs[word] = data;
