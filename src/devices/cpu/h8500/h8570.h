@@ -43,6 +43,7 @@ public:
 	auto isp_reset_cb() { return m_isp_reset_cb.bind(); }
 	auto isp_bus_enable_cb() { return m_isp_ibe_cb.bind(); }
 	auto isp_dr_write_cb() { return m_dr_write_cb.bind(); }
+	auto isp_icf_cb() { return m_icf_cb.bind(); }
 	void isp_raise(int n);
 	void isp_set_icf(int n, int state);
 	void isp_set_iof(u32 iof);
@@ -123,6 +124,7 @@ private:
 	devcb_write_line m_isp_reset_cb;
 	devcb_write_line m_isp_ibe_cb;
 	devcb_write8 m_dr_write_cb;
+	devcb_write8 m_icf_cb;
 
 	u16 m_isf, m_icf, m_ief, m_ioie, m_cle;
 	u32 m_iof;

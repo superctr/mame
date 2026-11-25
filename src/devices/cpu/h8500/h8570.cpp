@@ -37,6 +37,7 @@ h8570_device::h8570_device(const machine_config &mconfig, const char *tag, devic
 	, m_isp_reset_cb(*this)
 	, m_isp_ibe_cb(*this)
 	, m_dr_write_cb(*this)
+	, m_icf_cb(*this)
 	, m_isf(0), m_icf(0), m_ief(0), m_ioie(0), m_cle(0)
 	, m_iof(0)
 	, m_egf(0), m_ever(0), m_ipr(0), m_icsr(0x20), m_fedge(0), m_redge(0)
@@ -394,6 +395,7 @@ void h8570_device::pwm_out_w(u8 data)
 void h8570_device::pwm_icf_w(u8 data)
 {
 	isp_set_icf(8 + data, 1);
+	m_icf_cb(8 + data);
 }
 
 void h8570_device::internal_update(u64 current_time)
