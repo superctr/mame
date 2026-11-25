@@ -135,7 +135,6 @@ private:
 	void sc8820_porte_w(u16 data);
 	void sc8820_panel_update();
 
-
 	u16 computer_sw_r() { return m_computer_sw.read_safe(0); }
 
 	void pump_slave(int state);
@@ -188,8 +187,8 @@ private:
 
 void roland_sc8850_state::init_sc8850()
 {
-	static const u8 address_lines[18] = { 0, 4, 2, 3, 1, 8, 12, 6, 13, 11, 9, 16, 7, 5, 14, 17, 10, 15 };
-	roland_wavecard_device::descramble(memregion("waverom")->base(), memregion("waverom")->bytes(), address_lines, 18);
+	constexpr u8 ADDRESS_LINES[18] = { 0, 4, 2, 3, 1, 8, 12, 6, 13, 11, 9, 16, 7, 5, 14, 17, 10, 15 };
+	roland_wavecard_device::descramble(memregion("waverom")->base(), memregion("waverom")->bytes(), ADDRESS_LINES, 18);
 }
 
 void roland_sc8850_state::machine_start()
@@ -584,8 +583,7 @@ void roland_sc8850_state::xp_rom_map(address_map &map)
 // the SC-8820 has 16 MB and 8 MB; it cannot boot far enough to say which
 // selects it uses, so it follows its sibling's
 // the SC-8820 numbers its banks straight through instead, 0 to 23 with no
-// chip select at all, so its two ROMs are one window, the 8 MB one repeating
-// through the rest of the second 16 MB.
+// chip select at all, so its two ROMs are one window.
 void roland_sc8850_state::sc8820_xp_rom_map(address_map &map)
 {
 	map.unmap_value_high();
@@ -688,9 +686,6 @@ void roland_sc8850_state::sc8850(machine_config &config)
 	m_maincpu->read_adc<0>().set(FUNC(roland_sc8850_state::computer_sw_r));
 	m_maincpu->read_porta().set(FUNC(roland_sc8850_state::porta_r));
 
-	// an absent controller as both firmwares' start-up exchanges see it:
-	// the fa that aborts the SC-8850's program download, the tag 9 byte
-	// carrying the SC-8820's rear COMPUTER switch, and the ff that ends it
 	ROLAND_UIPC(config, m_uipc);
 	m_uipc->set_announcement({ { 0x01, 0xfa }, { 0x91, roland_uipc_device::IFSEL }, { 0x01, 0xff } });
 
