@@ -103,7 +103,10 @@ void i80c196kb_device::kb_regs(address_map &map)
 
 void i80c196kb_device::ioc2_w(u8 data)
 {
+	const bool prescale = BIT(data ^ m_ioc2, 2);
 	m_ioc2 = data;
+	if (prescale)
+		pwm_retime();
 }
 
 bool i80c196kb_device::timer2_counts_down() const

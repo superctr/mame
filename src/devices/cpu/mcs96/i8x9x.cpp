@@ -26,11 +26,12 @@ i8x9x_device::i8x9x_device(const machine_config &mconfig, device_type type, cons
 	m_hso_cb(*this),
 	m_serial_tx_cb(*this),
 	m_txd_cb(*this),
+	m_pwm_cb(*this),
 	m_in_p0_cb(*this, 0),
 	m_out_p1_cb(*this), m_in_p1_cb(*this, 0xff),
 	m_out_p2_cb(*this), m_in_p2_cb(*this, 0xc2),
 	m_p1_driven_mask(0),
-	base_timer2(0), ad_done(0), m_t2_external(false), timer2_count(0), t2clk_level(false), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0),
+	base_timer2(0), ad_done(0), m_t2_external(false), timer2_count(0), t2clk_level(false), hsi_mode(0), hsi_status(0), hso_command(0), ad_command(0), hso_active(0), hso_time(0), ad_result(0), pwm_control(0), pwm_latch(0), pwm_written(0), pwm_next(0), pwm_out(false),
 	port1(0), port2(0),
 	ios0(0), ios1(0), ioc0(0), ioc1(0), extint(false),
 	sbuf(0), sp_con(0), sp_stat(0), serial_send_buf(0), baud_reg(0), brh(false),
@@ -108,6 +109,10 @@ void i8x9x_device::device_start()
 	save_item(NAME(port1));
 	save_item(NAME(port2));
 	save_item(NAME(pwm_control));
+	save_item(NAME(pwm_latch));
+	save_item(NAME(pwm_written));
+	save_item(NAME(pwm_next));
+	save_item(NAME(pwm_out));
 	save_item(NAME(ios0));
 	save_item(NAME(ios1));
 	save_item(NAME(ioc0));
@@ -155,7 +160,8 @@ void i8x9x_device::device_reset()
 	ioc1 = (ioc1 & 0xae) | 0x01;
 	ad_result = 0;
 	ad_done = 0;
-	pwm_control = 0x00;
+	pwm_control = pwm_latch = 0x00;
+	pwm_written = total_cycles();
 	sp_con &= 0x17;
 	sp_stat &= 0x80;
 	brh = false;
@@ -164,6 +170,9 @@ void i8x9x_device::device_reset()
 	m_hso_cb(0);
 	serial_tx_stop();
 	serial_rx_stop();
+	pwm_out = false;
+	m_pwm_cb(0);
+	pwm_retime();
 }
 
 void i8x9x_device::commit_hso_cam()
@@ -604,6 +613,8 @@ void i8x9x_device::port2_w(u8 data)
 	port2 = data;
 	m_out_p2_cb(data);
 	update_txd();
+	if (!BIT(ioc1, 0))
+		pwm_retime();
 }
 
 u8 i8x9x_device::port2_r()
@@ -666,6 +677,7 @@ void i8x9x_device::ioc1_w(u8 data)
 {
 	ioc1 = data;
 	update_txd();
+	pwm_retime();
 }
 
 u8 i8x9x_device::ios1_r()
@@ -678,7 +690,53 @@ u8 i8x9x_device::ios1_r()
 
 void i8x9x_device::pwm_control_w(u8 data)
 {
+	const u64 current_time = total_cycles();
+	pwm_latch = pwm_value(current_time);
 	pwm_control = data;
+	pwm_written = current_time;
+	pwm_retime();
+}
+
+u8 i8x9x_device::pwm_value(u64 current_time) const
+{
+	const u64 period = 256 * cycles_scaling * pwm_prescale();
+	return (current_time - current_time % period) > pwm_written ? pwm_control : pwm_latch;
+}
+
+bool i8x9x_device::pwm_level(u64 current_time) const
+{
+	if (!BIT(ioc1, 0))
+		return BIT(port2, 5);
+	const u8 count = (current_time / (cycles_scaling * pwm_prescale())) & 0xff;
+	const u8 value = pwm_value(current_time);
+	return value && count < value;
+}
+
+u64 i8x9x_device::pwm_edge_after(u64 current_time) const
+{
+	const u64 state = cycles_scaling * pwm_prescale();
+	const u64 start = current_time - current_time % (256 * state);
+	const u8 value = pwm_value(current_time);
+	const u64 fall = start + value * state;
+	return (value && fall > current_time) ? fall : start + 256 * state;
+}
+
+void i8x9x_device::pwm_update(u64 current_time)
+{
+	const bool level = pwm_level(current_time);
+	if (level != pwm_out)
+	{
+		pwm_out = level;
+		m_pwm_cb(level);
+	}
+	pwm_next = (BIT(ioc1, 0) && !m_pwm_cb.isunset()) ? pwm_edge_after(current_time) : 0;
+}
+
+void i8x9x_device::pwm_retime()
+{
+	const u64 current_time = total_cycles();
+	pwm_update(current_time);
+	internal_update(current_time);
 }
 
 void i8x9x_device::do_exec_partial()
@@ -872,6 +930,8 @@ void i8x9x_device::internal_update(u64 current_time)
 		tx_event(tx_next);
 	while(rx_next && current_time >= rx_next)
 		rx_event(rx_next);
+	while(pwm_next && current_time >= pwm_next)
+		pwm_update(pwm_next);
 
 	u64 event_time = 0;
 	for(int i=0; i<8; i++) {
@@ -902,6 +962,9 @@ void i8x9x_device::internal_update(u64 current_time)
 
 	if(rx_next && (!event_time || rx_next < event_time))
 		event_time = rx_next;
+
+	if(pwm_next && (!event_time || pwm_next < event_time))
+		event_time = pwm_next;
 
 	recompute_bcount(event_time);
 }

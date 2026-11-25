@@ -36,6 +36,7 @@ protected:
 	void kb_regs(address_map &map) ATTR_COLD;
 	void ioc2_w(u8 data);
 	virtual bool timer2_counts_down() const override;
+	virtual u32 pwm_prescale() const override { return BIT(m_ioc2, 2) ? 2 : 1; }
 	u8 wsr_r();
 	void wsr_w(u8 data);
 	void int_mask1_w(u8 data);

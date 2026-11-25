@@ -57,6 +57,7 @@ public:
 	auto hso_cb() { return m_hso_cb.bind(); }
 	auto serial_tx_cb() { return m_serial_tx_cb.bind(); }
 	auto txd_cb() { return m_txd_cb.bind(); }
+	auto pwm_cb() { return m_pwm_cb.bind(); }
 
 	auto in_p0_cb() { return m_in_p0_cb.bind(); }
 	auto out_p1_cb() { return m_out_p1_cb.bind(); }
@@ -81,7 +82,9 @@ public:
 
 protected:
 	virtual bool timer2_counts_down() const { return false; }
+	virtual u32 pwm_prescale() const { return 1; }
 	void timer2_w(u16 data);
+	void pwm_retime();
 
 	i8x9x_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int data_width);
 	i8x9x_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int data_width, address_map_constructor regs_map);
@@ -153,6 +156,7 @@ private:
 	devcb_write8 m_hso_cb;
 	devcb_write8 m_serial_tx_cb;
 	devcb_write_line m_txd_cb;
+	devcb_write_line m_pwm_cb;
 
 	devcb_read8 m_in_p0_cb;
 	devcb_write8 m_out_p1_cb;
@@ -177,6 +181,10 @@ private:
 	u8 hsi_divider[4];
 	u16 hso_time, ad_result;
 	u8 pwm_control;
+	u8 pwm_latch;
+	u64 pwm_written;
+	u64 pwm_next;
+	bool pwm_out;
 	u8 port1, port2;
 	u8 ios0, ios1, ioc0, ioc1;
 	bool extint;
@@ -220,6 +228,10 @@ private:
 	void serial_tx_stop();
 	void serial_rx_stop();
 	void update_txd();
+	u8 pwm_value(u64 current_time) const;
+	bool pwm_level(u64 current_time) const;
+	u64 pwm_edge_after(u64 current_time) const;
+	void pwm_update(u64 current_time);
 	void tx_event(u64 current_time);
 	void rx_event(u64 current_time);
 };
