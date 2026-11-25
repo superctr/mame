@@ -32,14 +32,11 @@ public:
 
 	void set_announcement(std::initializer_list<announce_byte> bytes) { m_announce = bytes; }
 
-	// IFSEL0-IFSEL3, the controller's interface select pins
 	auto ifsel_callback() { return m_ifsel_cb.bind(); }
 
-	// host to controller: +0 data, +1 status
 	u8 tx_r(offs_t offset);
 	void tx_w(offs_t offset, u8 data);
 
-	// controller to host: +0 data, +1 status
 	u8 rx_r(offs_t offset);
 	void rx_w(offs_t offset, u8 data);
 
