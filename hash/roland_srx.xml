@@ -16,32 +16,14 @@ license:CC0-1.0
     from the descrambled image.  The year is that build date, which is what
     the images testify to rather than the date of sale.
 
-    The twelve parents are board reads.  Each declares its own board number
-    as the identity word of that directory and carries a wave list, a sample
-    list and one to four patch banks, and a host takes those patches.
-
-    The clones are Roland's own plugin sets, which carry the wave data
-    already descrambled, put back into board form by the inverse of the
-    socket's permutation.  They are not the board and do not stand for it:
-    each declares an identity from 0x1f up instead of its board number and
-    carries no patch bank, so a host plays their waves and finds no patches
-    on them.  They are what Roland ships, reproduced exactly.  Three of the
-    plugin sets are not here because they need no entry of their own:
-    SRX-02, SRX-10 and SRX-11's are their boards, byte for byte.  Of the
-    rest, SRX-03's, SRX-04's and SRX-12's are the board's own sample data
-    with the patch banks cut away; the other five are laid out afresh and
-    carry fewer waves than the board does.
+    Each set is a board read.  It declares its own board number as the
+    identity word of that directory and carries a wave list, a sample list
+    and one to four patch banks, and a host takes those patches.
 
     The sets are named by that number: the directory's first word, sixteen
     bits big-endian at descrambled 0x40, after the name the machine shows
     at 0x20, the build date at 0x30 and the six-character short name at
-    0x3A.  The boards are srx01 to srx12, the plugin sets srx31 to srx37
-    and srx41.
-
-    Which board each PG-SRX re-issue is, is read off its waves: every wave
-    of PG-SRX Orchestra, World, Strings and Classic EP stands in SRX-06,
-    -09, -04 and -12, and 599 of PG-SRX Keyboards' 619 in SRX-07, where no
-    other board shares more than three.
+    0x3A.
 -->
 
 <softwarelist name="roland_srx" description="Roland SRX wave expansion boards">
@@ -81,18 +63,6 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- Roland Cloud: "MIKYG Ver.1.02" [Stdio], 2018-08-20, identity 0x24; 1796 samples, 522 waves, no patches -->
-	<software name="srx36" cloneof="srx03">
-		<description>Studio SRX (SRX-03, Roland Cloud re-issue)</description>
-		<year>2018</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20180820"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="srx-03_roland_cloud.bin" size="0x2000000" crc="fd074282" sha1="a612e4f310c63ac0c76afe45f84716bf6b18c25b" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
 	<!-- SRX-04 Symph.Str, "SRX-04 Symph.Str" [Strng], 2001-03-29; 1287 samples, 196 waves, patch banks of 128+128+128 -->
 	<software name="srx04">
 		<description>Symphonique Strings (SRX-04)</description>
@@ -102,18 +72,6 @@ license:CC0-1.0
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-04.ic1" size="0x2000000" crc="44685495" sha1="1956a8162e6df56dabbf269efc5fd3296cf96716" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
-	<!-- Roland Cloud: "Strings" [Strng], 2018-09-07, identity 0x25; 1287 samples, 196 waves, no patches -->
-	<software name="srx37" cloneof="srx04">
-		<description>Strings (PG-SRX)</description>
-		<year>2018</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20180907"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="pg-srx_strings.bin" size="0x2000000" crc="9f0e29e8" sha1="3d3e80be23dfbe6b9fae64769f4a64f5e36d751c" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
@@ -129,18 +87,6 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- Roland Cloud: "SRX-05 SupDance" [SpDnc], 2001-11-15, identity 0x21; 2140 samples, 326 waves, no patches -->
-	<software name="srx33" cloneof="srx05">
-		<description>Supreme Dance (SRX-05, Roland Cloud re-issue)</description>
-		<year>2001</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20011115"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="srx-05_roland_cloud.bin" size="0x2000000" crc="a8644797" sha1="f337189a2a530e96c45b654f55857d0c3d5c875f" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
 	<!-- SRX-06 Comp Orch, "Orchestra" [CpOrc], 2003-05-20; 1754 samples, 512 waves, patch banks of 449+449+449 -->
 	<software name="srx06">
 		<description>Complete Orchestra (SRX-06)</description>
@@ -150,18 +96,6 @@ license:CC0-1.0
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-06.ic1" size="0x2000000" crc="a5ac263f" sha1="ffa88d543898fc3d920e676b4bf4bba876a36e75" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
-	<!-- Roland Cloud: "Orchestra" [Orche], 2017-11-06, identity 0x1f; 1447 samples, 430 waves, no patches -->
-	<software name="srx31" cloneof="srx06">
-		<description>Orchestra (PG-SRX)</description>
-		<year>2017</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20171106"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="pg-srx_orchestra.bin" size="0x2000000" crc="7f068d7a" sha1="543d6e55ef81855c8028c99c7aa192874cf5351f" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
@@ -177,18 +111,6 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- Roland Cloud: "Keyboards" [Keys], 2018-02-20, identity 0x20; 3191 samples, 619 waves, no patches -->
-	<software name="srx32" cloneof="srx07">
-		<description>Keyboards (PG-SRX)</description>
-		<year>2018</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20180220"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="pg-srx_keyboards.bin" size="0x2000000" crc="4906dcf4" sha1="507c94d282729a8d6f1fd8b1a4ff67d0ac0afc08" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
 	<!-- SRX-08 Pltnm Trx, "Dance" [PlTrx], 2002-07-14; 2834 samples, 950 waves, patch banks of 448+448+448 -->
 	<software name="srx08">
 		<description>Platinum Trax (SRX-08)</description>
@@ -201,18 +123,6 @@ license:CC0-1.0
 			</dataarea>
 		</part>
 	</software>
-	<!-- Roland Cloud: "Dance" [PlTrx], 2002-07-14, identity 0x22; 2712 samples, 829 waves, no patches -->
-	<software name="srx34" cloneof="srx08">
-		<description>Platinum Trax (SRX-08, Roland Cloud re-issue)</description>
-		<year>2002</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20020714"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="srx-08_roland_cloud.bin" size="0x2000000" crc="59261000" sha1="7a8224b78e192880002dee0182c1fe69fd693202" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
 	<!-- SRX-09 World Cl, "Ethnic" [WldCl], 2002-07-14; 2494 samples, 873 waves, patch banks of 414+414+414 -->
 	<software name="srx09">
 		<description>World Collection (SRX-09)</description>
@@ -222,18 +132,6 @@ license:CC0-1.0
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-09.ic1" size="0x2000000" crc="4af8432e" sha1="d0a3213ff2f10cdc3b437b82a7db8fea9c302282" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
-	<!-- Roland Cloud: "World" [World], 2018-08-25, identity 0x23; 2470 samples, 867 waves, no patches -->
-	<software name="srx35" cloneof="srx09">
-		<description>World (PG-SRX)</description>
-		<year>2018</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20180825"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="pg-srx_world.bin" size="0x2000000" crc="3162c716" sha1="1c9b0413a288f28a8ee9fdad30db19a268f5f585" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
@@ -270,18 +168,6 @@ license:CC0-1.0
 		<part name="board" interface="srx">
 			<dataarea name="rom" size="0x2000000">
 				<rom name="srx-12.ic1" size="0x2000000" crc="68b2faa2" sha1="84dd2895ca94c3b2cfde8a60e02f90896580292f" offset="0"/>
-			</dataarea>
-		</part>
-	</software>
-	<!-- Roland Cloud: "Classic EP" [Cl_EP], 2018-09-12, identity 0x29; 4690 samples, 168 waves, no patches -->
-	<software name="srx41" cloneof="srx12">
-		<description>Classic EP (PG-SRX)</description>
-		<year>2018</year>
-		<publisher>Roland</publisher>
-		<info name="release" value="20180912"/>
-		<part name="board" interface="srx">
-			<dataarea name="rom" size="0x2000000">
-				<rom name="pg-srx_classic_ep.bin" size="0x2000000" crc="f8258c57" sha1="af1ddd47373e18db835339cb4b7704cb3ccaacaf" offset="0"/>
 			</dataarea>
 		</part>
 	</software>
