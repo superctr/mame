@@ -116,7 +116,7 @@ constexpr int TX_RING_START = 0x24;
 constexpr int TX_RING_END = 0xc0;
 constexpr int TX_WRITE_PTR = 0xd5;
 constexpr int TX_READ_PTR = 0xd4;
-constexpr int DEVICE_ID = 0xd0;         // one per source, written by the main CPU
+constexpr int DEVICE_ID = 0xd0;
 
 struct exclusive_block { u8 model; u8 address; u8 code; bool paged; };
 
@@ -180,6 +180,8 @@ sc88_sub_device::sc88_sub_device(const machine_config &mconfig, const char *tag,
 	, m_tx_cb(*this)
 	, m_pb_cb(*this)
 	, m_rx(*this, "rx%u", 0U)
+	, m_strobes_low(false)
+	, m_raw_45(false)
 	, m_dpram{}
 	, m_ipcm{}
 	, m_ipcer{}
@@ -468,7 +470,7 @@ void sc88_sub_device::send_sysex(int src, source &s)
 	u8 chan = 0;
 	u8 request = 0;
 	if (m_raw_45 && x.size() >= 9 && x[0] == 0x41 && x[2] == 0x45 && (x[3] == 0x12 || x[3] == 0x11))
-		code = 0xeb; // the main CPU checks the device ID and takes the four-byte address
+		code = 0xeb;
 	else if (x.size() >= 8 && x[0] == 0x41 && (x[2] == 0x42 || x[2] == 0x45) && (x[3] == 0x12 || x[3] == 0x11))
 	{
 		if (x[1] != m_dpram[DEVICE_ID + src] && x[1] != 0x7f)
