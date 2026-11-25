@@ -100,13 +100,16 @@ public:
 	void sc88pro(machine_config &config) ATTR_COLD;
 	void vegspro(machine_config &config) ATTR_COLD;
 	void sk88pro(machine_config &config) ATTR_COLD;
-	void xpgs(machine_config &config) ATTR_COLD;
 
 	void init_sc88() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
 	virtual void machine_reset() override ATTR_COLD;
+
+	void sc88_base(machine_config &config) ATTR_COLD;
+	void hd44780_glass(machine_config &config) ATTR_COLD;
+	void pro_base(machine_config &config) ATTR_COLD;
 
 	HD44780_PIXEL_UPDATE(lcd_pixel_update);
 	void lcd_palette(palette_device &palette) const ATTR_COLD;
@@ -115,9 +118,7 @@ protected:
 	void sc88pro_map(address_map &map) ATTR_COLD;
 	void vegspro_map(address_map &map) ATTR_COLD;
 	void sk88pro_map(address_map &map) ATTR_COLD;
-	void xpgs_map(address_map &map) ATTR_COLD;
 	void xp_rom_map(address_map &map) ATTR_COLD;
-	void xpgs_xp_rom_map(address_map &map) ATTR_COLD;
 	void pro_xp_rom_map(address_map &map) ATTR_COLD;
 
 	u8 ga_r(offs_t offset);
@@ -129,7 +130,6 @@ protected:
 	u16 ram_alias_r(offs_t offset) { return m_nvram[0x4000 + offset]; }
 	void ram_alias_w(offs_t offset, u16 data, u16 mem_mask) { COMBINE_DATA(&m_nvram[0x4000 + offset]); }
 	void xp_int_w(int state);
-	void xp_irq0_w(int state);
 	void lsp_serial_w(offs_t port, u32 data);
 	u32 lsp_serial_r(offs_t strobe);
 	void lsp_mute_w(u8 data);
@@ -168,9 +168,9 @@ protected:
 	bool m_xp_int = false;
 	bool m_lsp_mute = true;
 	u8 m_midi_switches = 0;
-	int m_midi_in_a = 1;
-	int m_midi_in_b[2] = { 1, 1 };
-	int m_sub_txd = 1;
+	u8 m_midi_in_a = 1;
+	u8 m_midi_in_b[2] = { 1, 1 };
+	u8 m_sub_txd = 1;
 };
 
 class roland_sc88vl_state : public roland_sc88_state
@@ -209,19 +209,35 @@ public:
 	void sc880(machine_config &config) ATTR_COLD;
 
 protected:
+	virtual void device_post_load() override ATTR_COLD;
 	virtual void lcd_write(offs_t offset, u8 data) override;
 
 private:
 	void sc880_map(address_map &map) ATTR_COLD;
 	void glass_palette(palette_device &palette) const ATTR_COLD;
-	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void update_digits();
 
 	required_device<t6a04_device> m_glcd;
 	output_finder<25> m_digits;
 };
 
+class roland_xpgs_state : public roland_sc88_state
+{
+public:
+	roland_xpgs_state(const machine_config &mconfig, device_type type, const char *tag)
+		: roland_sc88_state(mconfig, type, tag)
+	{
+	}
 
-// The wave ROMs are stored as dumped, wired as an SRX board is.
+	void xpgs(machine_config &config) ATTR_COLD;
+
+private:
+	void xpgs_map(address_map &map) ATTR_COLD;
+	void xpgs_xp_rom_map(address_map &map) ATTR_COLD;
+	void xp_irq0_w(int state);
+};
+
+
 void roland_sc88_state::init_sc88()
 {
 	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
@@ -277,8 +293,7 @@ void roland_sc88vl_state::machine_reset()
 //  strobe transfers both and raises interrupt source 0 when done.
 //
 //    00     LEDs                 04     1 + pending interrupt source (read)
-//    01     LED commons          05     interrupt mask, bit n masks source n
-//    02     written ff at boot
+//    01-02  ?                    05     interrupt mask, bit n masks source n
 //    03/07  LCD setup            1e     LCD strobe    1f  LCD command
 //                                20-2c  LCD data FIFO
 //-------------------------------------------------
@@ -336,8 +351,7 @@ void roland_sc88_state::ga_w(offs_t offset, u8 data)
 		// 00 = LED data (ALL, MUTE, INST MAP, EQ, EDIT (upper, middle, lower),
 		// USER INST), gated by the common in 01 bit 0 (active low).  01 bit 1
 		// drives the SC-88Pro's second lens die directly (red; the green one is
-		// on the USER INST data line, and both lit show orange in EFX mode), and
-		// the SC-88VL's STANDBY lamp.
+		// on the USER INST data line, and both lit show orange in EFX mode).
 		const u8 data = m_ga_regs[0x00];
 		const u8 commons = m_ga_regs[0x01];
 		for (int i = 0; i < 8; i++)
@@ -389,7 +403,7 @@ void roland_sc88_state::xp_int_w(int state)
 	m_maincpu->set_input_line(1, state ? ASSERT_LINE : CLEAR_LINE);
 }
 
-void roland_sc88_state::xp_irq0_w(int state)
+void roland_xpgs_state::xp_irq0_w(int state)
 {
 	m_xp_int = state;
 	m_maincpu->set_input_line(0, state ? ASSERT_LINE : CLEAR_LINE);
@@ -455,7 +469,6 @@ u8 roland_sc88_state::port5_r()
 	return 0x2d;
 }
 
-// P6-0 is LCDBL: the glass and its backlight are dark while it is low
 void roland_sc88vl_state::port6_w(offs_t offset, u8 data, u8 mem_mask)
 {
 	m_lcd_lit = BIT(mem_mask, 0) && BIT(data, 0);
@@ -466,11 +479,6 @@ u8 roland_sc88_state::port8_r()
 	return m_xp_int ? 0xfd : 0xff;
 }
 
-
-//-------------------------------------------------
-//  MIDI switches: the sub CPU's PB4 turns the OUT/THRU connector over to
-//  MIDI IN A, PB5 picks the front MIDI IN B over the rear one
-//-------------------------------------------------
 
 void roland_sc88_state::midi_in_a_w(int state)
 {
@@ -524,7 +532,6 @@ u16 roland_sc88_state::battery_r()
 	return 0x2a0;
 }
 
-// the rear selector is a resistor ladder in four equal steps; the firmware reads it once at boot
 u16 roland_sc88_state::computer_sw_r()
 {
 	return m_computer_sw.read_safe(0) * 0x3ff / 3;
@@ -565,7 +572,6 @@ void roland_sc88_state::vegspro_map(address_map &map)
 	map(0xf00000, 0xf000ff).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
 }
 
-// the overlay ROM's first 128 KB replace the main ROM's, vector table included
 void roland_sc88_state::sk88pro_map(address_map &map)
 {
 	sc88pro_map(map);
@@ -583,12 +589,12 @@ void roland_sc880_state::sc880_map(address_map &map)
 	map(0xf00000, 0xf000ff).rw(m_lsp, FUNC(roland_lsp_device::host_r), FUNC(roland_lsp_device::host_w));
 }
 
-void roland_sc88_state::xpgs_map(address_map &map)
+void roland_xpgs_state::xpgs_map(address_map &map)
 {
 	map(0x000000, 0x07ffff).rom().region("progrom", 0);
-	map(0x008000, 0x00ffff).rw(FUNC(roland_sc88_state::ram_alias_r), FUNC(roland_sc88_state::ram_alias_w));
+	map(0x008000, 0x00ffff).rw(FUNC(roland_xpgs_state::ram_alias_r), FUNC(roland_xpgs_state::ram_alias_w));
 	map(0x080000, 0x08ffff).ram().share(m_nvram);
-	map(0x0e8000, 0x0effff).rw(FUNC(roland_sc88_state::ram_alias_r), FUNC(roland_sc88_state::ram_alias_w));
+	map(0x0e8000, 0x0effff).rw(FUNC(roland_xpgs_state::ram_alias_r), FUNC(roland_xpgs_state::ram_alias_w));
 	map(0x0e0000, 0x0e3fff).rw(m_xp, FUNC(roland_xp_device::read), FUNC(roland_xp_device::write));
 }
 
@@ -602,7 +608,7 @@ void roland_sc88_state::xp_rom_map(address_map &map)
 	map(0x3000000, 0x31fffff).mirror(0x0e00000).rom().region("waverom", 0x600000);
 }
 
-void roland_sc88_state::xpgs_xp_rom_map(address_map &map)
+void roland_xpgs_state::xpgs_xp_rom_map(address_map &map)
 {
 	xp_rom_map(map);
 	map(0x4000000, 0x41fffff).mirror(0x0e00000).rom().region("waverom", 0x800000);
@@ -628,7 +634,7 @@ void roland_sc88_state::lcd_palette(palette_device &palette) const
 {
 	palette.set_pen_color(0, rgb_t(0xf8, 0xc8, 0x40)); // background
 	palette.set_pen_color(1, rgb_t(0x20, 0x10, 0x00)); // segment on
-	palette.set_pen_color(2, rgb_t::black()); // backlight off
+	palette.set_pen_color(2, rgb_t::black());
 }
 
 static constexpr int LCD_CHAR_PITCH = 35;
@@ -656,21 +662,21 @@ static void lcd_fill(bitmap_ind16 &bitmap, int x, int y, int w, int h, int state
 void roland_sc880_state::lcd_write(offs_t offset, u8 data)
 {
 	if (offset)
+	{
 		m_glcd->data_write(data);
+		update_digits();
+	}
 	else
 		m_glcd->control_write(data);
 }
 
-void roland_sc880_state::glass_palette(palette_device &palette) const
+void roland_sc880_state::device_post_load()
 {
-	palette.set_pen_color(0, rgb_t(0x8c, 0xc8, 0x6c));
-	palette.set_pen_color(1, rgb_t(0x10, 0x30, 0x18));
+	roland_sc88_state::device_post_load();
+	update_digits();
 }
 
-// Lines 0 and 1 are the two commons of the glass's row of 25 8-segment digits, four columns to a
-// digit: line 0 holds segments a g c b, line 1 f e d and the eighth.  Byte columns 0, 4, 8 and 12
-// and the last half column are not wired to it; lines 2-33 are the dot area
-u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+void roland_sc880_state::update_digits()
 {
 	int digit = 0;
 	for (int column = 0; column < 17; column++)
@@ -681,11 +687,15 @@ u32 roland_sc880_state::screen_update(screen_device &screen, bitmap_ind16 &bitma
 		{
 			const u8 com0 = m_glcd->ram_r(0, column) >> (4 - half * 4);
 			const u8 com1 = m_glcd->ram_r(1, column) >> (4 - half * 4);
-			m_digits[digit++] = BIT(com0, 3) | BIT(com0, 0) << 1 | BIT(com0, 1) << 2 | BIT(com1, 1) << 3
-					| BIT(com1, 2) << 4 | BIT(com1, 3) << 5 | BIT(com0, 2) << 6 | BIT(com1, 0) << 7;
+			m_digits[digit++] = bitswap<8>(((com1 & 0x0f) << 4) | (com0 & 0x0f), 4, 2, 7, 6, 5, 1, 0, 3);
 		}
 	}
-	return m_glcd->screen_update(screen, bitmap, cliprect);
+}
+
+void roland_sc880_state::glass_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t(0x8c, 0xc8, 0x6c));
+	palette.set_pen_color(1, rgb_t(0x10, 0x30, 0x18));
 }
 
 u32 roland_sc88vl_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -843,12 +853,6 @@ static INPUT_PORTS_START(sc88pro)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level <")
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level >")
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
-	// the model strap, read at power-on beside the gate array's readback (set where the gate array is missing)
-	//   no GA  strap  identity
-	//     0      0    SC-88Pro
-	//     0      1    SC-88ProVL
-	//     1      0    03-SC-R
-	//     1      1    SC-88ProVL BOARD
 	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
 
 	PORT_START("KEY3")
@@ -920,8 +924,6 @@ static INPUT_PORTS_START(sc880)
 INPUT_PORTS_END
 
 
-// the SC-88's matrix less the user instrument keys and PREVIEW; the POWER/STANDBY key
-// SW401 takes the position the SC-88 leaves free (service notes, May 1995, p.13)
 static INPUT_PORTS_START(sc88vl)
 	PORT_START("KEY0")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Power")
@@ -951,9 +953,8 @@ static INPUT_PORTS_START(sc88vl)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level <")
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Level >")
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Part <")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_UNUSED) // SD7 is strapped to SSC2 on the main board
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_UNUSED)
 
-	// rear panel selector, read through the analog inputs as a resistor ladder
 	PORT_START("COMPUTER")
 	PORT_CONFNAME(0x03, 0x00, "Computer Switch")
 	PORT_CONFSETTING(0x00, "MIDI")
@@ -962,7 +963,7 @@ static INPUT_PORTS_START(sc88vl)
 	PORT_CONFSETTING(0x03, "Mac")
 INPUT_PORTS_END
 
-void roland_sc88_state::sc88(machine_config &config)
+void roland_sc88_state::sc88_base(machine_config &config)
 {
 	HD6415108(config, m_maincpu, 20_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::main_map);
@@ -984,7 +985,6 @@ void roland_sc88_state::sc88(machine_config &config)
 	m_subcpu->tx_callback().set(FUNC(roland_sc88_state::sub_txd_w));
 	m_subcpu->pb_callback().set(FUNC(roland_sc88_state::sub_pb_w));
 
-	// MIDI IN A, MIDI IN B on the rear panel and MIDI IN B on the front
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
 	mdin.rxd_handler().set(FUNC(roland_sc88_state::midi_in_a_w));
 	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
@@ -995,18 +995,8 @@ void roland_sc88_state::sc88(machine_config &config)
 
 	SCREEN(config, m_screen).set_lcd();
 	m_screen->set_refresh_hz(80);
-	m_screen->set_screen_update("lcd", FUNC(hd44780_device::screen_update));
-	m_screen->set_size(720, 272);
 	m_screen->set_visarea_full();
 	m_screen->set_palette("palette");
-
-	PALETTE(config, "palette", FUNC(roland_sc88_state::lcd_palette), 3);
-
-	HD44780(config, m_lcd, 270'000);
-	m_lcd->set_lcd_size(2, 40);
-	m_lcd->set_pixel_update_cb(FUNC(roland_sc88_state::lcd_pixel_update));
-
-	config.set_default_layout(layout_roland_sc88);
 
 	SPEAKER(config, "speaker", 2).front();
 
@@ -1016,6 +1006,26 @@ void roland_sc88_state::sc88(machine_config &config)
 	// one DAC on SDOC, the frame half picking left or right
 	m_xp->add_route(2, "speaker", 1.0, 0);
 	m_xp->add_route(3, "speaker", 1.0, 1);
+}
+
+void roland_sc88_state::hd44780_glass(machine_config &config)
+{
+	m_screen->set_screen_update(m_lcd, FUNC(hd44780_device::screen_update));
+	m_screen->set_size(720, 272);
+	m_screen->set_visarea_full();
+
+	PALETTE(config, "palette", FUNC(roland_sc88_state::lcd_palette), 3);
+
+	HD44780(config, m_lcd, 270'000);
+	m_lcd->set_lcd_size(2, 40);
+	m_lcd->set_pixel_update_cb(FUNC(roland_sc88_state::lcd_pixel_update));
+}
+
+void roland_sc88_state::sc88(machine_config &config)
+{
+	sc88_base(config);
+	hd44780_glass(config);
+	config.set_default_layout(layout_roland_sc88);
 }
 
 void roland_sc88vl_state::sc88vl(machine_config &config)
@@ -1028,9 +1038,9 @@ void roland_sc88vl_state::sc88vl(machine_config &config)
 	config.set_default_layout(layout_roland_sc88vl);
 }
 
-void roland_sc88_state::sc88pro(machine_config &config)
+void roland_sc88_state::pro_base(machine_config &config)
 {
-	sc88(config);
+	sc88_base(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::sc88pro_map);
 	m_xp->set_addrmap(roland_xp_device::AS_WAVE, &roland_sc88_state::pro_xp_rom_map);
 
@@ -1045,7 +1055,12 @@ void roland_sc88_state::sc88pro(machine_config &config)
 	m_xp->port_out_callback().set(FUNC(roland_sc88_state::lsp_serial_w));
 	m_xp->port_a_in_callback().set(FUNC(roland_sc88_state::lsp_serial_r));
 	m_maincpu->write_port3().set(FUNC(roland_sc88_state::lsp_mute_w));
+}
 
+void roland_sc88_state::sc88pro(machine_config &config)
+{
+	pro_base(config);
+	hd44780_glass(config);
 	config.set_default_layout(layout_roland_sc88pro);
 }
 
@@ -1096,14 +1111,13 @@ void roland_sc88_state::sk88pro(machine_config &config)
 
 void roland_sc880_state::sc880(machine_config &config)
 {
-	sc88pro(config);
+	pro_base(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc880_state::sc880_map);
 
-	config.device_remove("lcd");
-	subdevice<palette_device>("palette")->set_init(FUNC(roland_sc880_state::glass_palette));
 	m_screen->set_size(136, 34);
 	m_screen->set_visarea(0, 135, 2, 33);
-	m_screen->set_screen_update(FUNC(roland_sc880_state::screen_update));
+	m_screen->set_screen_update(m_glcd, FUNC(t6a04_device::screen_update));
+	PALETTE(config, "palette", FUNC(roland_sc880_state::glass_palette), 2);
 
 	m_subcpu->set_strobes_active_low(true);
 	m_subcpu->set_raw_45(true);
@@ -1115,16 +1129,16 @@ void roland_sc880_state::sc880(machine_config &config)
 	config.set_default_layout(layout_roland_sc880);
 }
 
-void roland_sc88_state::xpgs(machine_config &config)
+void roland_xpgs_state::xpgs(machine_config &config)
 {
 	HD6415108(config, m_maincpu, 20_MHz_XTAL);
-	m_maincpu->set_addrmap(AS_PROGRAM, &roland_sc88_state::xpgs_map);
-	m_maincpu->read_adc<0>().set(FUNC(roland_sc88_state::battery_r));
-	m_maincpu->read_port4().set(FUNC(roland_sc88_state::port4_r));
-	m_maincpu->read_port5().set(FUNC(roland_sc88_state::port5_r));
-	m_maincpu->write_port4().set(FUNC(roland_sc88_state::port4_w));
-	m_maincpu->read_port8().set(FUNC(roland_sc88_state::port8_r));
-	m_maincpu->write_sci_tx<0>().set("mdout", FUNC(midi_port_device::write_txd));
+	m_maincpu->set_addrmap(AS_PROGRAM, &roland_xpgs_state::xpgs_map);
+	m_maincpu->read_adc<0>().set(FUNC(roland_xpgs_state::battery_r));
+	m_maincpu->read_port4().set(FUNC(roland_xpgs_state::port4_r));
+	m_maincpu->read_port5().set(FUNC(roland_xpgs_state::port5_r));
+	m_maincpu->write_port4().set(FUNC(roland_xpgs_state::port4_w));
+	m_maincpu->read_port8().set(FUNC(roland_xpgs_state::port8_r));
+	m_maincpu->write_sci_tx<0>().set(m_mdout, FUNC(midi_port_device::write_txd));
 
 	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
@@ -1132,13 +1146,13 @@ void roland_sc88_state::xpgs(machine_config &config)
 	mdin.rxd_handler().set(m_maincpu, FUNC(hd6415108_device::sci_rx_w<0>));
 	midi_port_device &mdin2(MIDI_PORT(config, "mdin2", midiin_slot, "midiin"));
 	mdin2.rxd_handler().set(m_maincpu, FUNC(hd6415108_device::sci_rx_w<1>));
-	MIDI_PORT(config, "mdout", midiout_slot, "midiout");
+	MIDI_PORT(config, m_mdout, midiout_slot, "midiout");
 
 	SPEAKER(config, "speaker", 2).front();
 
 	ROLAND_XP(config, m_xp, 24.576_MHz_XTAL);
-	m_xp->set_addrmap(roland_xp_device::AS_WAVE, &roland_sc88_state::xpgs_xp_rom_map);
-	m_xp->int_callback().set(FUNC(roland_sc88_state::xp_irq0_w));
+	m_xp->set_addrmap(roland_xp_device::AS_WAVE, &roland_xpgs_state::xpgs_xp_rom_map);
+	m_xp->int_callback().set(FUNC(roland_xpgs_state::xp_irq0_w));
 	m_xp->add_route(2, "speaker", 1.0, 0);
 	m_xp->add_route(3, "speaker", 1.0, 1);
 }
@@ -1208,9 +1222,7 @@ ROM_END
 
 ROM_START(sk88pro)
 	ROM_REGION16_BE(0x200000, "progrom", 0)
-	// the 8M main ROM is undumped; the VE-GSPro's has the same tone-data pages
-	ROM_LOAD16_WORD_SWAP("roland-r01348078.ic8", 0x000000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
-	// overlay ROM, program v1.01
+	ROM_LOAD16_WORD_SWAP("roland-r01348078.ic8", 0x000000, 0x100000, NO_DUMP)
 	ROM_LOAD("roland-r01454223.ic7", 0x100000, 0x080000, CRC(f86ba134) SHA1(29067eef8fe3e5ec2fb3d64bee6c6c9b4920da82))
 
 	ROM_REGION(0x2000, "subcpu", 0)
@@ -1224,10 +1236,10 @@ ROM_END
 
 ROM_START(sc880)
 	ROM_REGION16_BE(0x200000, "progrom", 0)
-	ROM_LOAD("sc880_control.bin", 0x000000, 0x200000, CRC(bdd297ee) SHA1(8aa92e2e8a6a221ba8d35ff54ea324ddcd304515))
+	ROM_LOAD("sc880_1.04", 0x000000, 0x200000, CRC(bdd297ee) SHA1(8aa92e2e8a6a221ba8d35ff54ea324ddcd304515))
 
 	ROM_REGION(0x2000, "subcpu", 0)
-	ROM_LOAD("subcpu", 0x0000, 0x2000, NO_DUMP)
+	ROM_LOAD("m38881m2", 0x0000, 0x2000, NO_DUMP)
 
 	ROM_REGION(0x1400000, "waverom", 0)
 	// the SK-88Pro's two 8M chips; the VE-GS Pro's dumps stand in
@@ -1239,7 +1251,7 @@ ROM_END
 
 ROM_START(xpgs)
 	ROM_REGION16_BE(0x80000, "progrom", 0)
-	ROM_LOAD("xpgs_control.bin", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
+	ROM_LOAD("xpgs_3.00", 0x00000, 0x80000, CRC(dea759c7) SHA1(ac2bdd46d686ce0942063a65a0f5283d9e5ec8fe))
 
 	ROM_REGION(0xa00000, "waverom", 0)
 	// the first four wave ROMs are undumped; the program's checksum table matches the SC-88's
@@ -1247,14 +1259,14 @@ ROM_START(xpgs)
 	ROM_LOAD("sc88-pcm-ic-326.ic8",  0x200000, 0x200000, BAD_DUMP CRC(05f939f2) SHA1(ac95c26c46c40aacb944f5d45634c93bee9e6d90))
 	ROM_LOAD("sc88-pcm-ic-327.ic7",  0x400000, 0x200000, BAD_DUMP CRC(a6fc7393) SHA1(d88bf13c3d74097991b783295d95ccfae2c9282d))
 	ROM_LOAD("sc88-pcm-ic-328.ic6",  0x600000, 0x200000, BAD_DUMP CRC(7bc514aa) SHA1(03e70ae2efd190f41af24be01b1abaa84bfa93d9))
-	ROM_LOAD("xpgs_wave4.bin",       0x800000, 0x200000, CRC(8726d8a2) SHA1(0a4c24a70cce2fc4c2e8a1ff93e8ce858ec04a9f))
+	ROM_LOAD("xpgs_wave4",       0x800000, 0x200000, CRC(8726d8a2) SHA1(0a4c24a70cce2fc4c2e8a1ff93e8ce858ec04a9f))
 ROM_END
 
 ROM_START(vegspro)
 	ROM_REGION16_BE(0x100000, "progrom", 0)
 	// program "1.00 / 0.01", 1998-08-03; tone data "SC88PRO (MK03B)" v1.02, 1997-05-19
 	// 0x0014de reads 0x05 where its copy at 0x01e1de and the SC-88Pro have 0x8d, so the bulk dumps never answer
-	ROM_LOAD16_WORD_SWAP("roland-r01780078.bin", 0x00000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
+	ROM_LOAD16_WORD_SWAP("roland-r01780078", 0x00000, 0x100000, BAD_DUMP CRC(6cf8fc8b) SHA1(c07cbbd026781428ae83f4b897a51cb7bcdafeb6))
 
 	ROM_REGION(0x1400000, "waverom", 0)
 	// dumped as "R01567167 301 (Samples A).bin", "R01567178 302 (Samples B).BIN", "R01233667 314 (Samples C).BIN"
@@ -1272,4 +1284,4 @@ SYST(1996, sc88pro, 0, 0, sc88pro, sc88pro, roland_sc88_state, init_sc88, "Rolan
 SYST(1997, sk88pro, 0, 0, sk88pro, sc88pro, roland_sc88_state, init_sc88, "Roland", "Sound Canvas SK-88Pro", MACHINE_NOT_WORKING)
 SYST(1998, vegspro, 0, 0, vegspro, 0, roland_sc88_state, init_sc88, "Roland", "VE-GSPro Voice Expansion Board", MACHINE_NOT_WORKING)
 SYST(1998, sc880, 0, 0, sc880, sc880, roland_sc880_state, init_sc88, "Roland", "SC-880 64 Voice Synthesizer Module", MACHINE_NOT_WORKING)
-SYST(1997, xpgs, 0, 0, xpgs, 0, roland_sc88_state, init_sc88, "Roland", "XP-GS sound board", MACHINE_NOT_WORKING)
+SYST(1997, xpgs, 0, 0, xpgs, 0, roland_xpgs_state, init_sc88, "Roland", "XP-GS sound board", MACHINE_NOT_WORKING)
