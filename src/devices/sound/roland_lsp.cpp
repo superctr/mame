@@ -4,49 +4,16 @@
 /*
  *  Roland LSP (Fujitsu MB87837)
  *
- *  Effect processor of the Boss ME-6 and, as the insertion-effect DSP, of the Roland
- *  SC-88Pro and successors. A 384-instruction program runs once per sample -
- *  the clock is 2 x 384 x Fs and the program is the sample period, so the chip
- *  is a CPU with a fixed schedule rather than a streaming sound device: the host PCM
- *  chip writes the serial inputs, runs one pass and reads the outputs back.
+ *  Effect processor of the Boss ME-6 and the insertion-effect DSP of the Roland SC-88Pro and
+ *  successors.
  *
- *  Host window: sixteen byte registers, a 24-bit data latch committed by the write of
- *  the address low byte, a read latch loaded by the read address, and a configuration
- *  word that starts and halts the program. The address space is 128 words of internal
- *  RAM below the 384 program words, and the firmware patches individual program words
- *  while the program runs - the coefficient bytes are the effect's parameters and there
- *  are no parameter registers.
- *
- *  Datapath: two 24-bit accumulators over the internal RAM, which is a delay line whose
- *  pointer steps back once per sample, so an instruction's 7-bit offset is a fixed
- *  delay. A store writes the accumulator as it stood three slots earlier, saturating or
- *  merely narrowed depending on the store field, and it lands before the same slot reads
- *  its operand; the sums themselves run on the whole 32-bit accumulator. The multiply by a
- *  coefficient register takes the register's top byte or, eight bits further down, its
- *  next byte, so a pair of them is a sixteen-bit multiply. That low half, and the form of
- *  the special opcodes that multiplies a second coefficient, take their operand from the
- *  slot that ran before them, and every special slot also feeds its accumulator.
- *
- *  Long delays live in an external DRAM that steps back the same way; an access carries
- *  no address of its own, but assembles one from the three-bit external RAM field of the
- *  six slots following an opener, the first five of which open nothing. A read lands in
- *  the read register twelve slots after its opener, before that slot runs; a write's
- *  address reaches the write latch eight slots after, and the next store into the write
- *  latch performs the write, which one program in the corpus puts a slot late. A word is
- *  sixteen bits, four nibbles on a four-bit bus: a block float of the sample's top
- *  twenty bits, a 14-bit mantissa and a 2-bit exponent counting two bits a step, so loud
- *  material keeps fourteen significant bits (set_eram_block_float(false) keeps the
- *  twenty linear).
- *
- *  Everything one slot hands a later one is clocked by the slots as they run: the
- *  transactions, the operands handed on, a jump's follower and slot 0x12's skip. A jump
- *  special sets a condition latch, and the slot that runs after it jumps once it has run
- *  if the latch is set. The program counter is nine bits, the 128 addresses below the
- *  program fetching nothing, and a sample is 384 slots of it whatever it does. Stereo is
- *  by slot: the first 192 of a sample handle one channel and the rest the other.
- *
- *  In the SC-88Pro, the XP is the pump, so the device is halted as far as the scheduler
- *  is concerned and execute_run() serves the debugger; run_once() is one sample.
+ *  - 384 instructions a sample, the clock 2 x 384 x Fs; the host chip pumps it with run_once()
+ *  - host window: sixteen byte registers, a 24-bit data latch, a read latch, a configuration word
+ *  - two 24-bit accumulators, 128 words of internal delay RAM below the program, two coefficient
+ *    registers
+ *  - external delay DRAM, 16-bit block-float words on a four-bit bus, addresses assembled from the
+ *    slots after an opener
+ *  - stereo by slot: the first 192 slots one channel, the rest the other
  *
  *  TODO:
  *  - the external RAM's word, which no capture yet tells from the linear twenty bits
@@ -86,6 +53,7 @@ constexpr bool is_immediate(int offset) { return offset >= 1 && offset <= 4; }
 roland_lsp_device::roland_lsp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
 	: cpu_device(mconfig, ROLAND_LSP, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 32, 9, -2, address_map_constructor(FUNC(roland_lsp_device::program_map), this))
+	, m_eram_block_float(true)
 {
 }
 

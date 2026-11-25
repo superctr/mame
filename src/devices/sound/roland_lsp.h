@@ -8,6 +8,8 @@
 class roland_lsp_device : public cpu_device
 {
 public:
+	static constexpr feature_type imperfect_features() { return feature::SOUND; }
+
 	static constexpr int PROGRAM_SIZE = 384;
 	static constexpr int PROGRAM_BASE = 0x080;
 	static constexpr u16 ADDRESS_MASK = 0x1ff;
@@ -91,8 +93,6 @@ protected:
 
 	static constexpr instruction EMPTY = { true, 0, 0, 0, 0, 0, 7 };
 
-	// what the multiplier's data port takes: internal memory at an offset, the bit-set constant of
-	// offsets 1 to 4, or the value a special handled
 	enum operand_source : u8 { FROM_MEMORY, FROM_CONSTANT, FROM_SPECIAL };
 
 	struct operand_ref
@@ -132,7 +132,7 @@ protected:
 	address_space_config m_program_config;
 
 	std::unique_ptr<s32[]> m_eram;
-	bool m_eram_block_float = true;
+	bool m_eram_block_float;
 	u32 m_program[PROGRAM_SIZE];
 	instruction m_decoded[PROGRAM_SIZE];
 	s32 m_iram[IRAM_SIZE];
