@@ -32,18 +32,19 @@ public:
 
 	u32 data_r();
 	void data_w(offs_t offset, u32 data, u32 mem_mask = ~0);
-	void command_w(offs_t offset, u16 data, u16 mem_mask = ~0);
+	void command_w(u16 data);
 	u16 result_r(offs_t offset);
 	u8 status_r();
 	void control_w(offs_t offset, u8 data);
 
-	u32 program_word(int row) const { return m_program[row & (ROWS - 1)]; }
-
 protected:
+	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 	virtual void device_clock_changed() override;
-	virtual void device_post_load() override;
+	virtual void device_post_load() override ATTR_COLD;
+
+	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
@@ -93,7 +94,7 @@ private:
 	static s64 narrow(s64 value) { return saturate(value) >> Q; }
 	static s64 wrap(s64 value);
 	static s32 eram_word(s64 value);
-	int eram_index(int offset) const;
+	int eram_index(s64 position) const;
 
 	sound_stream *m_stream;
 

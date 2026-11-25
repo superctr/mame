@@ -15,7 +15,7 @@
 #define LOG_HOST    (1U << 1)
 #define LOG_DECODE  (1U << 2)
 
-#define VERBOSE (LOG_GENERAL)
+#define VERBOSE (0)
 #include "logmacro.h"
 
 
@@ -25,19 +25,14 @@ namespace {
 
 constexpr int SHIFTS[4] = { 0, 1, 2, 6 };
 
-constexpr s32 sext(u32 value, int bits)
-{
-	return s32(value << (32 - bits)) >> (32 - bits);
-}
-
 constexpr s32 coefficient(u32 word)
 {
-	return s32(u32(sext(word & 0xfff, 12)) << 12 << SHIFTS[(word >> 12) & 3]);
+	return s32(u32(util::sext(word & 0xfff, 12)) << 12 << SHIFTS[(word >> 12) & 3]);
 }
 
 constexpr s32 special_coefficient(u32 word)
 {
-	return s32(u32(sext((word >> 8) & 15, 4)) << 20 << SHIFTS[(word >> 12) & 3]);
+	return s32(u32(util::sext((word >> 8) & 15, 4)) << 20 << SHIFTS[(word >> 12) & 3]);
 }
 
 constexpr bool condition(int arg, s64 value)
@@ -154,7 +149,7 @@ void roland_mr_device::data_w(offs_t offset, u32 data, u32 mem_mask)
 	COMBINE_DATA(&m_data);
 }
 
-void roland_mr_device::command_w(offs_t offset, u16 data, u16 mem_mask)
+void roland_mr_device::command_w(u16 data)
 {
 	m_stream->update();
 
@@ -395,14 +390,14 @@ void roland_mr_device::write_cell(int cell, s64 value)
 s32 roland_mr_device::eram_word(s64 value)
 {
 	int shift = Q + 1 - ERAM_BITS - 2 * (ERAM_EXPONENTS - 1);
-	while (shift < Q + 1 - ERAM_BITS && (value >> shift) != sext(u32(value >> shift), ERAM_BITS))
+	while (shift < Q + 1 - ERAM_BITS && (value >> shift) != util::sext(u32(value >> shift), ERAM_BITS))
 		shift += 2;
 	return s32((value >> shift) << shift);
 }
 
-int roland_mr_device::eram_index(int offset) const
+int roland_mr_device::eram_index(s64 position) const
 {
-	const int i = offset - m_eram_pos;
+	const int i = int((position - m_eram_pos) % ERAM_WORDS);
 	return i < 0 ? i + ERAM_WORDS : i;
 }
 
@@ -414,26 +409,32 @@ int roland_mr_device::eram_index(int offset) const
 bool roland_mr_device::blanked(int pc, int path) const
 {
 	for (int i = m_blank_count - 1; i >= 0; i--)
+	{
 		if (m_blank[i].row == pc)
 			return m_blank[i].path == path;
+	}
 	return false;
 }
 
 void roland_mr_device::gate(int armed, s64 value, int path)
 {
+	static constexpr int WINDOWS[2][3] = { { 4, 5, 0 }, { 6, 7, 8 } };
 	int n = 0;
-	static constexpr int windows[2][3] = { { 4, 5, 0 }, { 6, 7, 8 } };
-	for (int k : windows[value < 0 ? 1 : 0])
+	for (int k : WINDOWS[value < 0 ? 1 : 0])
+	{
 		if (k)
 			m_blank[n++] = blank_entry{ s16(armed + k), u8(path) };
+	}
 	m_blank_count = n;
 }
 
 void roland_mr_device::arm(int pc, int path, bool holds)
 {
 	for (int i = 0; i < m_pending_count; i++)
+	{
 		if (m_pending[i].row + 1 == pc && m_pending[i].holds)
 			return;
+	}
 	if (m_pending_count < MAX_PENDING)
 		m_pending[m_pending_count++] = pending_entry{ s16(pc), u8(path), holds };
 }
@@ -610,15 +611,14 @@ int roland_mr_device::step(int pc)
 	{
 		const s64 whole = m_address >> (2 * Q - 11);
 		const s64 fraction = m_address & ((s64(1) << (2 * Q - 11)) - 1);
-		const auto at = [this] (s64 position) { s64 i = (position - m_eram_pos) % ERAM_WORDS; return m_eram[i < 0 ? i + ERAM_WORDS : i]; };
 		if (r.start)
 		{
-			const s64 value = (at(whole) * ((s64(1) << (2 * Q - 11)) - fraction)) >> (Q - 11);
+			const s64 value = (m_eram[eram_index(whole)] * ((s64(1) << (2 * Q - 11)) - fraction)) >> (Q - 11);
 			acc = blank ? 0 : value;
 		}
 		else
 		{
-			const s64 value = (at(whole + 1) * fraction) >> (Q - 11);
+			const s64 value = (m_eram[eram_index(whole + 1)] * fraction) >> (Q - 11);
 			acc += blank ? 0 : value;
 		}
 		break;
@@ -693,8 +693,10 @@ void roland_mr_device::execute_sample()
 
 	int n = 0;
 	for (int i = 0; i < m_blank_count; i++)
+	{
 		if (m_blank[i].row >= ROWS)
 			m_blank[n++] = blank_entry{ s16(m_blank[i].row - ROWS), m_blank[i].path };
+	}
 	m_blank_count = n;
 	m_pending_count = 0;
 
