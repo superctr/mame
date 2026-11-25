@@ -43,36 +43,37 @@
  *  frozen position; the smoothed amplitude multiplies the result into page 2A, from which
  *  the four sends (10-bit level, 0x200 = unity, 6-bit destination) deposit on the voice's
  *  own four DSP slots into the mixer bank, the first send to name a word clearing it and a
- *  third send to the fourth's word adding nothing - for every voice up to the highest, a
- *  parked voice depositing zero. An even voice with FILTER bit 4 and a structure of 1 to 9
- *  pairs with the next one: the two samples go through one of nine arrangements of the two
- *  filters, a booster shift and a ring modulator, the booster and the ring's modulator
- *  saturating at 16 bits and the sums at 24, and the pair's output lands in the owner's
- *  page 2A and zero in the partner's. Every product in the voice path divides towards zero.
+ *  third send to the fourth's word adding nothing - for every voice up to the highest, running
+ *  or not, from the page 2A the last frame left, which a parked voice's own frame then clears.
+ *  An even voice with FILTER bit 4 and a structure of 1 to 9 pairs with the next one: the two
+ *  samples go through one of nine arrangements of the two filters, a booster shift and a ring
+ *  modulator, the booster and the ring's modulator saturating at 16 bits and the sums at 24,
+ *  and the pair's output lands in the owner's page 2A and zero in the partner's. Every product
+ *  in the voice path divides towards zero.
  *
  *  DSP: 288 instruction slots, of which (highest voice + 1) x 4 run a frame, over three RAMs -
- *  IRAM1 and IRAM2, 64 x 24 bits, which words 00-7f address with bit 6 XOR the frame parity,
- *  so one range names this frame's bank and the other the previous frame's and the mixer
- *  deposits under the program into the bank it is not reading, and which 80-bf address
- *  unswapped; and IRAM3, 64 x 26 bits, at c0-ff, whose top 0x3926 [12:8] words are gain
- *  registers, a signed 16-bit current above a 10-bit target that the host writes at 0x3300
- *  and the chip approaches proportionally on odd frames at the rate registers' slew - and a
+ *  IRAM1 and IRAM2, 64 x 24 bits, which words 00-7f address with bit 6 XOR the frame parity, so
+ *  one range names this frame's bank and the other the previous frame's and the mixer deposits
+ *  under the program into the bank it is not reading, and which 80-bf address unswapped; and
+ *  IRAM3, 64 x 26 bits, at c0-ff, whose top 0x3926 [12:8] words are gain registers, a signed
+ *  16-bit current above a 10-bit target that the host writes at 0x3300 and the chip approaches
+ *  proportionally on odd frames at the rate registers' slew, stopping at the code << 6 - and a
  *  64K-word external delay ring addressed relative to a cursor that steps back once per frame.
- *  The datapath is one multiplier and one ALU on a 29-bit wrapping accumulator: products
- *  divide towards zero and saturate at 29 bits, the accumulator is saturated to 24 bits where
- *  it feeds the multiplier. A slot's col field is a 4 x 16 grid: bits 5..4 the multiply input
- *  (the previous multiply's input, the accumulator, the IRAM read latch, the ERAM read latch)
- *  and bits 3..0 the ALU function, applied to the previous slot's product; a slot issues a
- *  multiply only on functions 1-12, and the product and input latches stand otherwise.
- *  Function 0 selects a special by the input field: a no-op, a branch on the accumulator with
- *  the condition and target in the CRAM word, the indexed ERAM read, or the parallel op, which
+ *  The datapath is one multiplier and one ALU on a 29-bit wrapping accumulator: products divide
+ *  towards zero and saturate at 29 bits, the accumulator is saturated to 24 bits where it feeds
+ *  the multiplier. A slot's col field is a 4 x 16 grid: bits 5..4 the multiply input (the
+ *  previous multiply's input, the accumulator, the IRAM read latch, the ERAM read latch) and
+ *  bits 3..0 the ALU function, applied to the previous slot's product; a slot issues a multiply
+ *  only on functions 1-12, and the product and input latches stand otherwise. Function 0
+ *  selects a special by the input field: a no-op, a branch on the accumulator with the
+ *  condition and target in the CRAM word, the indexed ERAM read, or the parallel op, which
  *  hands the CRAM word over as a second instruction: a product shift, a post-function (absolute
  *  value, wrap, the PRNG step, the fold, a one's complement of the negative half), whether a
  *  multiply is issued, a factor (the interpolation fraction, the accumulator's magnitude or
  *  value, or a gain register, each complementable), an input and a function, the sixteen
- *  functions being the primary ones with three further sums in place of the immediates. ERAM
- *  accesses span two slots and a read lands two slots after its start; a write stores the
- *  accumulator or the read latch.
+ *  functions being the primary ones with three further sums in place of the immediates, which
+ *  pay back a negative fraction the last multiply discarded. ERAM accesses span two slots and a
+ *  read lands two slots after its start; a write stores the accumulator or the read latch.
  *
  *  Serial ports: the chip keeps one word position a frame that every ext strobe of 1 or 2
  *  advances, and the strobe clocks the previous frame's word at that position out of RAM.
@@ -317,6 +318,7 @@ void roland_xp_device::device_start()
 	save_item(NAME(m_dsp.now));
 	save_item(NAME(m_dsp.latch));
 	save_item(NAME(m_dsp.gain));
+	save_item(NAME(m_dsp.payback));
 	save_item(NAME(m_dsp.now_valid));
 	save_item(NAME(m_dsp.cursor));
 	save_item(NAME(m_landing));
@@ -992,7 +994,7 @@ void roland_xp_device::deposit(int n, int bank)
 	}
 	if (bank == 2 && word == (send(n, 3) & 63))
 		return;
-	const s32 output = running(n) ? wrap24(s32(page(n, OUTPUT))) : 0;
+	const s32 output = wrap24(s32(page(n, OUTPUT)));
 	m_iram[c] = clamp24(m_iram[c] + (s64(output) * (s >> 6)) / 512);
 }
 
@@ -1305,36 +1307,39 @@ void roland_xp_device::update_iram_ramps()
 			continue;
 		}
 
-		const s32 goal = gain_goal(m_iram[c]);
+		const s32 exact = s16(u16(code << 6));
 		s32 current = gain_current(m_iram[c]);
-		const s32 diff = goal - current;
-		if (diff)
+		if (current == exact)
 		{
-			const s64 product = s64(std::abs(diff)) * m_regs[(IRAM3_RATE >> 1) + (word & 3)];
-			s32 step = s32(product >> 17);
-			int fraction = int(((product & 0x1ffff) + 0x1000) >> 13);
-			if (fraction >= 16)
-			{
-				step++;
-				fraction -= 16;
-			}
-			if (diff > 0)
-			{
-				if (threshold < fraction)
-					step++;
-				current = std::min(current + step, goal);
-			}
-			else
-			{
-				if (threshold >= 16 - fraction)
-					step++;
-				if (!step)
-					step = 2;
-				current = std::max(current - step, goal);
-			}
-			m_iram[c] = ((current << 10) | code) & 0x3ffffff;
+			m_iram_ramping[c & 0x3f] = 0;
+			continue;
 		}
-		if (current == goal)
+
+		s32 diff = gain_goal(m_iram[c]) - current;
+		if (current > exact && !diff)
+			diff = -2;
+		const s64 product = s64(std::abs(diff)) * m_regs[(IRAM3_RATE >> 1) + (word & 3)];
+		s32 step = s32(product >> 17);
+		int fraction = int(((product & 0x1ffff) + 0x1000) >> 13);
+		if (fraction >= 16)
+		{
+			step++;
+			fraction -= 16;
+		}
+		if (current < exact)
+		{
+			if (threshold < fraction)
+				step++;
+			current = std::min(current + step, exact);
+		}
+		else
+		{
+			if (threshold >= 16 - fraction)
+				step++;
+			current = std::max(current - step, exact);
+		}
+		m_iram[c] = ((current << 10) | code) & 0x3ffffff;
+		if (current == exact)
 			m_iram_ramping[c & 0x3f] = 0;
 	}
 }
@@ -1486,6 +1491,7 @@ void roland_xp_device::parallel_op(const dsp_slot &s)
 	const s32 p = d.product;
 	const s32 r = d.r;
 	s32 input, product;
+	bool payback = false;
 
 	if (!multiply_issued)
 	{
@@ -1501,7 +1507,7 @@ void roland_xp_device::parallel_op(const dsp_slot &s)
 		case 2: input = r; break;
 		default: input = d.latch; break;
 		}
-		product = multiply_q15(input, factor(factor_select, complement), shift);
+		product = multiply_q15(input, factor(factor_select, complement), shift, payback);
 	}
 
 	s64 result = d.acc;
@@ -1509,9 +1515,9 @@ void roland_xp_device::parallel_op(const dsp_slot &s)
 	{
 	case 0x0: result = s64(d.acc) + p + r; break;
 	case 0xc: result = s64(r) + p - d.acc; break;
-	case 0xd: result = s64(d.acc) + p - r; break;
-	case 0xe: result = s64(p) - r - d.acc; break;
-	case 0xf: result = s64(p) - r; break;
+	case 0xd: result = s64(d.acc) + p - r - d.payback; break;
+	case 0xe: result = s64(p) - r - d.acc - 2 * d.payback; break;
+	case 0xf: result = s64(p) - r - 2 * d.payback; break;
 	default:
 		alu(function, input_select, s);
 		result = d.acc;
@@ -1555,6 +1561,7 @@ void roland_xp_device::parallel_op(const dsp_slot &s)
 
 	d.input = input;
 	d.product = product;
+	d.payback = payback;
 }
 
 void roland_xp_device::execute(const dsp_slot &s)
@@ -1570,6 +1577,7 @@ void roland_xp_device::execute(const dsp_slot &s)
 	const bool multiply_issued = s.function >= 1 && s.function <= 0xc;
 
 	s32 input = 0, product = 0;
+	bool payback = false;
 	if (multiply_issued)
 	{
 		if (s.function == 0xc && s.input == INPUT_PREVIOUS)
@@ -1578,7 +1586,7 @@ void roland_xp_device::execute(const dsp_slot &s)
 			input = m_port_b_in;
 		else
 			input = operand(s);
-		product = multiply(input, s.coefficient);
+		product = multiply(input, s.coefficient, payback);
 	}
 
 	alu(s.function, s.input, s);
@@ -1606,6 +1614,7 @@ void roland_xp_device::execute(const dsp_slot &s)
 	{
 		d.input = input;
 		d.product = product;
+		d.payback = payback;
 	}
 }
 
@@ -1669,6 +1678,7 @@ void roland_xp_device::dsp_frame_start()
 
 	update_iram_ramps();
 	m_dsp.product = 0;
+	m_dsp.payback = false;
 }
 
 void roland_xp_device::dsp_step()

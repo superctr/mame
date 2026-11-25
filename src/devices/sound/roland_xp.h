@@ -171,6 +171,7 @@ protected:
 		s32 now = 0;
 		s32 latch = 0;
 		s32 gain = 0;
+		bool payback = false;
 		u8 now_valid = 0;
 		u16 cursor = 0;
 	};
@@ -263,8 +264,9 @@ protected:
 	static constexpr s32 wrap18(s32 value) { return util::sext(value, 18); }
 	static s32 clamp16(s64 value) { return s32(std::clamp<s64>(value, -0x8000, 0x7fff)); }
 	static s32 fold24(s32 value);
-	static s32 multiply(s32 operand, s32 coefficient) { return clamp29((s64(operand) * coefficient) / 8192); }
-	static s32 multiply_q15(s32 operand, s32 factor, int shift) { return clamp29(((s64(operand) * factor) << shift) / 32768); }
+	static s32 truncate(s64 exact, int bits, bool &payback) { payback = exact < 0 && (exact & ((s64(1) << bits) - 1)); return clamp29(exact / (s64(1) << bits)); }
+	static s32 multiply(s32 operand, s32 coefficient, bool &payback) { return truncate(s64(operand) * coefficient, 13, payback); }
+	static s32 multiply_q15(s32 operand, s32 factor, int shift, bool &payback) { return truncate((s64(operand) * factor) << shift, 15, payback); }
 	static s32 gain_current(s32 cell) { return s16(cell >> 10); }
 	static s32 gain_goal(s32 cell);
 	int cell(int word, int parity) const;
