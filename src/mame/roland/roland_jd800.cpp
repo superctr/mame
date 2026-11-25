@@ -14,15 +14,16 @@
 //#include "bus/midi/midi.h"
 //#include "cpu/h8/h8330.h"
 #include "cpu/h8500/h8532.h"
+//#include "machine/nvram.h"
+//#include "machine/ssc1000.h"
 #include "sound/roland_meq.h"
 
 #include "speaker.h"
 
 #define LOG_IO (1U << 1)
+
 #define VERBOSE (0)
 #include "logmacro.h"
-//#include "machine/nvram.h"
-//#include "machine/ssc1000.h"
 
 
 namespace {
@@ -54,26 +55,26 @@ private:
 
 u8 roland_jd800_state::dsp_r(offs_t offset)
 {
-	if(!machine().side_effects_disabled())
-		LOGMASKED(LOG_IO, "dsp_r %04x (%x)\n", 0xe010 + offset, m_maincpu->pc());
+	if (!machine().side_effects_disabled())
+		LOGMASKED(LOG_IO, "%s: dsp_r %04x\n", machine().describe_context(), 0xe010 + offset);
 	return 0;
 }
 
 void roland_jd800_state::dsp_w(offs_t offset, u8 data)
 {
-	LOGMASKED(LOG_IO, "dsp_w %04x = %02x (%x)\n", 0xe010 + offset, data, m_maincpu->pc());
+	LOGMASKED(LOG_IO, "%s: dsp_w %04x = %02x\n", machine().describe_context(), 0xe010 + offset, data);
 }
 
 u8 roland_jd800_state::io_r(offs_t offset)
 {
-	if(!machine().side_effects_disabled())
-		LOGMASKED(LOG_IO, "io_r %04x (%x)\n", 0xf100 + offset, m_maincpu->pc());
+	if (!machine().side_effects_disabled())
+		LOGMASKED(LOG_IO, "%s: io_r %04x\n", machine().describe_context(), 0xf100 + offset);
 	return 0;
 }
 
 void roland_jd800_state::io_w(offs_t offset, u8 data)
 {
-	LOGMASKED(LOG_IO, "io_w %04x = %02x (%x)\n", 0xf100 + offset, data, m_maincpu->pc());
+	LOGMASKED(LOG_IO, "%s: io_w %04x = %02x\n", machine().describe_context(), 0xf100 + offset, data);
 }
 
 
@@ -100,13 +101,8 @@ void roland_jd800_state::jd800(machine_config &config)
 
 	//H8330(config, "iomcu", 20_MHz_XTAL / 2).set_disable(); // MD0 = MD1 = +5V (single-chip mode)
 
-	//MB87731A(config, "pcm", 26.195_MHz_XTAL);
-	//MB87424A(config, "tvf", 26.195_MHz_XTAL);
-	//TC23SC260AF(config, "dsp", 28.224_MHz_XTAL);
-
 	SPEAKER(config, "speaker", 2).front();
 
-	// the patch mode's program: its final left and right leave on the third serial port
 	ROLAND_MEQ(config, m_meq, 28.224_MHz_XTAL / 640);
 	m_meq->add_route(roland_meq_device::output(2, 0), "speaker", 1.0, 0);
 	m_meq->add_route(roland_meq_device::output(2, 1), "speaker", 1.0, 1);
