@@ -12,37 +12,30 @@ public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
 
 	static constexpr int VOICES = 32;
+	static constexpr u32 WAVE_BLOCKS = 0x100;
+	static constexpr u32 BLOCK_WORDS = 0x1'0000;
 
 	roland_sp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	auto int_callback() { return m_int_cb.bind(); }
+	void set_record_inputs() { m_record_inputs = true; }
 
-	static constexpr unsigned WAVE_BLOCKS = 0x100, BLOCK_WORDS = 0x10000;
+	void set_wave_block(u32 block, u16 *words);
 
-	// the wave memory the board decodes, in blocks of 64K words; a block without memory reads open bus
-	void set_wave_block(unsigned block, u16 *words);
+	void map(address_map &map) ATTR_COLD;
 
-	u16 read(offs_t offset, u16 mem_mask);
-	void write(offs_t offset, u16 data, u16 mem_mask);
-
-	// the wave memory port for the board's DMA: a read returns the fetched word and fetches the
-	// next, a write stores and then advances
 	u16 wave_data_r();
 	void wave_data_w(u16 data, u16 mem_mask);
 
-	// the recording input, a 24-bit word per channel: offset 0 the frame's first word (voice 20),
-	// 1 the second (voice 4), in either order
 	void record_w(offs_t offset, u32 data);
 
-	// serial input 1 as stream inputs 0 and 1 (the first for voice 20), run one sample at a time;
-	// record_w is then serial input 2, taken while C004 bit 1 selects it
-	void set_record_inputs() { m_record_inputs = true; }
-
 protected:
+	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 	virtual void device_clock_changed() override;
 
+	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:
@@ -50,19 +43,16 @@ private:
 
 	static constexpr int RECORD_VOICES[2] = { 20, 4 };
 
-	// the state word's flags, and the mode byte on top of END
 	enum : u32
 	{
 		STATE_NO_LOOP_EVENT = 1U << 31, STATE_NO_END_EVENT = 1U << 30, STATE_BACKWARD = 1U << 27,
-		STATE_FLAGS = ~0x07ffffffU,
+		STATE_FLAGS = ~0x07ff'ffffU,
 		MODE_REVERSE = 1U << 31, MODE_ALTERNATE = 1U << 30,
-		END_ADDRESS = 0x00ffffff
+		END_ADDRESS = 0x00ff'ffff
 	};
 
-	// event codes as C002 reads them: the voice, and bit 5 for the end event
 	enum : u8 { EVENT_LOOP = 0x00, EVENT_END = 0x20 };
 
-	// the per-voice blocks the select addresses C200, C400 and C600 open
 	enum : u8 { BLOCK_NONE = 0, BLOCK_STATE, BLOCK_PLAYBACK, BLOCK_LEVEL };
 
 	struct voice
@@ -78,24 +68,6 @@ private:
 		bool looped = false;
 		bool ended = false;
 	};
-
-	u16 wave_word(s64 adr) const { u16 const *const b = m_blocks[(adr >> 16) & 0xff]; return b ? b[adr & 0xffff] : 0xffff; }
-	u16 *wave_ptr(s64 adr) const { u16 *const b = m_blocks[(adr >> 16) & 0xff]; return b ? &b[adr & 0xffff] : nullptr; }
-	u32 state_r(const voice &v) const;
-	void state_w(voice &v, u32 data);
-	u16 playback_r(const voice &v, int word) const;
-	void playback_w(voice &v, int word, u16 data);
-	u16 level_r(const voice &v, int word) const;
-	void level_w(voice &v, int word, u16 data);
-	void key_w(int base, u16 data);
-	void event(int voice, u8 kind);
-	void wave_store(u16 data, u16 mem_mask);
-	s32 step(int n, voice &v);
-	void advance(int n, voice &v);
-	bool recording(int n) const;
-	s16 filtered(int c);
-	void record();
-	TIMER_CALLBACK_MEMBER(update_int);
 
 	devcb_write_line m_int_cb;
 	sound_stream *m_stream;
@@ -123,6 +95,50 @@ private:
 	u8 m_record_got;
 	s16 m_record_history[2][5];
 	u8 m_level_channel;
+
+	u16 status_r();
+	template <int Base> void key_w(u16 data);
+	u16 event_r();
+	template <int Reg> u16 reg_r();
+	template <int Reg> void reg_w(u16 data);
+	template <int Reg> u16 unknown_r();
+	void wave_store_w(offs_t offset, u16 data, u16 mem_mask);
+	u16 wave_port_r();
+	void wave_port_w(offs_t offset, u16 data, u16 mem_mask);
+	void wave_addr_high_w(u16 data);
+	void wave_addr_low_w(u16 data);
+	u16 state_low_r();
+	u16 state_high_r();
+	void state_low_w(u16 data);
+	void state_high_w(u16 data);
+	u16 playback_r();
+	void playback_w(u16 data);
+	u16 ack_r();
+	u16 level_r();
+	void level_w(u16 data);
+	u16 input_r();
+	u16 alias_r(offs_t offset);
+	void alias_w(offs_t offset, u16 data);
+	u16 select_r(offs_t offset);
+	void select_w(offs_t offset, u16 data);
+
+	u16 wave_word(s64 adr) const { u16 const *const b = m_blocks[(adr >> 16) & 0xff]; return b ? b[adr & 0xffff] : 0xffff; }
+	u16 *wave_ptr(s64 adr) const { u16 *const b = m_blocks[(adr >> 16) & 0xff]; return b ? &b[adr & 0xffff] : nullptr; }
+	static u32 voice_state(const voice &v);
+	static void set_voice_state(voice &v, u32 data);
+	static u16 playback_word(const voice &v, int word);
+	void set_playback_word(voice &v, int word, u16 data);
+	static u16 level_word(const voice &v, int word);
+	void set_level_word(voice &v, int word, u16 data);
+	void select(offs_t offset);
+	void event(int voice, u8 kind);
+	void wave_store(u16 data, u16 mem_mask);
+	s32 step(int n, voice &v);
+	void advance(int n, voice &v);
+	bool recording(int n) const;
+	s16 filtered(int c);
+	void record();
+	TIMER_CALLBACK_MEMBER(update_int);
 };
 
 DECLARE_DEVICE_TYPE(ROLAND_SP, roland_sp_device)

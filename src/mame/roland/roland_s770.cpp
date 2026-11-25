@@ -934,7 +934,7 @@ void roland_s770_state::data_map(address_map &map)
 	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
 	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
-	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xc000, 0xc7ff).m(m_sp, FUNC(roland_sp_device::map));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xdc00, 0xdc0b).rw(m_meq, FUNC(roland_meq_device::read), FUNC(roland_meq_device::write));
 	map(0xe000, 0xe003).m(m_fdc, FUNC(upd72069_device::map)).umask16(0x00ff);
@@ -950,7 +950,7 @@ void roland_s770_state::s770_data_map(address_map &map)
 	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
 	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
-	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xc000, 0xc7ff).m(m_sp, FUNC(roland_sp_device::map));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xd400, 0xd41f).w(FUNC(roland_s770_state::s770_aes_w));
 	map(0xd800, 0xd87f).rw(m_mix, FUNC(roland_mix_device::read), FUNC(roland_mix_device::write));
@@ -966,7 +966,7 @@ void roland_s770_state::sp700_data_map(address_map &map)
 	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
 	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
-	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xc000, 0xc7ff).m(m_sp, FUNC(roland_sp_device::map));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xd400, 0xd40b).rw(m_meq, FUNC(roland_meq_device::read), FUNC(roland_meq_device::write));
 	map(0xd800, 0xd81f).m(m_spc, FUNC(mb89352_device::map)).umask16(0x00ff);
@@ -980,7 +980,7 @@ void roland_s770_state::dj70_data_map(address_map &map)
 	map(0x0000, 0xbfff).rw(FUNC(roland_s770_state::data_r), FUNC(roland_s770_state::data_w));
 	map(0x0100, 0x011f).rw(FUNC(roland_s770_state::ga_r), FUNC(roland_s770_state::ga_w));
 	map(0xc000, 0xffff).rw(FUNC(roland_s770_state::io_r), FUNC(roland_s770_state::io_w));
-	map(0xc000, 0xc7ff).rw(m_sp, FUNC(roland_sp_device::read), FUNC(roland_sp_device::write));
+	map(0xc000, 0xc7ff).m(m_sp, FUNC(roland_sp_device::map));
 	map(0xd000, 0xd07f).rw(m_tvf, FUNC(roland_tvf_device::read), FUNC(roland_tvf_device::write));
 	map(0xd400, 0xd41f).w(FUNC(roland_s770_state::s770_aes_w));
 	map(0xd800, 0xd87f).rw(m_mix, FUNC(roland_mix_device::read), FUNC(roland_mix_device::write));
