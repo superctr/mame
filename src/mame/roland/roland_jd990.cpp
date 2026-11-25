@@ -54,7 +54,8 @@
 
     The TVF channels feed CSP1's SC bus four reads later than voice
     order, CSP1 feeds CSP2 over the TR bus, and the IFCS demultiplexes
-    CSP2's eight output slots; the levels are calibrated against Jade.
+    CSP2's eight output slots into the one 18-bit DAC, the low six bits
+    of each word dropped; the levels are calibrated against Jade.
 
     The panel is 32 switches on five columns of the ISP's scan, with the
     VALUE and VOLUME knobs' push switches on column 0; the names come
@@ -146,7 +147,7 @@ protected:
 				m_csp[1]->ser_w(channel, m_csp[0]->ser_r(channel));
 			m_csp[1]->run_once(768);
 			for (unsigned channel = 0; channel < 8; channel++)
-				stream.put_int_clamp(channel, sample, m_csp[1]->ser_r(slots[channel]), 8388608);
+				stream.put_int(channel, sample, std::clamp<s32>(m_csp[1]->ser_r(slots[channel]), -8388608, 8388607) & ~0x3f, 8388608);
 		}
 	}
 
