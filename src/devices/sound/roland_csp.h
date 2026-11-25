@@ -6,35 +6,44 @@
 
 #pragma once
 
+#include <algorithm>
+
 class roland_csp_device : public cpu_device
 {
 public:
 	static constexpr feature_type imperfect_features() { return feature::SOUND; }
-	static constexpr unsigned PROGRAM_SIZE = 1024;
-	static constexpr unsigned IRAM_SIZE = 512;
-	static constexpr unsigned ERAM_SIZE = 0x40000;
+	static constexpr u32 PROGRAM_SIZE = 1024;
+	static constexpr u32 IRAM_SIZE = 512;
+	static constexpr u32 ERAM_SIZE = 0x40000;
 
 	roland_csp_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	u8 host_r(offs_t offset);
 	void host_w(offs_t offset, u8 data);
-	void ser_w(unsigned channel, s32 sample) { m_serial_in[channel & 31] = narrow(sample); }
-	s32 ser_r(unsigned channel) const { return m_serial_out[channel & 31]; }
-	void sc_w(unsigned channel, s32 sample) { if (channel < 24) m_parallel_in[channel] = narrow(sample); }
+	void ser_w(u32 channel, s32 sample) { m_serial_in[channel & 31] = narrow(sample); }
+	s32 ser_r(u32 channel) const { return m_serial_out[channel & 31]; }
+	void sc_w(u32 channel, s32 sample) { if (channel < 24) m_parallel_in[channel] = narrow(sample); }
 	void set_eram_size(u32 words) { m_eram_mask = (words - 1) & (ERAM_SIZE - 1); }
-	void set_delay_slots(unsigned slots) { m_delay_slots = std::min(slots, 2U); }
-	void set_eram_bits(unsigned bits) { m_eram_word_mask = s32(~0U << (24 - std::clamp(bits, 1U, 24U))); }
-	void run_once(unsigned slots = PROGRAM_SIZE);
+	void set_delay_slots(u32 slots) { m_delay_slots = std::min<u32>(slots, 2); }
+	void set_eram_bits(u32 bits) { m_eram_word_mask = s32(~u32(0) << (24 - std::clamp<u32>(bits, 1, 24))); }
+	void run_once(u32 slots = PROGRAM_SIZE);
 
 protected:
+	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
+
+	// device_execute_interface implementation
 	virtual u64 execute_clocks_to_cycles(u64 clocks) const noexcept override { return (clocks + 1) / 2; }
 	virtual u64 execute_cycles_to_clocks(u64 cycles) const noexcept override { return cycles * 2; }
 	virtual u32 execute_min_cycles() const noexcept override { return 1; }
 	virtual u32 execute_max_cycles() const noexcept override { return 1; }
 	virtual void execute_run() override;
-	virtual space_config_vector memory_space_config() const override;
+
+	// device_memory_interface implementation
+	virtual space_config_vector memory_space_config() const override ATTR_COLD;
+
+	// device_disasm_interface implementation
 	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	static s32 narrow(s64 value) { return s32(u32(value) << 8) >> 8; }
@@ -49,8 +58,8 @@ protected:
 	void step();
 	void finish_sample();
 	void eram_clock(u32 word);
-	s32 store(unsigned mode, unsigned offset, u16 coefficient);
-	void multiply(unsigned opcode, unsigned shift, s32 operand, u16 coefficient);
+	s32 store(u32 mode, u32 offset, u16 coefficient);
+	void multiply(u32 opcode, u32 shift, s32 operand, u16 coefficient);
 
 	address_space_config m_program_config;
 	address_space_config m_coefficient_config;
@@ -68,8 +77,8 @@ protected:
 	u8 m_parallel_pos;
 	u16 m_iram_pos;
 	u32 m_eram_pos;
-	u32 m_eram_mask = 0x1ffff;
-	s32 m_eram_word_mask = -1;
+	u32 m_eram_mask;
+	s32 m_eram_word_mask;
 	s32 m_eram_read;
 	s32 m_eram_write;
 	u16 m_eram_start[2];
@@ -82,7 +91,7 @@ protected:
 	u32 m_configuration;
 	u8 m_enable;
 	u32 m_host_read;
-	u8 m_delay_slots = 1;
+	u8 m_delay_slots;
 	u16 m_fetch[2];
 	s32 m_branch;
 	u16 m_pc;
@@ -93,4 +102,4 @@ protected:
 
 DECLARE_DEVICE_TYPE(ROLAND_CSP, roland_csp_device)
 
-#endif
+#endif // MAME_SOUND_ROLAND_CSP_H

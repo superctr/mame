@@ -3810,6 +3810,23 @@ if CPUS["SWP30"] then
 end
 
 --------------------------------------------------
+-- Roland CSP (Toshiba TC6088AF)
+--@src/devices/sound/roland_csp.h,CPUS["ROLANDCSP"] = true
+--------------------------------------------------
+
+if CPUS["ROLANDCSP"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_csp.cpp",
+		MAME_DIR .. "src/devices/sound/roland_csp.h",
+	}
+end
+
+if opt_tool(CPUS, "ROLANDCSP") then
+	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.cpp")
+	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.h")
+end
+
+--------------------------------------------------
 -- Roland XP PCM chip and effect DSP
 --@src/devices/sound/roland_xp.h,CPUS["ROLANDXP"] = true
 --------------------------------------------------
@@ -3825,23 +3842,6 @@ end
 if opt_tool(CPUS, "ROLANDXP") then
 	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_xpd.cpp")
 	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_xpd.h")
-end
-
---------------------------------------------------
--- Roland CSP (Toshiba TC6088AF)
---@src/devices/sound/roland_csp.h,CPUS["ROLANDCSP"] = true
---------------------------------------------------
-
-if CPUS["ROLANDCSP"] then
-	files {
-		MAME_DIR .. "src/devices/sound/roland_csp.cpp",
-		MAME_DIR .. "src/devices/sound/roland_csp.h",
-	}
-end
-
-if opt_tool(CPUS, "ROLANDCSP") then
-	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.cpp")
-	table.insert(disasm_files , MAME_DIR .. "src/devices/sound/roland_cspd.h")
 end
 
 --------------------------------------------------

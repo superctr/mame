@@ -2,23 +2,17 @@
 // copyright-holders:superctr
 // thanks-to: giulioz
 /*
- * Roland CSP (Toshiba TC6088AF), microcoded effects processor.
+ * Roland CSP (Toshiba TC6088AF), microcoded effects processor
  *
- * One sample clocks up to 1024 instructions, with parallel coefficient
- * memory, two 30-bit accumulators, a 512-word internal delay ring and
- * external delay RAM. Audio crosses the SC parallel and TR serial buses;
- * the board pumps the device with run_once(). The scheduler is idle.
+ * - 1024 instructions a sample, PRAM 24 bits and CRAM 16 bits a word
+ * - two 30-bit accumulators, a 512-word internal delay ring, up to 256K words of external delay RAM
+ * - audio on the SC parallel bus (24 channels in) and the TR serial bus (32 channels each way)
+ * - one or two delay slots after a taken jump (two on the CSP-2)
+ * - the debugger's program word: PRAM in bits 23:0, CRAM in bits 47:32
  *
- * The debugger's 64-bit program words combine PRAM in bits 23:0 and
- * CRAM in bits 47:32. The data space also exposes CRAM independently.
- * Host accesses use the JD-990's most-significant-byte-first strap.
- *
- * A taken jump runs one more word before its target (two on the CSP-2,
- * set_delay_slots(2)).
- *
- * Unverified: sample budget, jump timing, the accB jump conditions,
- * bit 18, SC channel order, configuration bits and physical
- * external-memory transfers.
+ * TODO:
+ * - sample budget, jump timing, the accB jump conditions, bit 18
+ * - SC channel order, configuration bits, physical external-memory transfers
  */
 
 #include "emu.h"
@@ -31,6 +25,9 @@ roland_csp_device::roland_csp_device(const machine_config &mconfig, const char *
 	: cpu_device(mconfig, ROLAND_CSP, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 64, 10, -3, address_map_constructor(FUNC(roland_csp_device::program_map), this))
 	, m_coefficient_config("coefficients", ENDIANNESS_BIG, 16, 10, -1, address_map_constructor(FUNC(roland_csp_device::coefficient_map), this))
+	, m_eram_mask(0x1ffff)
+	, m_eram_word_mask(-1)
+	, m_delay_slots(1)
 {
 }
 
@@ -57,6 +54,9 @@ std::unique_ptr<util::disasm_interface> roland_csp_device::create_disassembler()
 void roland_csp_device::device_start()
 {
 	m_eram = make_unique_clear<s32[]>(ERAM_SIZE);
+	std::fill_n(m_program, PROGRAM_SIZE, 0);
+	std::fill_n(m_coefficients, PROGRAM_SIZE, 0);
+	std::fill_n(m_iram, IRAM_SIZE, 0);
 	set_icountptr(m_icount);
 	state_add(STATE_GENPC, "GENPC", m_pc).noshow();
 	state_add(STATE_GENPCBASE, "CURPC", m_pc).noshow();
@@ -83,7 +83,6 @@ void roland_csp_device::device_start()
 	save_item(NAME(m_parallel_pos));
 	save_item(NAME(m_iram_pos));
 	save_item(NAME(m_eram_pos));
-	save_item(NAME(m_eram_mask));
 	save_item(NAME(m_eram_read));
 	save_item(NAME(m_eram_write));
 	save_item(NAME(m_eram_start));
@@ -104,10 +103,6 @@ void roland_csp_device::device_start()
 
 void roland_csp_device::device_reset()
 {
-	std::fill_n(m_program, PROGRAM_SIZE, 0);
-	std::fill_n(m_coefficients, PROGRAM_SIZE, 0);
-	std::fill_n(m_iram, IRAM_SIZE, 0);
-	std::fill_n(m_eram.get(), ERAM_SIZE, 0);
 	std::fill_n(m_serial_in, 32, 0);
 	std::fill_n(m_serial_out, 32, 0);
 	std::fill_n(m_parallel_in, 24, 0);
@@ -167,19 +162,19 @@ void roland_csp_device::host_w(offs_t offset, u8 data)
 	offset &= 0x3fff;
 	if (offset < 0x800)
 	{
-		const unsigned shift = BIT(offset, 0) ? 0 : 8;
+		const u32 shift = BIT(offset, 0) ? 0 : 8;
 		coefficient_w(offset >> 1, u16(data) << shift, 0xff << shift);
 	}
 	else if (offset >= 0x805 && offset <= 0x807)
 	{
-		const unsigned shift = (offset - 0x805) * 8;
+		const u32 shift = (offset - 0x805) * 8;
 		m_configuration = (m_configuration & ~(0xff << shift)) | (u32(data) << shift);
 	}
 	else if (offset == 0x80b)
 		m_enable = data;
 	else if (offset >= 0x1000 && offset < 0x2000 && (offset & 3))
 	{
-		const unsigned shift = (3 - (offset & 3)) * 8;
+		const u32 shift = (3 - (offset & 3)) * 8;
 		program_w((offset - 0x1000) >> 2, u64(data) << shift, u64(0xff) << shift);
 	}
 	else if (offset >= 0x2000 && offset < 0x2800)
@@ -228,9 +223,9 @@ void roland_csp_device::eram_clock(u32 word)
 	}
 }
 
-s32 roland_csp_device::store(unsigned mode, unsigned offset, u16 coefficient)
+s32 roland_csp_device::store(u32 mode, u32 offset, u16 coefficient)
 {
-	const unsigned address = (offset + m_iram_pos) & 0x1ff;
+	const u32 address = (offset + m_iram_pos) & 0x1ff;
 	if (!mode)
 		return m_iram[address];
 	if (mode == 1)
@@ -240,7 +235,7 @@ s32 roland_csp_device::store(unsigned mode, unsigned offset, u16 coefficient)
 		return m_iram[address] = value;
 	}
 	const bool special = mode < 4;
-	const unsigned acc = special ? ((offset >= 0x178 && offset <= 0x17f) || (offset >= 0x188 && offset <= 0x18f) || (offset >= 0x1d0 && offset <= 0x1ef)) : (mode & 1);
+	const u32 acc = special ? ((offset >= 0x178 && offset <= 0x17f) || (offset >= 0x188 && offset <= 0x18f) || (offset >= 0x1d0 && offset <= 0x1ef)) : (mode & 1);
 	const s32 raw = m_history[acc][2];
 	s32 value = (mode == 3 || mode >= 6) ? saturate(raw) : narrow(raw);
 	if (!special)
@@ -277,7 +272,7 @@ s32 roland_csp_device::store(unsigned mode, unsigned offset, u16 coefficient)
 	return value;
 }
 
-void roland_csp_device::multiply(unsigned opcode, unsigned shift, s32 operand, u16 coefficient)
+void roland_csp_device::multiply(u32 opcode, u32 shift, s32 operand, u16 coefficient)
 {
 	s32 factor = s16(coefficient);
 	bool invert = false;
@@ -311,7 +306,7 @@ void roland_csp_device::multiply(unsigned opcode, unsigned shift, s32 operand, u
 	product >>= shift;
 	if (opcode == 10 || opcode == 11)
 		product >>= 15;
-	const unsigned dest = opcode == 1 || opcode == 3 || opcode == 11 || opcode == 13 || opcode == 15;
+	const u32 dest = opcode == 1 || opcode == 3 || opcode == 11 || opcode == 13 || opcode == 15;
 	const bool replace = opcode == 2 || opcode == 3 || opcode == 4 || opcode == 6 || opcode == 8 || opcode == 12 || opcode == 13;
 	const s64 total = product + (replace ? 0 : m_acc[dest]);
 	m_acc[dest] = accumulator(total);
@@ -337,11 +332,11 @@ void roland_csp_device::step()
 		operand = 0x400000;
 	if (m_gate_age && (m_gate_negative ? m_gate_age >= 6 && m_gate_age <= 9 : m_gate_age >= 4 && m_gate_age <= 5))
 		operand = 0;
-	static constexpr unsigned shift[] = { 15, 14, 13, 11 };
-	multiply((word >> 12) & 15, shift[(word >> 16) & 3], operand, coefficient);
-	for (unsigned n = 0; n < 2; n++)
+	static constexpr u8 SHIFTS[] = { 15, 14, 13, 11 };
+	multiply((word >> 12) & 15, SHIFTS[(word >> 16) & 3], operand, coefficient);
+	for (int n = 0; n < 2; n++)
 	{
-		for (unsigned h = 3; h; h--)
+		for (int h = 3; h; h--)
 			m_history[n][h] = m_history[n][h - 1];
 		m_history[n][0] = m_acc[n];
 	}
@@ -382,10 +377,10 @@ void roland_csp_device::execute_run()
 	}
 }
 
-void roland_csp_device::run_once(unsigned slots)
+void roland_csp_device::run_once(u32 slots)
 {
 	m_halted = false;
-	for (unsigned n = 0; !BIT(m_configuration, 0) && n < std::min(slots, PROGRAM_SIZE); n++)
+	for (u32 n = 0; !BIT(m_configuration, 0) && n < std::min(slots, PROGRAM_SIZE); n++)
 	{
 		m_icount = 1;
 		execute_run();
