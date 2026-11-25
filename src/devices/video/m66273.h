@@ -22,11 +22,9 @@ public:
 	auto cse_callback() { return m_cse_cb.bind(); }
 	auto lcdenb_callback() { return m_lcdenb_cb.bind(); }
 
-	// MCS: the VRAM at 0000-4aff and the control registers at 5000-509e
 	u8 read(offs_t offset);
 	void write(offs_t offset, u8 data);
 
-	// IOCS: the control registers at 00-9e
 	u8 reg_r(offs_t offset);
 	void reg_w(offs_t offset, u8 data);
 
@@ -38,8 +36,8 @@ protected:
 	virtual void device_clock_changed() override;
 
 private:
-	static constexpr unsigned VRAM_SIZE = 0x4b00;
-	static constexpr unsigned SCREEN2_BASE = 0x2580;
+	static constexpr u32 VRAM_SIZE = 0x4b00;
+	static constexpr u32 SCREEN2_BASE = 0x2580;
 
 	enum : u8
 	{
@@ -82,7 +80,7 @@ private:
 	u8 m_sa2l;
 	u8 m_mt;
 	u16 m_idx;
-	int m_cse;
+	u8 m_cse;
 	attotime m_char_period;
 };
 

@@ -4,19 +4,13 @@
 
     Mitsubishi M66273FP LCD controller with 19 200-byte VRAM
 
-    A display-only controller for STN panels: binary or four grey levels,
-    single or dual scan, a four- or eight-bit LCD data bus, with its whole
-    VRAM on the host bus.  The two intermediate grey levels are frame-rate
-    controlled by two pattern tables of sixteen 4 x 4 dot patterns, one per
-    frame; the screen is drawn with each dot at its average over the sixteen
-    frames, as levels 0 (never driven) to 16 (always driven).
+    - display-only, for STN panels: binary or four grey levels
+    - single or dual scan, four- or eight-bit LCD data bus
+    - frame-rate controlled grey from two tables of sixteen 4 x 4 patterns
+    - the whole VRAM on the host bus, arbitrated by cycle stealing (CSE)
 
-    The host's VRAM access is arbitrated by cycle stealing during the
-    display section of each line; CSE is high while the controller steals
-    cycles and low in the part of the horizontal sync period, LPW less CSW
-    characters, in which the host has the VRAM to itself.
-
-    Not emulated: the WAIT output and the host-side timing.
+    TODO:
+    - the WAIT output and the host-side timing
 
 ***************************************************************************/
 
@@ -24,6 +18,8 @@
 #include "m66273.h"
 
 #include "screen.h"
+
+#include <algorithm>
 
 #define VERBOSE 0
 #include "logmacro.h"
@@ -38,18 +34,6 @@ m66273_device::m66273_device(const machine_config &mconfig, const char *tag, dev
 	, m_cse_cb(*this)
 	, m_lcdenb_cb(*this)
 	, m_cse_timer(nullptr)
-	, m_r1(0)
-	, m_r2(0)
-	, m_cr(0x28)
-	, m_lpw(0x04)
-	, m_csw(0x02)
-	, m_slt(0x78)
-	, m_sa1(0)
-	, m_sa2(SCREEN2_BASE)
-	, m_sa1l(0)
-	, m_sa2l(SCREEN2_BASE & 0xff)
-	, m_mt(0)
-	, m_idx(0)
 	, m_cse(0)
 {
 }
@@ -105,13 +89,6 @@ void m66273_device::reset_registers()
 	m_lcdenb_cb(0);
 	update_timing();
 }
-
-
-//-------------------------------------------------
-//  timing: a line is CR display characters and LPW
-//  sync characters, a character one MAINCLK (two in
-//  the four-bit binary modes), and a frame 2 x SLT lines
-//-------------------------------------------------
 
 void m66273_device::set_cse(int state)
 {
@@ -330,10 +307,11 @@ u32 m66273_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, co
 		return 0;
 	}
 
-	// each intermediate level's duty at each dot of the 4 x 4 matrix, over its sixteen frames
 	u8 duty[2][4][4];
 	for (int table = 0; table < 2; table++)
+	{
 		for (int line = 0; line < 4; line++)
+		{
 			for (int dot = 0; dot < 4; dot++)
 			{
 				int count = 0;
@@ -341,6 +319,8 @@ u32 m66273_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, co
 					count += BIT(m_pattern[table * 32 + frame * 2 + (line >> 1)], (line & 1) * 4 + 3 - dot);
 				duty[table][line][dot] = count;
 			}
+		}
+	}
 
 	const bool gray = m_r2 & R2_GRAY;
 	const bool dual = m_r2 & R2_DUAL;
@@ -351,9 +331,9 @@ u32 m66273_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, co
 	{
 		const bool second = dual && y >= lines;
 		const int row = second ? y - lines : y;
-		const unsigned base = !dual ? 0 : second ? SCREEN2_BASE : 0;
-		const unsigned size = !dual ? VRAM_SIZE : second ? VRAM_SIZE - SCREEN2_BASE : SCREEN2_BASE;
-		const unsigned start = ((second ? m_sa2 : m_sa1) - base) + row * m_cr;
+		const u32 base = !dual ? 0 : second ? SCREEN2_BASE : 0;
+		const u32 size = !dual ? VRAM_SIZE : second ? VRAM_SIZE - SCREEN2_BASE : SCREEN2_BASE;
+		const u32 start = ((second ? m_sa2 : m_sa1) - base) + row * m_cr;
 		u16 *dest = &bitmap.pix(y, cliprect.left());
 
 		for (int x = cliprect.left(); x <= cliprect.right(); x++)
