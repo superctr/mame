@@ -13,26 +13,24 @@ public:
 	static constexpr int VOICES = 32;
 	static constexpr int OUTPUTS = 8;
 
-	// the outputs in the D/A's order: the stereo pair, then the six individual outputs; then the
-	// serial output's pair
 	enum : int { OUTPUT_LEFT = 0, OUTPUT_RIGHT = 1, OUTPUT_INDIVIDUAL = 2, OUTPUT_SERIAL = OUTPUTS };
 
-	// the serial input's pair, after the voices
 	static constexpr int INPUT_SERIAL = VOICES;
 
 	roland_mix_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// the serial output's words as they leave, 24 bits: right (offset 0), then left
 	auto serial_callback() { return m_serial_cb.bind(); }
 
 	u16 read(offs_t offset);
 	void write(offs_t offset, u16 data);
 
 protected:
+	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 	virtual void device_clock_changed() override;
 
+	// device_sound_interface implementation
 	virtual void sound_stream_update(sound_stream &stream) override;
 
 private:

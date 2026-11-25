@@ -2,23 +2,22 @@
 // copyright-holders:superctr
 /***************************************************************************
 
-    Roland MIX (Toshiba TC23SC100AF-502), the output mixer and assigner of
-    the S-770 and S-750.
+    Roland MIX (Toshiba TC23SC100AF-502)
 
-    Each of 32 voices has one word: a 6-bit gain to the right and to the
-    left of the stereo pair, and a 4-bit assign that sends the voice at
-    full level to one of the six individual outputs, or to none.  With the
-    stereo pair turned off its two outputs take two more assigns.  The
-    host selects a voice by writing its select register and then writes
-    the word to the data register.  The serial output carries the stereo
-    pair, or with control bit 7 the serial input's words.
+    - output mixer and assigner of the S-770 and S-750
+    - 32 voices, one word each: 6-bit right and left gains, 4-bit assign
+    - stereo pair and six individual outputs
+    - serial output: the stereo pair, or the serial input passed through
 
-    Not emulated: the meaning of the remaining control bits.
+    TODO:
+    - the remaining control bits
 
 ***************************************************************************/
 
 #include "emu.h"
 #include "roland_mix.h"
+
+#include <algorithm>
 
 DEFINE_DEVICE_TYPE(ROLAND_MIX, roland_mix_device, "roland_mix", "Roland MIX")
 
