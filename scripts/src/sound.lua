@@ -1877,6 +1877,18 @@ if SOUNDS["XT446"] then
 end
 
 ---------------------------------------------------
+--
+--@src/devices/sound/roland_ep.h,SOUNDS["ROLANDEP"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDEP"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_ep.cpp",
+		MAME_DIR .. "src/devices/sound/roland_ep.h",
+	}
+end
+
+---------------------------------------------------
 -- Roland GP-based sample players
 --@src/devices/sound/roland_gp.h,SOUNDS["ROLANDGP"] = true
 ---------------------------------------------------
@@ -1901,15 +1913,26 @@ if SOUNDS["ROLANDLP"] then
 end
 
 ---------------------------------------------------
--- Roland RPP-324 RDAC phrase player
---@src/devices/sound/roland_rpp324.h,SOUNDS["ROLANDRPP324"] = true
+-- Roland MEQ mixer/EQ DSP
+--@src/devices/sound/roland_meq.h,SOUNDS["ROLANDMEQ"] = true
 ---------------------------------------------------
 
-if SOUNDS["ROLANDRPP324"] then
+if SOUNDS["ROLANDMEQ"] then
 	files {
-		MAME_DIR .. "src/devices/sound/roland_rpp324.cpp",
-		MAME_DIR .. "src/devices/sound/roland_rpp324.h",
-		MAME_DIR .. "src/devices/sound/roland_rpp324_codec.h",
+		MAME_DIR .. "src/devices/sound/roland_meq.cpp",
+		MAME_DIR .. "src/devices/sound/roland_meq.h",
+	}
+end
+
+---------------------------------------------------
+-- Roland MIX output mixer
+--@src/devices/sound/roland_mix.h,SOUNDS["ROLANDMIX"] = true
+---------------------------------------------------
+
+if SOUNDS["ROLANDMIX"] then
+	files {
+		MAME_DIR .. "src/devices/sound/roland_mix.cpp",
+		MAME_DIR .. "src/devices/sound/roland_mix.h",
 	}
 end
 
@@ -1926,27 +1949,27 @@ if SOUNDS["ROLANDMR"] then
 end
 
 ---------------------------------------------------
--- Roland XV tone generator
---@src/devices/sound/roland_xv.h,SOUNDS["ROLANDXV"] = true
+-- Roland RPP-324 RDAC phrase player
+--@src/devices/sound/roland_rpp324.h,SOUNDS["ROLANDRPP324"] = true
 ---------------------------------------------------
 
-if SOUNDS["ROLANDXV"] then
+if SOUNDS["ROLANDRPP324"] then
 	files {
-		MAME_DIR .. "src/devices/sound/roland_xv.cpp",
-		MAME_DIR .. "src/devices/sound/roland_xv.h",
-		MAME_DIR .. "src/devices/sound/roland_xv_drc.cpp",
+		MAME_DIR .. "src/devices/sound/roland_rpp324.cpp",
+		MAME_DIR .. "src/devices/sound/roland_rpp324.h",
+		MAME_DIR .. "src/devices/sound/roland_rpp324_codec.h",
 	}
 end
 
 ---------------------------------------------------
---
---@src/devices/sound/roland_ep.h,SOUNDS["ROLANDEP"] = true
+-- Roland SP-AG/SP-IP sampler pair
+--@src/devices/sound/roland_sp.h,SOUNDS["ROLANDSP"] = true
 ---------------------------------------------------
 
-if SOUNDS["ROLANDEP"] then
+if SOUNDS["ROLANDSP"] then
 	files {
-		MAME_DIR .. "src/devices/sound/roland_ep.cpp",
-		MAME_DIR .. "src/devices/sound/roland_ep.h",
+		MAME_DIR .. "src/devices/sound/roland_sp.cpp",
+		MAME_DIR .. "src/devices/sound/roland_sp.h",
 	}
 end
 
@@ -1963,38 +1986,15 @@ if SOUNDS["ROLANDTVF"] then
 end
 
 ---------------------------------------------------
---
---@src/devices/sound/roland_sp.h,SOUNDS["ROLANDSP"] = true
+-- Roland XV tone generator
+--@src/devices/sound/roland_xv.h,SOUNDS["ROLANDXV"] = true
 ---------------------------------------------------
 
-if SOUNDS["ROLANDSP"] then
+if SOUNDS["ROLANDXV"] then
 	files {
-		MAME_DIR .. "src/devices/sound/roland_sp.cpp",
-		MAME_DIR .. "src/devices/sound/roland_sp.h",
-	}
-end
-
----------------------------------------------------
---
---@src/devices/sound/roland_meq.h,SOUNDS["ROLANDMEQ"] = true
----------------------------------------------------
-
-if SOUNDS["ROLANDMEQ"] then
-	files {
-		MAME_DIR .. "src/devices/sound/roland_meq.cpp",
-		MAME_DIR .. "src/devices/sound/roland_meq.h",
-	}
-end
-
----------------------------------------------------
---
---@src/devices/sound/roland_mix.h,SOUNDS["ROLANDMIX"] = true
----------------------------------------------------
-
-if SOUNDS["ROLANDMIX"] then
-	files {
-		MAME_DIR .. "src/devices/sound/roland_mix.cpp",
-		MAME_DIR .. "src/devices/sound/roland_mix.h",
+		MAME_DIR .. "src/devices/sound/roland_xv.cpp",
+		MAME_DIR .. "src/devices/sound/roland_xv.h",
+		MAME_DIR .. "src/devices/sound/roland_xv_drc.cpp",
 	}
 end
 
