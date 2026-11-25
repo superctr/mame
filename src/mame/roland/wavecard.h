@@ -11,21 +11,14 @@
 class roland_wavecard_device : public device_t, public device_cartrom_image_interface
 {
 public:
-	// the ROM, a byte a cell on a byte-wide bus and a word a cell on a
-	// word-wide one, repeating through the socket's window; an empty socket
-	// reads what the host's data lines float to
 	u8 read(offs_t offset) { return m_rom ? m_rom[offset % m_size] : u8(m_open); }
 	u16 read16(offs_t offset) { if (!m_rom) return m_open; const u32 at = (offset << 1) % m_size; return m_rom[at] | (m_rom[at | 1] << 8); }
 	roland_wavecard_device &set_open(u16 open) { m_open = open; return *this; }
 
-	// address lines permuted within a block of their own size and the data
-	// lines Roland's wave ROMs share, undone in place
 	static void descramble(u8 *rom, u32 size, const u8 *address_lines, int lines) ATTR_COLD;
 
-	// high while a card is fitted; the host decides which pin reads it and in which sense
 	int sense_r() const { return m_rom ? 1 : 0; }
 
-	// the media option names, the socket's legend on the host's display
 	roland_wavecard_device &set_image_names(std::string type_name, std::string brief_type_name);
 
 protected:
@@ -44,7 +37,6 @@ protected:
 	virtual bool is_reset_on_load() const noexcept override { return true; }
 
 private:
-
 	const u32 m_min_size, m_max_size;
 	const char *const m_size_error;
 	const u8 *const m_address_lines;
@@ -61,7 +53,6 @@ class roland_srjv80_slot_device : public roland_wavecard_device
 public:
 	roland_srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
 
-	// a host's own wave ROMs wired as an SR-JV80 board is, undone in place
 	static void descramble_rom(u8 *rom, u32 size) ATTR_COLD;
 
 protected:
@@ -74,7 +65,6 @@ class roland_srx_slot_device : public roland_wavecard_device
 public:
 	roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
 
-	// a host's own wave ROMs wired as an SRX board is, undone in place
 	static void descramble_rom(u8 *rom, u32 size) ATTR_COLD;
 
 protected:

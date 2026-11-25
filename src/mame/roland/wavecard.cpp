@@ -37,6 +37,17 @@
 #include "emu.h"
 #include "wavecard.h"
 
+#include <algorithm>
+#include <vector>
+
+
+namespace {
+
+constexpr u8 SRJV80_LINES[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14 };
+constexpr u8 SRX_LINES[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
+
+} // anonymous namespace
+
 
 DEFINE_DEVICE_TYPE(ROLAND_SRJV80_SLOT, roland_srjv80_slot_device, "roland_srjv80_slot", "Roland SR-JV80 expansion board socket")
 DEFINE_DEVICE_TYPE(ROLAND_SRX_SLOT, roland_srx_slot_device, "roland_srx_slot", "Roland SRX expansion board socket")
@@ -71,12 +82,9 @@ void roland_wavecard_device::device_start()
 }
 
 
-// the address lines permuted within a block of their own size and the eight
-// data lines; the data table is the one Roland's own wave ROMs use and the
-// address table is the board's or the card's own
 void roland_wavecard_device::descramble(u8 *rom, u32 size, const u8 *address_lines, int lines)
 {
-	static const u8 data_lines[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
+	constexpr u8 DATA_LINES[8] = { 2, 0, 4, 5, 7, 6, 3, 1 };
 
 	const std::vector<u8> scrambled(rom, rom + size);
 	for (u32 i = 0; i < size; i++)
@@ -89,7 +97,7 @@ void roland_wavecard_device::descramble(u8 *rom, u32 size, const u8 *address_lin
 		const u8 source = scrambled[address];
 		u8 data = 0;
 		for (int bit = 0; bit < 8; bit++)
-			if (BIT(source, data_lines[bit]))
+			if (BIT(source, DATA_LINES[bit]))
 				data |= 1 << bit;
 		rom[i] = data;
 	}
@@ -122,32 +130,27 @@ void roland_wavecard_device::call_unload()
 }
 
 
-// nineteen lines within each 512 KB block on a byte-wide part, eighteen
-// within each 256 KB block on a word-wide one, where A0 is not permuted
-static const u8 srjv80_lines[19] = { 2, 0, 3, 4, 1, 9, 13, 10, 18, 17, 6, 15, 11, 16, 8, 5, 12, 7, 14 };
-static const u8 srx_lines[18] = { 0, 4, 2, 3, 1, 13, 7, 12, 5, 10, 16, 9, 6, 8, 14, 17, 11, 15 };
-
 roland_srjv80_slot_device::roland_srjv80_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, ROLAND_SRJV80_SLOT, tag, owner, clock, 0x200000, 0x800000, "Expansion boards are 2 or 8 MB", srjv80_lines, 19, "expboard", "exp")
+	: roland_wavecard_device(mconfig, ROLAND_SRJV80_SLOT, tag, owner, clock, 0x200000, 0x800000, "Expansion boards are 2 or 8 MB", SRJV80_LINES, 19, "expboard", "exp")
 {
 }
 
 void roland_srjv80_slot_device::descramble_rom(u8 *rom, u32 size)
 {
-	descramble(rom, size, srjv80_lines, 19);
+	descramble(rom, size, SRJV80_LINES, 19);
 }
 
 roland_srx_slot_device::roland_srx_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, ROLAND_SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", srx_lines, 18, "srxboard", "srx")
+	: roland_wavecard_device(mconfig, ROLAND_SRX_SLOT, tag, owner, clock, 0x2000000, 0x2000000, "SRX boards are 32 MB", SRX_LINES, 18, "srxboard", "srx")
 {
 }
 
 void roland_srx_slot_device::descramble_rom(u8 *rom, u32 size)
 {
-	descramble(rom, size, srx_lines, 18);
+	descramble(rom, size, SRX_LINES, 18);
 }
 
 roland_sopcm1_slot_device::roland_sopcm1_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: roland_wavecard_device(mconfig, ROLAND_SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB", srjv80_lines, 19, "pcmcard", "pcm")
+	: roland_wavecard_device(mconfig, ROLAND_SOPCM1_SLOT, tag, owner, clock, 0x100000, 0x200000, "PCM cards are 1 or 2 MB", SRJV80_LINES, 19, "pcmcard", "pcm")
 {
 }
