@@ -63,7 +63,6 @@ protected:
 	// whether the device has a hardware reset pin
 	bool                     m_has_reset_pin;
 
-	// whether the device's sectors can be protected with RESET# at the high voltage
 	bool                     m_has_sector_protect;
 
 	// internal state
@@ -87,7 +86,7 @@ protected:
 
 	bool                     m_vid;
 	bool                     m_protecting;
-	std::vector<uint8_t>     m_protect;
+	std::unique_ptr<u8 []>   m_protect;
 };
 
 

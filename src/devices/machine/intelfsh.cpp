@@ -425,10 +425,11 @@ void intelfsh_device::device_start()
 
 	if (m_has_sector_protect)
 	{
-		m_protect.resize(protect_sector(m_size / ((m_bits == 16) ? 2 : 1) - 1) + 1, 0);
+		const u32 sectors = protect_sector(m_size / ((m_bits == 16) ? 2 : 1) - 1) + 1;
+		m_protect = make_unique_clear<u8 []>(sectors);
 		save_item( NAME(m_vid) );
 		save_item( NAME(m_protecting) );
-		save_item( NAME(m_protect) );
+		save_pointer( NAME(m_protect), sectors );
 	}
 }
 
@@ -1371,7 +1372,6 @@ void intelfsh_device::write_full(uint32_t address, uint32_t data)
 			}
 			else if (m_bot_boot_sector && (address * ((m_bits == 16) ? 2 : 1)) < 64 * 1024)
 			{
-				// clear the 8k parameter block containing the current address to all 0xffs
 				uint32_t base = address * ((m_bits == 16) ? 2 : 1);
 				memset(&m_data[base & ~0x1fff], 0xff, 8 * 1024);
 
