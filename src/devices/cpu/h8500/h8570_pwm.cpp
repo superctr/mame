@@ -214,42 +214,41 @@ void h8570_pwm_device::odr_w(offs_t offset, u8 data)
 	m_odr[offset] = data & 0x3f;
 }
 
-u8 h8570_pwm_device::ocr_r(offs_t offset)
+u16 h8570_pwm_device::ocr_r(offs_t offset)
 {
-	const u16 v = m_ocr[offset >> 1];
-	return BIT(offset, 0) ? v & 0xff : v >> 8;
+	return m_ocr[offset];
 }
 
-void h8570_pwm_device::ocr_w(offs_t offset, u8 data)
+void h8570_pwm_device::ocr_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if (!BIT(offset, 0))
+	if (ACCESSING_BITS_8_15)
+		m_temp = data >> 8;
+	if (ACCESSING_BITS_0_7)
 	{
-		m_temp = data;
-		return;
+		update_counter();
+		m_ocr[offset] = (u16(m_temp) << 8) | (data & 0xff);
+		recalc_event();
 	}
-	update_counter();
-	m_ocr[offset >> 1] = (u16(m_temp) << 8) | data;
-	recalc_event();
 }
 
-u8 h8570_pwm_device::tmr_r(offs_t offset)
+u16 h8570_pwm_device::tmr_r(offs_t offset, u16 mem_mask)
 {
-	if (offset)
+	if (!ACCESSING_BITS_8_15)
 		return m_temp;
 	update_counter();
 	if (!machine().side_effects_disabled())
 		m_temp = m_tmr & 0xff;
-	return m_tmr >> 8;
+	return ACCESSING_BITS_0_7 ? m_tmr : m_tmr & 0xff00;
 }
 
-void h8570_pwm_device::tmr_w(offs_t offset, u8 data)
+void h8570_pwm_device::tmr_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if (!offset)
+	if (ACCESSING_BITS_8_15)
+		m_temp = data >> 8;
+	if (ACCESSING_BITS_0_7)
 	{
-		m_temp = data;
-		return;
+		update_counter();
+		m_tmr = (u16(m_temp) << 8) | (data & 0xff);
+		recalc_event();
 	}
-	update_counter();
-	m_tmr = (u16(m_temp) << 8) | data;
-	recalc_event();
 }

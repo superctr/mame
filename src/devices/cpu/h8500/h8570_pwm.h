@@ -39,10 +39,10 @@ public:
 	void odl_w(u8 data);
 	u8 odr_r(offs_t offset);
 	void odr_w(offs_t offset, u8 data);
-	u8 ocr_r(offs_t offset);
-	void ocr_w(offs_t offset, u8 data);
-	u8 tmr_r(offs_t offset);
-	void tmr_w(offs_t offset, u8 data);
+	u16 ocr_r(offs_t offset);
+	void ocr_w(offs_t offset, u16 data, u16 mem_mask = ~0);
+	u16 tmr_r(offs_t offset, u16 mem_mask = ~0);
+	void tmr_w(offs_t offset, u16 data, u16 mem_mask = ~0);
 
 	u64 internal_update(u64 current_time);
 	void notify_standby(int state);
