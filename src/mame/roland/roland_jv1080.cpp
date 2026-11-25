@@ -56,6 +56,9 @@ public:
 	void jv1080(machine_config &config);
 	void init_jv1080() ATTR_COLD;
 
+protected:
+	virtual void machine_start() override ATTR_COLD;
+
 private:
 	void jv1080_map(address_map &map) ATTR_COLD;
 	void xp_rom_map(address_map &map) ATTR_COLD;
@@ -137,6 +140,11 @@ void roland_jv1080_state::init_jv1080()
 	roland_srx_slot_device::descramble_rom(memregion("waverom")->base(), memregion("waverom")->bytes());
 }
 
+
+void roland_jv1080_state::machine_start()
+{
+	m_maincpu->dreq_w<0>(1);
+}
 
 void roland_jv1080_state::jv_palette(palette_device &palette) const
 {
