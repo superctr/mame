@@ -24,12 +24,16 @@ offs_t roland_csp_disassembler::disassemble(std::ostream &stream, offs_t pc, con
 	util::stream_format(stream, "%s $%03x, #%04x >>%u", op[s.opcode], s.offset, coefficient, shift[s.scale]);
 	if (s.store)
 		util::stream_format(stream, ", %s[$%03x]", store[s.store], s.offset);
-	if ((s.store == 2 || s.store == 3) && ((s.offset >= 0x172 && s.offset <= 0x177) || (s.offset >= 0x17a && s.offset <= 0x17f)))
+	u32 flags = 0;
+	if (s.jump())
 	{
 		static const char *const condition[] = { "> 0", "overflows", "< 0", "== 0", ">= 0" };
 		util::stream_format(stream, ", jump $%03x", coefficient);
 		if ((s.offset & 7) != 2)
+		{
 			util::stream_format(stream, " if %s %s", s.offset >= 0x178 ? "accb" : "acca", condition[(s.offset & 7) - 3]);
+			flags = STEP_COND | step_over_extra(m_delay_slots);
+		}
 	}
 	if (s.eram_start)
 		util::stream_format(stream, " ; eram %x", s.eram_nib);
@@ -37,5 +41,11 @@ offs_t roland_csp_disassembler::disassemble(std::ostream &stream, offs_t pc, con
 		util::stream_format(stream, " ; +%x", s.eram_nib);
 	if (s.bit18)
 		stream << " ; b18";
-	return 1 | SUPPORTED;
+	for (unsigned k = 1; k <= m_delay_slots && k <= pc; k++)
+		if (decode(opcodes.r64(pc - k)).jump())
+		{
+			stream << " ; delay slot";
+			break;
+		}
+	return 1 | flags | SUPPORTED;
 }

@@ -13,6 +13,9 @@
  * CRAM in bits 47:32. The data space also exposes CRAM independently.
  * Host accesses use the JD-990's most-significant-byte-first strap.
  *
+ * A taken jump runs one more word before its target (two on the CSP-2,
+ * set_delay_slots(2)).
+ *
  * Unverified: sample budget, jump timing, the accB jump conditions,
  * bit 18, SC channel order, configuration bits and physical
  * external-memory transfers.
@@ -48,7 +51,7 @@ device_memory_interface::space_config_vector roland_csp_device::memory_space_con
 
 std::unique_ptr<util::disasm_interface> roland_csp_device::create_disassembler()
 {
-	return std::make_unique<roland_csp_disassembler>();
+	return std::make_unique<roland_csp_disassembler>(m_delay_slots);
 }
 
 void roland_csp_device::device_start()
@@ -93,6 +96,7 @@ void roland_csp_device::device_start()
 	save_item(NAME(m_configuration));
 	save_item(NAME(m_enable));
 	save_item(NAME(m_host_read));
+	save_item(NAME(m_fetch));
 	save_item(NAME(m_pc));
 	save_item(NAME(m_slot));
 	save_item(NAME(m_halted));
@@ -121,6 +125,9 @@ void roland_csp_device::device_reset()
 	m_gate_negative = false;
 	m_configuration = m_enable = m_host_read = 0;
 	m_pc = m_slot = m_icount = 0;
+	m_fetch[0] = 1;
+	m_fetch[1] = 2;
+	m_branch = -1;
 	m_halted = true;
 }
 
@@ -242,7 +249,7 @@ s32 roland_csp_device::store(unsigned mode, unsigned offset, u16 coefficient)
 	{
 		const bool condition[] = { false, false, true, value > 0, raw < -0x800000 || raw > 0x7fffff, value < 0, value == 0, value >= 0 };
 		if (condition[offset & 7])
-			m_pc = coefficient;
+			m_branch = coefficient;
 	}
 	else if (offset >= 0x180 && offset <= 0x18f)
 	{
@@ -320,7 +327,7 @@ void roland_csp_device::step()
 	const u32 word = m_program[m_pc];
 	const u16 coefficient = m_coefficients[m_pc];
 	eram_clock(word);
-	m_pc++;
+	m_branch = -1;
 	if (m_gate_age && ++m_gate_age > 9)
 		m_gate_age = 0;
 	s32 operand = store((word >> 9) & 7, word & 0x1ff, coefficient);
@@ -338,6 +345,15 @@ void roland_csp_device::step()
 			m_history[n][h] = m_history[n][h - 1];
 		m_history[n][0] = m_acc[n];
 	}
+	const u16 fetch = std::min<u32>(m_branch >= 0 ? m_branch : (m_delay_slots ? m_fetch[m_delay_slots - 1] : m_pc) + 1, PROGRAM_SIZE);
+	if (m_delay_slots)
+	{
+		m_pc = m_fetch[0];
+		m_fetch[0] = m_fetch[1];
+		m_fetch[m_delay_slots - 1] = fetch;
+	}
+	else
+		m_pc = fetch;
 	if (++m_slot == PROGRAM_SIZE || m_pc >= PROGRAM_SIZE)
 		finish_sample();
 }
@@ -347,6 +363,8 @@ void roland_csp_device::finish_sample()
 	m_iram_pos = (m_iram_pos - 1) & 0x1ff;
 	m_eram_pos = (m_eram_pos - 1) & (ERAM_SIZE - 1);
 	m_pc = m_slot = m_parallel_pos = 0;
+	m_fetch[0] = 1;
+	m_fetch[1] = 2;
 }
 
 void roland_csp_device::execute_run()

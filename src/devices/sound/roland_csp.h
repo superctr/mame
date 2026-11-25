@@ -22,6 +22,7 @@ public:
 	s32 ser_r(unsigned channel) const { return m_serial_out[channel & 31]; }
 	void sc_w(unsigned channel, s32 sample) { if (channel < 24) m_parallel_in[channel] = narrow(sample); }
 	void set_eram_size(u32 words) { m_eram_mask = (words - 1) & (ERAM_SIZE - 1); }
+	void set_delay_slots(unsigned slots) { m_delay_slots = std::min(slots, 2U); }
 	void run_once(unsigned slots = PROGRAM_SIZE);
 
 protected:
@@ -79,6 +80,9 @@ protected:
 	u32 m_configuration;
 	u8 m_enable;
 	u32 m_host_read;
+	u8 m_delay_slots = 1;
+	u16 m_fetch[2];
+	s32 m_branch;
 	u16 m_pc;
 	u16 m_slot;
 	bool m_halted;
