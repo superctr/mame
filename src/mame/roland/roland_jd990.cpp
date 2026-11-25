@@ -604,6 +604,7 @@ void roland_jd990_state::jd990(machine_config &config)
 	for (auto &csp : m_csp)
 		ROLAND_CSP(config, csp, 67.7376_MHz_XTAL);
 	m_csp[1]->set_eram_size(0x40000);
+	m_csp[1]->set_eram_bits(18);
 	JD990_IFCS(config, m_ifcs, 0);
 	for (int n = 0; n < 24; n++)
 		m_tvf->add_route(n, m_ifcs, 1.0, n);
