@@ -6,10 +6,10 @@
     W-30 and S-330.
 
     All four boot, run their system software from disk and play samples.
-    The S-50's and W-30's keyboard decoder (MB63H149), the S-50's panel
-    keys and output VCAs, the front panel displays of the S-50 and S-550
-    (their uPD7538A and uPD7537C controllers aren't dumped), the W-30's SCSI
-    option and some minor functions aren't emulated yet.
+    The S-50's and W-30's keyboard decoder (MB63H149), the S-50's output
+    VCAs and EXT CONTROLLER port, the front panel displays of the S-50 and
+    S-550 (their uPD7538A and uPD7537C controllers aren't dumped), the
+    W-30's SCSI option and some minor functions aren't emulated yet.
 
 ****************************************************************************/
 
@@ -130,6 +130,7 @@ public:
 		, m_sram(*this, "sram", 0x10000U, ENDIANNESS_LITTLE)
 		, m_io_view(*this, "io")
 		, m_panel(*this, "PANEL%u", 0U)
+		, m_leds(*this, "LED%u", 0U)
 	{
 	}
 
@@ -145,6 +146,7 @@ protected:
 private:
 	void ioga_out_w(u8 data);
 	u8 panel_r(offs_t offset);
+	void panel_leds_w(u8 data);
 
 	void mem_map(address_map &map) ATTR_COLD;
 
@@ -153,6 +155,7 @@ protected:
 	memory_share_creator<u16> m_sram;
 	memory_view m_io_view;
 	optional_ioport_array<5> m_panel;
+	output_finder<16> m_leds;
 };
 
 class roland_s550_state : public roland_s50_state
@@ -165,7 +168,6 @@ public:
 		, m_lowram(*this, "lowram", 0x10000U, ENDIANNESS_LITTLE)
 		, m_keysw(*this, "KEYSW%u", 0U)
 		, m_ctrltype(*this, "CTRLTYPE")
-		, m_leds(*this, "LED%u", 0U)
 		, m_keyrow(0)
 		, m_boot_inject_done(false)
 	{
@@ -193,7 +195,6 @@ private:
 	memory_share_creator<u16> m_lowram;
 	required_ioport_array<4> m_keysw;
 	required_ioport m_ctrltype;
-	output_finder<16> m_leds;
 
 	u8 m_keyrow;
 	u8 m_led_latch[4];
@@ -412,9 +413,17 @@ void roland_s50_state::p2_w(u8 data)
 	m_io_view.select(BIT(data, 5));
 }
 
+// Reading D800 + 2n drives SW SCAN n and returns the switch bus
 u8 roland_s50_state::panel_r(offs_t offset)
 {
 	return m_panel[offset].read_safe(0xff);
+}
+
+// LED bus 0-7, active low: Patch, Disk, Edit, Func, MIDI, Rec, Aux, Shift
+void roland_s50_state::panel_leds_w(u8 data)
+{
+	for (int i = 0; i < 8; i++)
+		m_leds[i] = BIT(~data, i);
 }
 
 void roland_s50_state::ioga_out_w(u8 data)
@@ -746,6 +755,7 @@ void roland_s50_state::mem_map(address_map &map)
 	m_io_view[0](0xd202, 0xd202).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
 	m_io_view[0](0xd204, 0xd204).rw(m_vdp, FUNC(tms3556_device::reg_r), FUNC(tms3556_device::reg_w));
 	m_io_view[0](0xd800, 0xd809).r(FUNC(roland_s50_state::panel_r)).umask16(0x00ff);
+	m_io_view[0](0xd800, 0xd800).w(FUNC(roland_s50_state::panel_leds_w));
 	m_io_view[0](0xc000, 0xffff).rw(m_wave, FUNC(rf5c36_device::read), FUNC(rf5c36_device::write)).umask16(0xff00);
 	m_io_view[1](0xc000, 0xcfff).mirror(0x3000).rw(FUNC(roland_s50_state::key_r), FUNC(roland_s50_state::key_w));
 }
@@ -839,6 +849,51 @@ void roland_s50_base_state::vram_map(address_map &map)
 }
 
 static INPUT_PORTS_START(s50)
+	PORT_START("PANEL0")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("0") PORT_CODE(KEYCODE_0) PORT_CODE(KEYCODE_0_PAD)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("1") PORT_CODE(KEYCODE_1) PORT_CODE(KEYCODE_1_PAD)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("2") PORT_CODE(KEYCODE_2) PORT_CODE(KEYCODE_2_PAD)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("3") PORT_CODE(KEYCODE_3) PORT_CODE(KEYCODE_3_PAD)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("4") PORT_CODE(KEYCODE_4) PORT_CODE(KEYCODE_4_PAD)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("5") PORT_CODE(KEYCODE_5) PORT_CODE(KEYCODE_5_PAD)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("6") PORT_CODE(KEYCODE_6) PORT_CODE(KEYCODE_6_PAD)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("7") PORT_CODE(KEYCODE_7) PORT_CODE(KEYCODE_7_PAD)
+
+	PORT_START("PANEL1")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("8") PORT_CODE(KEYCODE_8) PORT_CODE(KEYCODE_8_PAD)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("9") PORT_CODE(KEYCODE_9) PORT_CODE(KEYCODE_9_PAD)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("+Page") PORT_CODE(KEYCODE_PGUP)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("-Page") PORT_CODE(KEYCODE_PGDN)
+
+	PORT_START("PANEL2")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Play") PORT_CODE(KEYCODE_P)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Edit") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Disk") PORT_CODE(KEYCODE_D)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Func") PORT_CODE(KEYCODE_F)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("MIDI") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Rec") PORT_CODE(KEYCODE_R)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Aux") PORT_CODE(KEYCODE_A)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Ent") PORT_CODE(KEYCODE_ENTER) PORT_CODE(KEYCODE_ENTER_PAD)
+
+	PORT_START("PANEL3")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Patch") PORT_CODE(KEYCODE_T)
+	PORT_BIT(0x7e, IP_ACTIVE_LOW, IPT_UNUSED)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT) PORT_CODE(KEYCODE_RSHIFT)
+
+	PORT_START("PANEL4")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P1") PORT_CODE(KEYCODE_Z)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P2") PORT_CODE(KEYCODE_X)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P3") PORT_CODE(KEYCODE_C)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P4") PORT_CODE(KEYCODE_V)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P5") PORT_CODE(KEYCODE_B)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P6") PORT_CODE(KEYCODE_N)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P7") PORT_CODE(KEYCODE_M)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P8") PORT_CODE(KEYCODE_COMMA)
+
 	// 10-bit A/D inputs
 	PORT_START("ACH4")
 	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Pitch Bender") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(64)
