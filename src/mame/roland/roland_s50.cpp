@@ -5,10 +5,11 @@
     Driver for the Roland S-50 family of 12-bit samplers: S-50, S-550,
     W-30 and S-330.
 
-    The S-550, W-30 and S-330 boot, run their system software from disk and
-    play samples. The S-550's front panel display (its uPD7537C controller
-    isn't dumped), the W-30's keyboard decoder, its SCSI option and some
-    minor functions aren't emulated yet; the S-50 is still a skeleton.
+    All four boot, run their system software from disk and play samples.
+    The S-50's and W-30's keyboard decoder (MB63H149), the S-50's panel
+    keys and output VCAs, the front panel displays of the S-50 and S-550
+    (their uPD7538A and uPD7537C controllers aren't dumped), the W-30's SCSI
+    option and some minor functions aren't emulated yet.
 
 ****************************************************************************/
 
@@ -128,6 +129,7 @@ public:
 		, m_sram_bank(*this, "sram")
 		, m_sram(*this, "sram", 0x10000U, ENDIANNESS_LITTLE)
 		, m_io_view(*this, "io")
+		, m_panel(*this, "PANEL%u", 0U)
 	{
 	}
 
@@ -142,6 +144,7 @@ protected:
 
 private:
 	void ioga_out_w(u8 data);
+	u8 panel_r(offs_t offset);
 
 	void mem_map(address_map &map) ATTR_COLD;
 
@@ -149,6 +152,7 @@ protected:
 	required_memory_bank m_sram_bank;
 	memory_share_creator<u16> m_sram;
 	memory_view m_io_view;
+	optional_ioport_array<5> m_panel;
 };
 
 class roland_s550_state : public roland_s50_state
@@ -406,6 +410,11 @@ TIMER_DEVICE_CALLBACK_MEMBER(roland_s50_base_state::vdp_timer)
 void roland_s50_state::p2_w(u8 data)
 {
 	m_io_view.select(BIT(data, 5));
+}
+
+u8 roland_s50_state::panel_r(offs_t offset)
+{
+	return m_panel[offset].read_safe(0xff);
 }
 
 void roland_s50_state::ioga_out_w(u8 data)
@@ -736,6 +745,7 @@ void roland_s50_state::mem_map(address_map &map)
 	m_io_view[0](0xd200, 0xd200).r(m_vdp, FUNC(tms3556_device::vram_r));
 	m_io_view[0](0xd202, 0xd202).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
 	m_io_view[0](0xd204, 0xd204).rw(m_vdp, FUNC(tms3556_device::reg_r), FUNC(tms3556_device::reg_w));
+	m_io_view[0](0xd800, 0xd809).r(FUNC(roland_s50_state::panel_r)).umask16(0x00ff);
 	m_io_view[0](0xc000, 0xffff).rw(m_wave, FUNC(rf5c36_device::read), FUNC(rf5c36_device::write)).umask16(0xff00);
 	m_io_view[1](0xc000, 0xcfff).mirror(0x3000).rw(FUNC(roland_s50_state::key_r), FUNC(roland_s50_state::key_w));
 }
@@ -829,6 +839,18 @@ void roland_s50_base_state::vram_map(address_map &map)
 }
 
 static INPUT_PORTS_START(s50)
+	// 10-bit A/D inputs
+	PORT_START("ACH4")
+	PORT_BIT(0x3ff, 0x200, IPT_PADDLE) PORT_NAME("Pitch Bender") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32) PORT_CENTERDELTA(64)
+
+	PORT_START("ACH5")
+	PORT_ADJUSTER(100, "Volume")
+
+	PORT_START("ACH6")
+	PORT_BIT(0x3ff, 0x000, IPT_PEDAL) PORT_NAME("Aftertouch") PORT_MINMAX(0x000, 0x3ff) PORT_SENSITIVITY(50) PORT_KEYDELTA(32)
+
+	PORT_START("ACH7")
+	PORT_ADJUSTER(50, "Controller Bend Range")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(s550)
@@ -1067,6 +1089,17 @@ void roland_s50_state::s50(machine_config &config)
 
 	RF5C36(config, m_wave, 26.88_MHz_XTAL);
 	m_wave->int_callback().set_inputline(m_maincpu, i8x9x_device::HSI0_LINE);
+	for (int v = 0; v < mb654419u_device::NUM_CHANNELS; v++)
+		m_wave->add_route(v, "speaker", 1.0);
+
+	SPEAKER(config, "speaker").front_center();
+
+	m_maincpu->ach4_cb().set(FUNC(roland_s50_state::analog_r<4>)); // bender
+	m_maincpu->ach5_cb().set(FUNC(roland_s50_state::adjuster_r<5>)); // volume
+	m_maincpu->ach6_cb().set(FUNC(roland_s50_state::analog_r<6>)); // aftertouch
+	m_maincpu->ach7_cb().set(FUNC(roland_s50_state::adjuster_r<7>)); // controller bend range
+
+	add_midi(config);
 }
 
 void roland_s550_state::s550(machine_config &config)
@@ -1097,14 +1130,13 @@ void roland_s550_state::s550(machine_config &config)
 
 	BU3905(config, "outas");
 
+	m_wave->reset_routes();
 	add_tvf(config);
 	m_tvf->add_route(0, "speaker", 1.0);
-	SPEAKER(config, "speaker").front_center();
 
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
 	add_ext_port(config);
-	add_midi(config);
 }
 
 void roland_w30_state::w30(machine_config &config)
@@ -1270,7 +1302,7 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1987, s50,  0,   0, s50,  s50,  roland_s50_state,  empty_init, "Roland", "S-50 Digital Sampling Keyboard", MACHINE_NO_SOUND | MACHINE_NOT_WORKING)
+SYST(1987, s50,  0,   0, s50,  s50,  roland_s50_state,  empty_init, "Roland", "S-50 Digital Sampling Keyboard", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING)
 SYST(1987, s550, s50, 0, s550, s550, roland_s550_state, empty_init, "Roland", "S-550 Digital Sampler", MACHINE_IMPERFECT_SOUND)
 SYST(1988, w30,  0,   0, w30,  w30,  roland_w30_state,  empty_init, "Roland", "W-30 Music Workstation", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_CONTROLS | MACHINE_SUPPORTS_SAVE)
 SYST(1988, s330, w30, 0, s330, s330, roland_s330_state, empty_init, "Roland", "S-330 Digital Sampler", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE)
