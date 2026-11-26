@@ -60,6 +60,8 @@ public:
 		, m_vdp(*this, "vdp")
 		, m_wave(*this, "wave")
 		, m_keyscan(*this, "keyscan")
+		, m_tvf(*this, "tvf")
+		, m_analog(*this, "ACH%u", 0U)
 		, m_floppy_select(0)
 	{
 	}
@@ -76,7 +78,16 @@ protected:
 
 	// MB654419U TVF: one filter channel per SA-16/RF5C36 voice output; the
 	// caller routes the TVF output onwards
-	void add_tvf(machine_config &config, required_device<mb654419u_device> &tvf) ATTR_COLD;
+	void add_tvf(machine_config &config) ATTR_COLD;
+	void add_midi(machine_config &config) ATTR_COLD;
+
+	// Analog inputs on the CPU A/D channels
+	template <int N> u16 analog_r() { return m_analog[N].read_safe(0); }
+	// Volume and expression are percentage adjusters, scaled to the 10-bit A/D range
+	template <int N> u16 adjuster_r() { return m_analog[N].read_safe(0) * 0x3ff / 100; }
+	// A/D converter input from the TVF output, used by the firmware's
+	// output path check
+	u16 analog_dac_value();
 
 protected:
 	required_device<i8x9x_device> m_maincpu;
@@ -86,6 +97,8 @@ protected:
 	optional_device<tms3556_device> m_vdp;
 	required_device<sa16_base_device> m_wave;
 	optional_device<mb63h149_device> m_keyscan;
+	optional_device<mb654419u_device> m_tvf;
+	optional_ioport_array<8> m_analog;
 
 	u8 m_floppy_select;
 };
@@ -129,7 +142,6 @@ public:
 		, m_lowram_bank(*this, "lowram")
 		, m_lowmem_view(*this, "lowmem")
 		, m_lowram(*this, "lowram", 0x10000U, ENDIANNESS_LITTLE)
-		, m_tvf(*this, "tvf")
 	{
 	}
 
@@ -146,7 +158,6 @@ private:
 	required_memory_bank m_lowram_bank;
 	memory_view m_lowmem_view;
 	memory_share_creator<u16> m_lowram;
-	required_device<mb654419u_device> m_tvf;
 };
 
 class roland_w30_state : public roland_s50_base_state
@@ -160,8 +171,6 @@ public:
 		, m_psram(*this, "psram", 0x20000U, ENDIANNESS_LITTLE)
 		, m_keysw(*this, "KEYSW%u", 0U)
 		, m_leds(*this, "LED%u", 0U)
-		, m_analog(*this, "ACH%u", 0U)
-		, m_tvf(*this, "tvf")
 		, m_cursor_dial(*this, "CURSOR")
 		, m_value_dial(*this, "VALUE")
 		, m_psram_bank(0)
@@ -187,8 +196,6 @@ protected:
 	virtual void machine_reset() override ATTR_COLD;
 	virtual void device_post_load() override ATTR_COLD;
 
-	void add_midi(machine_config &config) ATTR_COLD;
-
 	void w30_mem_map(address_map &map) ATTR_COLD;
 	void psram1_map(address_map &map) ATTR_COLD;
 	void psram2_map(address_map &map) ATTR_COLD;
@@ -203,14 +210,6 @@ protected:
 	u8 leds_r(offs_t offset);
 	void leds_w(offs_t offset, u8 data);
 
-	// Analog inputs on the CPU A/D channels
-	template <int N> u16 analog_r() { return m_analog[N].read_safe(0); }
-	// Volume and expression are percentage adjusters, scaled to the 10-bit A/D range
-	template <int N> u16 adjuster_r() { return m_analog[N].read_safe(0) * 0x3ff / 100; }
-	// ACH7: A/D converter input from the TVF output, used by the firmware's
-	// output path check
-	u16 analog_dac_value();
-
 	u8 p1_r();
 	void hso1_w(int state);
 	void hso2_w(int state);
@@ -222,8 +221,6 @@ protected:
 	memory_share_creator<u16> m_psram;
 	required_ioport_array<4> m_keysw;
 	output_finder<16> m_leds;
-	optional_ioport_array<5> m_analog;
-	required_device<mb654419u_device> m_tvf;
 	optional_ioport m_cursor_dial;
 	optional_ioport m_value_dial;
 
@@ -533,9 +530,9 @@ void roland_w30_state::leds_w(offs_t offset, u8 data)
 		m_leds[offset * 8 + i] = BIT(data, i);
 }
 
-// ACH7: the A/D converter samples the mixed output of the TVF (MB654419U +
-// TVF-16; W-30 schematics show the same wiring as the S-330). After loading
-// its system software, the S-330 checks the output path: with all 16 voices
+// The A/D converter samples the mixed output of the TVF (MB654419U + TVF-16;
+// ACH7 on the S-330 and W-30, ACH6 on the S-550). After loading its system
+// software, the firmware checks the output path: with all 16 voices
 // playing a full-scale positive DC sample, it sets every envelope to 0x08 and
 // then to 0x4e, and requires 1022 consecutive readings to be <= 0x1ff and then
 // >= 0x204. If the check keeps failing, the firmware gives up and reboots (an
@@ -543,7 +540,7 @@ void roland_w30_state::leds_w(offs_t offset, u8 data)
 // The reference and gain of the analog path aren't known. They are modeled as
 // mid-scale at an output of two full-scale voices and 128 A/D steps per voice:
 // the two test levels (0.5 and 4.87 voices) then read 0x140 and 0x36f.
-u16 roland_w30_state::analog_dac_value()
+u16 roland_s50_base_state::analog_dac_value()
 {
 	const double level = m_tvf->output_level();
 	return std::clamp<s32>(0x200 + s32((level - 2.0) * 128.0), 0, 0x3ff);
@@ -639,9 +636,9 @@ void roland_s550_state::mem_map(address_map &map)
 	m_io_view[0](0xd000, 0xd000).r(m_vdp, FUNC(tms3556_device::vram_r));
 	m_io_view[0](0xd002, 0xd002).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
 	m_io_view[0](0xd004, 0xd004).rw(m_vdp, FUNC(tms3556_device::reg_r), FUNC(tms3556_device::reg_w));
-	m_io_view[0](0xd800, 0xd81f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
 	m_io_view[0](0xe000, 0xe000).w(FUNC(roland_s550_state::sram_bank_w));
 	m_io_view[0](0xe800, 0xe81f).w("outas", FUNC(bu3905_device::write)).umask16(0x00ff);
+	m_io_view[0](0xf000, 0xf01f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
 	m_io_view[0](0xf800, 0xf81f).m("scsic", FUNC(mb89352_device::map)).umask16(0x00ff);
 	m_io_view[0](0xc000, 0xffff).rw(m_wave, FUNC(rf5c36_device::read), FUNC(rf5c36_device::write)).umask16(0xff00);
 	m_io_view[1](0xc000, 0xffff).unmaprw();
@@ -711,6 +708,8 @@ static INPUT_PORTS_START(s50)
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(s550)
+	PORT_START("ACH4")
+	PORT_ADJUSTER(100, "Volume")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(w30)
@@ -830,14 +829,14 @@ static void scsi_devices(device_slot_interface &device)
 	device.option_add("harddisk", NSCSI_HARDDISK);
 }
 
-void roland_s50_base_state::add_tvf(machine_config &config, required_device<mb654419u_device> &tvf)
+void roland_s50_base_state::add_tvf(machine_config &config)
 {
-	MB654419U(config, tvf, 20_MHz_XTAL);
+	MB654419U(config, m_tvf, 20_MHz_XTAL);
 	for (int v = 0; v < mb654419u_device::NUM_CHANNELS; v++)
-		m_wave->add_route(v, tvf, 1.0, v);
+		m_wave->add_route(v, m_tvf, 1.0, v);
 }
 
-void roland_w30_state::add_midi(machine_config &config)
+void roland_s50_base_state::add_midi(machine_config &config)
 {
 	// MIDI IN feeds the CPU serial port RXD; MIDI THRU is a hardware copy of it
 	midi_port_device &mdin(MIDI_PORT(config, "mdin", midiin_slot, "midiin"));
@@ -896,6 +895,8 @@ void roland_s550_state::s550(machine_config &config)
 	s50(config);
 
 	m_maincpu->set_addrmap(AS_PROGRAM, &roland_s550_state::mem_map);
+	m_maincpu->ach4_cb().set(FUNC(roland_s550_state::adjuster_r<4>)); // volume
+	m_maincpu->ach6_cb().set(FUNC(roland_s550_state::analog_dac_value)); // A/D compare level
 	m_fdc->intrq_wr_callback().set_nop();
 
 	//UPD7537(config.device_replace(), "fipcpu", 400_kHz_XTAL);
@@ -917,11 +918,13 @@ void roland_s550_state::s550(machine_config &config)
 
 	BU3905(config, "outas");
 
-	add_tvf(config, m_tvf);
+	add_tvf(config);
 	m_tvf->add_route(0, "speaker", 1.0);
 	SPEAKER(config, "speaker").front_center();
 
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
+
+	add_midi(config);
 }
 
 void roland_w30_state::w30(machine_config &config)
@@ -969,7 +972,7 @@ void roland_w30_state::w30(machine_config &config)
 
 	//UPD65006GF_376_3B8(config, "output", 26.88_MHz_XTAL);
 
-	add_tvf(config, m_tvf);
+	add_tvf(config);
 	m_tvf->add_route(0, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
@@ -1027,7 +1030,7 @@ void roland_s330_state::s330(machine_config &config)
 	m_wave->int_callback().set_inputline(m_maincpu, i8x9x_device::HSI0_LINE);
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
-	add_tvf(config, m_tvf);
+	add_tvf(config);
 	m_tvf->add_route(0, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
