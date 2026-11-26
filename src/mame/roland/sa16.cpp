@@ -350,7 +350,7 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 				else
 					voice.m_env_level = std::max<s32>(target, s32(voice.m_env_level) - s32(steps));
 			}
-			if (voice.m_env_armed && voice.m_env_level == target)
+			if (voice.m_env_armed && mag != 0 && voice.m_env_level == target)
 				raise_env_event(v);
 
 			// --- Wave playback (key-on mask) ---
