@@ -5,9 +5,10 @@
     Driver for the Roland S-50 family of 12-bit samplers: S-50, S-550,
     W-30 and S-330.
 
-    The W-30 and S-330 boot, run their system software from disk and play
-    samples. The W-30's keyboard decoder, its SCSI option and some minor
-    functions aren't emulated yet; the S-50 and S-550 are still skeletons.
+    The S-550, W-30 and S-330 boot, run their system software from disk and
+    play samples. The S-550's front panel display (its uPD7537C controller
+    isn't dumped), the W-30's keyboard decoder, its SCSI option and some
+    minor functions aren't emulated yet; the S-50 is still a skeleton.
 
 ****************************************************************************/
 
@@ -158,6 +159,11 @@ public:
 		, m_lowram_bank(*this, "lowram")
 		, m_lowmem_view(*this, "lowmem")
 		, m_lowram(*this, "lowram", 0x10000U, ENDIANNESS_LITTLE)
+		, m_keysw(*this, "KEYSW%u", 0U)
+		, m_ctrltype(*this, "CTRLTYPE")
+		, m_leds(*this, "LED%u", 0U)
+		, m_keyrow(0)
+		, m_boot_inject_done(false)
 	{
 	}
 
@@ -165,15 +171,29 @@ public:
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
+	virtual void machine_reset() override ATTR_COLD;
 
 private:
 	void sram_bank_w(u8 data);
+
+	// M6003A switch and LED gate array: four LED latches, four key rows
+	u8 keysw_r();
+	void keysw_w(u8 data);
+	u8 leds_r(offs_t offset);
+	void leds_w(offs_t offset, u8 data);
 
 	void mem_map(address_map &map) ATTR_COLD;
 
 	required_memory_bank m_lowram_bank;
 	memory_view m_lowmem_view;
 	memory_share_creator<u16> m_lowram;
+	required_ioport_array<4> m_keysw;
+	required_ioport m_ctrltype;
+	output_finder<16> m_leds;
+
+	u8 m_keyrow;
+	u8 m_led_latch[4];
+	bool m_boot_inject_done;
 };
 
 class roland_w30_state : public roland_s50_base_state
@@ -300,6 +320,20 @@ void roland_s550_state::machine_start()
 
 	m_lowram_bank->configure_entries(0, 8, &m_lowram[0], 0x2000);
 	m_lowram_bank->set_entry(0);
+
+	std::fill(std::begin(m_led_latch), std::end(m_led_latch), 0);
+
+	save_item(NAME(m_keyrow));
+	save_item(NAME(m_led_latch));
+	save_item(NAME(m_boot_inject_done));
+}
+
+void roland_s550_state::machine_reset()
+{
+	roland_s50_state::machine_reset();
+
+	m_keyrow = 0;
+	m_boot_inject_done = false;
 }
 
 void roland_s50_state::machine_reset()
@@ -384,6 +418,47 @@ void roland_s550_state::sram_bank_w(u8 data)
 	m_sram_bank->set_entry(BIT(data, 0, 2));
 	m_lowram_bank->set_entry(BIT(data, 2, 3));
 	m_lowmem_view.select(BIT(data, 2, 3) == 0 ? 0 : 1);
+}
+
+// Successive reads return the key rows SCAN0-3; a write restarts at SCAN0.
+// The boot ROM's first scan reads SCAN0 and SCAN1 to pick the EXT CTRL
+// device from the key held at power-on (1 = off, 2 = mouse, 3 = RC-100),
+// before MAME reads the host keyboard at the end of the first frame, so the
+// configured choice is injected into that read unless a key is held.
+u8 roland_s550_state::keysw_r()
+{
+	const u8 row = m_keyrow;
+	u8 value = m_keysw[row]->read();
+	if (machine().side_effects_disabled())
+		return value;
+
+	m_keyrow = (m_keyrow + 1) & 3;
+	if (!m_boot_inject_done && row == 1)
+	{
+		m_boot_inject_done = true;
+		if (value == 0xff)
+			value &= ~(1 << (1 + (m_ctrltype->read() & 3)));
+	}
+	return value;
+}
+
+void roland_s550_state::keysw_w(u8 data)
+{
+	m_keyrow = 0;
+}
+
+u8 roland_s550_state::leds_r(offs_t offset)
+{
+	return m_led_latch[offset];
+}
+
+// LED bus 0-11: Execute, Utility, Edit, Sub Menu, Menu, Func, Play, MIDI,
+// Command, Disk, MIDI Message, Enter
+void roland_s550_state::leds_w(offs_t offset, u8 data)
+{
+	m_led_latch[offset] = data;
+	for (int i = 0; i < 4; i++)
+		m_leds[offset * 4 + i] = BIT(data, i);
 }
 
 u8 roland_w30_state::psram_bank_r()
@@ -682,6 +757,9 @@ void roland_s550_state::mem_map(address_map &map)
 	m_io_view[0](0xd000, 0xd000).r(m_vdp, FUNC(tms3556_device::vram_r));
 	m_io_view[0](0xd002, 0xd002).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
 	m_io_view[0](0xd004, 0xd004).rw(m_vdp, FUNC(tms3556_device::reg_r), FUNC(tms3556_device::reg_w));
+	m_io_view[0](0xd800, 0xd807).rw(FUNC(roland_s550_state::leds_r), FUNC(roland_s550_state::leds_w)).umask16(0x00ff);
+	m_io_view[0](0xd808, 0xd809).nopw();
+	m_io_view[0](0xd80a, 0xd80a).rw(FUNC(roland_s550_state::keysw_r), FUNC(roland_s550_state::keysw_w));
 	m_io_view[0](0xe000, 0xe000).w(FUNC(roland_s550_state::sram_bank_w));
 	m_io_view[0](0xe800, 0xe81f).w("outas", FUNC(bu3905_device::write)).umask16(0x00ff);
 	m_io_view[0](0xf000, 0xf01f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
@@ -754,8 +832,52 @@ static INPUT_PORTS_START(s50)
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(s550)
+	PORT_START("KEYSW0")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("7 STU") PORT_CODE(KEYCODE_7) PORT_CODE(KEYCODE_7_PAD)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("8 VWX") PORT_CODE(KEYCODE_8) PORT_CODE(KEYCODE_8_PAD)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("9 YZ/") PORT_CODE(KEYCODE_9) PORT_CODE(KEYCODE_9_PAD)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Dec/No") PORT_CODE(KEYCODE_MINUS) PORT_CODE(KEYCODE_MINUS_PAD)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Inc/Yes") PORT_CODE(KEYCODE_EQUALS) PORT_CODE(KEYCODE_PLUS_PAD)
+	PORT_BIT(0xe0, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEYSW1")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("0 -+") PORT_CODE(KEYCODE_0) PORT_CODE(KEYCODE_0_PAD)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("1 ABC") PORT_CODE(KEYCODE_1) PORT_CODE(KEYCODE_1_PAD)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("2 DEF") PORT_CODE(KEYCODE_2) PORT_CODE(KEYCODE_2_PAD)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("3 GHI") PORT_CODE(KEYCODE_3) PORT_CODE(KEYCODE_3_PAD)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("4 JKL") PORT_CODE(KEYCODE_4) PORT_CODE(KEYCODE_4_PAD)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("5 MNO") PORT_CODE(KEYCODE_5) PORT_CODE(KEYCODE_5_PAD)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("6 PQR") PORT_CODE(KEYCODE_6) PORT_CODE(KEYCODE_6_PAD)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Enter Space") PORT_CODE(KEYCODE_ENTER) PORT_CODE(KEYCODE_ENTER_PAD)
+
+	PORT_START("KEYSW2")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Play") PORT_CODE(KEYCODE_P)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Edit") PORT_CODE(KEYCODE_E)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Disk") PORT_CODE(KEYCODE_D)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Menu") PORT_CODE(KEYCODE_M)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Sub Menu") PORT_CODE(KEYCODE_S)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Command") PORT_CODE(KEYCODE_C)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
+	PORT_START("KEYSW3")
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("MIDI") PORT_CODE(KEYCODE_I)
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Func") PORT_CODE(KEYCODE_F)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Utility") PORT_CODE(KEYCODE_U)
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Right") PORT_CODE(KEYCODE_RIGHT)
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Execute") PORT_CODE(KEYCODE_X)
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_UNUSED)
+
 	PORT_START("ACH4")
 	PORT_ADJUSTER(100, "Volume")
+
+	PORT_START("CTRLTYPE")
+	PORT_CONFNAME(0x03, 0x01, "Boot controller type")
+	PORT_CONFSETTING(0x00, "None (panel keys)")
+	PORT_CONFSETTING(0x01, "Mouse")
+	PORT_CONFSETTING(0x02, "RC-100")
 INPUT_PORTS_END
 
 static INPUT_PORTS_START(w30)
@@ -1149,6 +1271,6 @@ ROM_END
 
 
 SYST(1987, s50,  0,   0, s50,  s50,  roland_s50_state,  empty_init, "Roland", "S-50 Digital Sampling Keyboard", MACHINE_NO_SOUND | MACHINE_NOT_WORKING)
-SYST(1987, s550, s50, 0, s550, s550, roland_s550_state, empty_init, "Roland", "S-550 Digital Sampler", MACHINE_NO_SOUND | MACHINE_NOT_WORKING)
+SYST(1987, s550, s50, 0, s550, s550, roland_s550_state, empty_init, "Roland", "S-550 Digital Sampler", MACHINE_IMPERFECT_SOUND)
 SYST(1988, w30,  0,   0, w30,  w30,  roland_w30_state,  empty_init, "Roland", "W-30 Music Workstation", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_CONTROLS | MACHINE_SUPPORTS_SAVE)
 SYST(1988, s330, w30, 0, s330, s330, roland_s330_state, empty_init, "Roland", "S-330 Digital Sampler", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE)
