@@ -22,7 +22,9 @@
 #include "bus/midi/midi.h"
 #include "bus/nscsi/cd.h"
 #include "bus/nscsi/hd.h"
-#include "bus/roland/extport.h"
+#include "bus/msx/ctrl/ctrl.h"
+#include "bus/msx/ctrl/mouse.h"
+#include "bus/msx/ctrl/rc100.h"
 #include "cpu/mcs96/i8x9x.h"
 #include "imagedev/floppy.h"
 #include "machine/mb87030.h"
@@ -62,11 +64,15 @@ public:
 		, m_keyscan(*this, "keyscan")
 		, m_tvf(*this, "tvf")
 		, m_analog(*this, "ACH%u", 0U)
+		, m_ext_port(*this, "extport")
 		, m_floppy_select(0)
+		, m_ext_dir(0)
 	{
 	}
 
 protected:
+	virtual void machine_start() override ATTR_COLD;
+
 	u8 floppy_status_r();
 	u8 floppy_unknown_r();
 	u16 key_r(offs_t offset);
@@ -89,6 +95,14 @@ protected:
 	// output path check
 	u16 analog_dac_value();
 
+	// EXT CTRL port: pins 1-4 and 6-7 read on bits 0-5; pins 6 and 7 are
+	// driven from bits 4 and 5 when the direction register makes them
+	// outputs, pin 8 from bit 6
+	void add_ext_port(machine_config &config) ATTR_COLD;
+	u8 ext_r();
+	void ext_w(u8 data);
+	void ext_dir_w(u8 data);
+
 protected:
 	required_device<i8x9x_device> m_maincpu;
 	required_memory_bank m_common_ram;
@@ -99,8 +113,10 @@ protected:
 	optional_device<mb63h149_device> m_keyscan;
 	optional_device<mb654419u_device> m_tvf;
 	optional_ioport_array<8> m_analog;
+	optional_device<msx_general_purpose_port_device> m_ext_port;
 
 	u8 m_floppy_select;
+	u8 m_ext_dir;
 };
 
 class roland_s50_state : public roland_s50_base_state
@@ -238,7 +254,6 @@ public:
 		: roland_w30_state(mconfig, type, tag)
 		, m_lcdc(*this, "lcdc")
 		, m_ctrltype(*this, "CTRLTYPE")
-		, m_ext_port(*this, "extport")
 		, m_boot_inject_done(false)
 	{
 	}
@@ -258,20 +273,25 @@ protected:
 
 	required_device<hd44780_device> m_lcdc;
 	required_ioport m_ctrltype;
-	required_device<roland_ext_port_device> m_ext_port;
 	bool m_boot_inject_done; // true after first boot-scan row 1 has been served
 };
 
+void roland_s50_base_state::machine_start()
+{
+	save_item(NAME(m_floppy_select));
+	save_item(NAME(m_ext_dir));
+}
+
 void roland_s50_state::machine_start()
 {
+	roland_s50_base_state::machine_start();
+
 	floppy_select_w(0);
 	m_fdc->dden_w(0);
 
 	m_sram_bank->configure_entries(0, 4, &m_sram[0], 0x4000);
 	m_sram_bank->set_entry(0);
 	m_common_ram->set_base(&m_sram[0]);
-
-	save_item(NAME(m_floppy_select));
 }
 
 void roland_s550_state::machine_start()
@@ -289,6 +309,8 @@ void roland_s50_state::machine_reset()
 
 void roland_w30_state::machine_start()
 {
+	roland_s50_base_state::machine_start();
+
 	m_fdc->dden_w(0);
 
 	m_psram1_bank->configure_entries(0, 8, &m_psram[0x10000 / 2], 0x2000);
@@ -301,7 +323,6 @@ void roland_w30_state::machine_start()
 		m_leds[i] = 0;
 
 	save_item(NAME(m_psram_bank));
-	save_item(NAME(m_floppy_select));
 	save_item(NAME(m_keyrow));
 	save_item(NAME(m_led_latch));
 
@@ -439,6 +460,29 @@ void roland_w30_state::floppy_select_w(u8 data)
 u8 roland_s50_base_state::floppy_unknown_r()
 {
 	return 1;
+}
+
+u8 roland_s50_base_state::ext_r()
+{
+	return m_ext_port->read();
+}
+
+void roland_s50_base_state::ext_w(u8 data)
+{
+	if (BIT(m_ext_dir, 0))
+		m_ext_port->pin_6_w(BIT(data, 4));
+	if (BIT(m_ext_dir, 1))
+		m_ext_port->pin_7_w(BIT(data, 5));
+	m_ext_port->pin_8_w(BIT(data, 6));
+}
+
+void roland_s50_base_state::ext_dir_w(u8 data)
+{
+	m_ext_dir = data;
+	if (!BIT(data, 0))
+		m_ext_port->pin_6_w(1);
+	if (!BIT(data, 1))
+		m_ext_port->pin_7_w(1);
 }
 
 u16 roland_s50_base_state::key_r(offs_t offset)
@@ -632,6 +676,8 @@ void roland_s550_state::mem_map(address_map &map)
 	map(0xc000, 0xffff).view(m_io_view);
 	m_io_view[0](0xc200, 0xc200).rw(FUNC(roland_s550_state::floppy_status_r), FUNC(roland_s550_state::floppy_select_w));
 	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s550_state::floppy_unknown_r));
+	m_io_view[0](0xc500, 0xc500).rw(FUNC(roland_s550_state::ext_r), FUNC(roland_s550_state::ext_w));
+	m_io_view[0](0xc600, 0xc600).w(FUNC(roland_s550_state::ext_dir_w));
 	m_io_view[0](0xc800, 0xc807).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
 	m_io_view[0](0xd000, 0xd000).r(m_vdp, FUNC(tms3556_device::vram_r));
 	m_io_view[0](0xd002, 0xd002).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
@@ -677,8 +723,8 @@ void roland_s330_state::s330_mem_map(address_map &map)
 
 	map(0xc200, 0xc200).rw(FUNC(roland_s330_state::floppy_status_r), FUNC(roland_s330_state::floppy_select_w));
 	map(0xc300, 0xc302).rw(m_lcdc, FUNC(hd44780_device::read), FUNC(hd44780_device::write)).umask16(0x00ff);
-	map(0xc400, 0xc400).rw(m_ext_port, FUNC(roland_ext_port_device::read), FUNC(roland_ext_port_device::write));
-	map(0xc500, 0xc500).w(m_ext_port, FUNC(roland_ext_port_device::pindir_w));
+	map(0xc400, 0xc400).rw(FUNC(roland_s330_state::ext_r), FUNC(roland_s330_state::ext_w));
+	map(0xc500, 0xc500).w(FUNC(roland_s330_state::ext_dir_w));
 	map(0xc600, 0xc600).rw(FUNC(roland_s330_state::psram_bank_r), FUNC(roland_s330_state::psram_bank_w));
 	map(0xc800, 0xc806).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
 	map(0xd000, 0xd000).r(m_vdp, FUNC(tms3556_device::vram_r));
@@ -836,6 +882,17 @@ void roland_s50_base_state::add_tvf(machine_config &config)
 		m_wave->add_route(v, m_tvf, 1.0, v);
 }
 
+static void ext_ctrl_devices(device_slot_interface &device)
+{
+	device.option_add("mouse", MSX_MOUSE);
+	device.option_add("rc100", ROLAND_RC100);
+}
+
+void roland_s50_base_state::add_ext_port(machine_config &config)
+{
+	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, ext_ctrl_devices, "mouse");
+}
+
 void roland_s50_base_state::add_midi(machine_config &config)
 {
 	// MIDI IN feeds the CPU serial port RXD; MIDI THRU is a hardware copy of it
@@ -924,6 +981,7 @@ void roland_s550_state::s550(machine_config &config)
 
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
+	add_ext_port(config);
 	add_midi(config);
 }
 
@@ -1037,8 +1095,7 @@ void roland_s330_state::s330(machine_config &config)
 
 	BU3905(config, "outas");
 
-	// TODO: move to the MSX general purpose port as roland_s770 does, for the RC-100 (bus/msx/ctrl/rc100)
-	ROLAND_EXT_PORT(config, m_ext_port, roland_ext_port_devices, "mouse");
+	add_ext_port(config);
 
 	add_midi(config);
 
