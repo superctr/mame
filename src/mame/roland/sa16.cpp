@@ -495,7 +495,9 @@ u8 sa16_base_device::read(offs_t offset)
 			value = (m_active_channels & 0xfe) | (m_input_ready ? 1 : 0);
 		}
 		else
+		{
 			value = m_active_channels;
+		}
 		LOGMASKED(LOG_REG, "%s: active_channels[0..7] => %02x\n", machine().describe_context(), value);
 		break;
 	case 1: // Envelope event: (voice + 1) of the lowest flagged voice, 0 if none.
@@ -547,7 +549,9 @@ u8 sa16_base_device::read(offs_t offset)
 			value = u8(m_input_latch << 4);
 		}
 		else
+		{
 			value = u8(wram_r16(block_base() + m_blockoffset) << 4);
+		}
 		LOGMASKED(LOG_WRAM, "%s: WRAM[%08x].lo => %02x\n", machine().describe_context(), block_base() + m_blockoffset, value);
 		break;
 	case 5: // Waveram port high, or the input sample, which the read takes
@@ -561,7 +565,9 @@ u8 sa16_base_device::read(offs_t offset)
 			value = u8(m_input_latch >> 4);
 		}
 		else
+		{
 			value = u8(wram_r16(block_base() + m_blockoffset) >> 4);
+		}
 		LOGMASKED(LOG_WRAM, "%s: WRAM[%08x].hi => %02x\n", machine().describe_context(), block_base() + m_blockoffset, value);
 		break;
 	case 6:
@@ -630,7 +636,7 @@ void sa16_base_device::write(offs_t offset, u8 data)
 		m_stream->update();
 		if (const int r = row(m_reg800_woffset); r >= 0)
 		{
-			m_regs[r] = (0x00ff & m_regs[r]) | data<<8;
+			m_regs[r] = (0x00ff & m_regs[r]) | (data << 8);
 
 			// The high byte completes a register write
 			const int block = BIT(m_reg800_woffset, 4, 4);
