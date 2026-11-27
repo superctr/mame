@@ -21,7 +21,7 @@ public:
 	static constexpr int NUM_VOICES = 16;
 	static constexpr int NUM_OUTPUTS = 8;
 
-	mb654419u_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock = 0);
+	mb654419u_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 	template <typename T> void set_dsp(T &&tag) { m_dsp.set_tag(std::forward<T>(tag)); }
 

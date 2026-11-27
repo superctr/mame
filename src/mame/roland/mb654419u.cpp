@@ -28,6 +28,7 @@
 #include "mb654419u.h"
 
 #include <algorithm>
+#include <iterator>
 
 #define VERBOSE (0)
 #include "logmacro.h"
@@ -39,20 +40,19 @@ mb654419u_device::mb654419u_device(const machine_config &mconfig, const char *ta
 	: device_t(mconfig, MB654419U, tag, owner, clock)
 	, device_sound_interface(mconfig, *this)
 	, m_dsp(*this, finder_base::DUMMY_TAG)
-	, m_stream(nullptr)
-	, m_address(0)
-	, m_data(0)
-	, m_pair{ 0, 0 }
-	, m_out{ 0 }
-	, m_out_count(0)
-	, m_dac(0)
-	, m_load(true)
 {
 }
 
 void mb654419u_device::device_start()
 {
 	m_stream = stream_alloc(NUM_VOICES, NUM_OUTPUTS, clock() / 224, STREAM_SYNCHRONOUS);
+
+	m_address = 0;
+	m_data = 0;
+	std::fill(std::begin(m_pair), std::end(m_pair), 0);
+	std::fill(std::begin(m_out), std::end(m_out), 0);
+	m_out_count = 0;
+	m_dac = 0;
 
 	save_item(NAME(m_address));
 	save_item(NAME(m_data));
@@ -97,12 +97,12 @@ void mb654419u_device::data_w(offs_t offset, u8 data)
 	m_data = (m_data & 0x00ff) | (data << 8);
 	if (m_load)
 	{
-		LOG("program %04x\n", m_data);
+		LOG("%s: program %04x\n", machine().describe_context(), m_data);
 		m_dsp->program_w(m_data);
 	}
 	else
 	{
-		LOG("%02x = %04x\n", m_address, m_data);
+		LOG("%s: %02x = %04x\n", machine().describe_context(), m_address, m_data);
 		m_pair[0] = m_address;
 		m_pair[1] = m_data;
 	}
@@ -110,7 +110,7 @@ void mb654419u_device::data_w(offs_t offset, u8 data)
 
 void mb654419u_device::control_w(u8 data)
 {
-	LOG("f00c = %02x\n", data);
+	LOG("%s: f00c = %02x\n", machine().describe_context(), data);
 	if (BIT(data, 7) != m_load)
 	{
 		m_load = BIT(data, 7);
@@ -121,7 +121,7 @@ void mb654419u_device::control_w(u8 data)
 template <u32 Base>
 void mb654419u_device::setup_w(offs_t offset, u8 data)
 {
-	LOG("f0%02x = %02x\n", (Base + offset) * 2, data);
+	LOG("%s: f0%02x = %02x\n", machine().describe_context(), (Base + offset) * 2, data);
 }
 
 void mb654419u_device::dsp_w(u16 data)
