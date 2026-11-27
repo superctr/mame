@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:AJR, Carl Lom
+// copyright-holders:AJR, Carl Lom, giulioz
 /****************************************************************************
 
     Driver for the Roland S-50 family of 12-bit samplers: S-50, S-550,
@@ -77,9 +77,9 @@ protected:
 	virtual void machine_start() override ATTR_COLD;
 
 	u8 floppy_status_r();
-	u8 floppy_unknown_r();
+	u8 panel_link_r();
 	u16 key_r(offs_t offset);
-	void key_w(offs_t offset, u16 data);
+	void key_w(offs_t offset, u16 data, u16 mem_mask);
 
 	TIMER_DEVICE_CALLBACK_MEMBER(vdp_timer);
 
@@ -229,7 +229,7 @@ protected:
 	// HSO1/HSO2 hold the "moved" flag in clear.
 	struct encoder_state
 	{
-		u8 last = 0;       // last dial reading
+		u8 last = 0;       // dial position the firmware has taken
 		bool dir = false;  // direction of last step (true = CCW, decrement)
 		bool moved = false; // wheel turned since last clear
 		bool clr_n = true; // /CLR level (HSO)
@@ -552,7 +552,8 @@ void roland_w30_state::floppy_select_w(u8 data)
 	m_floppy_select = data;
 }
 
-u8 roland_s50_base_state::floppy_unknown_r()
+// The serial link to the panel CPU: bit 0 ready
+u8 roland_s50_base_state::panel_link_r()
 {
 	return 1;
 }
@@ -585,9 +586,15 @@ u16 roland_s50_base_state::key_r(offs_t offset)
 	return m_keyscan->read(offset) << 1;
 }
 
-void roland_s50_base_state::key_w(offs_t offset, u16 data)
+// The key scanner's data bus is D1-D8: a byte write changes its own lane's bits
+void roland_s50_base_state::key_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	m_keyscan->write(offset, data >> 1);
+	u8 cell = m_keyscan->read(offset);
+	if (ACCESSING_BITS_0_7)
+		cell = (cell & 0x80) | BIT(data, 1, 7);
+	if (ACCESSING_BITS_8_15)
+		cell = (cell & 0x7f) | (BIT(data, 8) << 7);
+	m_keyscan->write(offset, cell);
 }
 
 // Keyswitch read register (M60013)
@@ -609,17 +616,16 @@ void roland_w30_state::keysw_w(u8 data)
 	m_keyrow = 0; // Reset keyscan row counter
 }
 
-// Sample the dial for movement since the last read. The moved flag is held in
-// clear while the HSO is low.
+// Sample the dial: one detent at a time, the next once the firmware has
+// taken this one. The moved flag is held in clear while the HSO is low.
 void roland_w30_state::encoder_sample(encoder_state &enc, optional_ioport &dial)
 {
 	const u8 cur = u8(dial->read());
-	if (cur != enc.last)
+	if (cur != enc.last && !enc.moved && enc.clr_n)
 	{
 		enc.dir = s8(cur - enc.last) < 0; // firmware decodes dir=1 as -1
-		if (enc.clr_n)
-			enc.moved = true;
-		enc.last = cur;
+		enc.last += enc.dir ? -1 : 1;
+		enc.moved = true;
 	}
 }
 
@@ -748,7 +754,7 @@ void roland_s50_state::mem_map(address_map &map)
 	map(0xc000, 0xffff).view(m_io_view);
 	m_io_view[0](0xc000, 0xc000).w(FUNC(roland_s50_state::ioga_out_w));
 	m_io_view[0](0xc200, 0xc200).rw(FUNC(roland_s50_state::floppy_status_r), FUNC(roland_s50_state::floppy_select_w));
-	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s50_state::floppy_unknown_r));
+	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s50_state::panel_link_r));
 	m_io_view[0](0xc800, 0xc807).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
 	m_io_view[0](0xd200, 0xd200).r(m_vdp, FUNC(tms3556_device::vram_r));
 	m_io_view[0](0xd202, 0xd202).rw(m_vdp, FUNC(tms3556_device::initptr_r), FUNC(tms3556_device::vram_w));
@@ -769,7 +775,7 @@ void roland_s550_state::mem_map(address_map &map)
 	map(0x8000, 0xbfff).bankrw(m_sram_bank);
 	map(0xc000, 0xffff).view(m_io_view);
 	m_io_view[0](0xc200, 0xc200).rw(FUNC(roland_s550_state::floppy_status_r), FUNC(roland_s550_state::floppy_select_w));
-	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s550_state::floppy_unknown_r));
+	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s550_state::panel_link_r));
 	m_io_view[0](0xc500, 0xc500).rw(FUNC(roland_s550_state::ext_r), FUNC(roland_s550_state::ext_w));
 	m_io_view[0](0xc600, 0xc600).w(FUNC(roland_s550_state::ext_dir_w));
 	m_io_view[0](0xc800, 0xc807).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
@@ -1151,6 +1157,7 @@ void roland_s50_state::s50(machine_config &config)
 		m_wave->add_route(v, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
+	MICROPHONE(config, "mic").add_route(0, m_wave, 1.0, 0);
 
 	m_maincpu->ach4_cb().set(FUNC(roland_s50_state::analog_r<4>)); // bender
 	m_maincpu->ach5_cb().set(FUNC(roland_s50_state::adjuster_r<5>)); // volume
@@ -1246,6 +1253,7 @@ void roland_w30_state::w30(machine_config &config)
 	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
+	MICROPHONE(config, "mic").add_route(0, m_wave, 1.0, 0);
 
 	add_midi(config);
 }
@@ -1304,6 +1312,7 @@ void roland_s330_state::s330(machine_config &config)
 	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
+	MICROPHONE(config, "mic").add_route(0, m_wave, 1.0, 0);
 
 	BU3905(config, "outas");
 
