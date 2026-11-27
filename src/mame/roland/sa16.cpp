@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:AJR, Carl Lom
+// copyright-holders:AJR, Carl Lom, giulioz
 /****************************************************************************
 
     Roland RF5C36 (15229840) & SA-16 (15229874) Sampler Custom ICs
@@ -20,6 +20,10 @@
     1.10 firmware (LOBANK2 1137-1336, 0871, 0c02) and confirmed by the same
     write sequence in the S-330 system. Voice v uses regs v*0x10 + 0..6;
     its envelope registers sit one block higher, at (v+1)*0x10 + 3/7/8.
+    The registers are one SRAM of 16 blocks of 9 rows: the select decodes
+    4 bits of block and 4 of index, indices 9-f hold nothing, and voice
+    15's envelope registers (103/107/108 as the firmware addresses them)
+    are rows 3, 7 and 8 of block 0.
 
       reg 0      pitch, 2.14 (0x4000 = original pitch)
       reg 1:2    32-bit address counter, 18.14 (reg 1 = high word): the
@@ -36,14 +40,18 @@
                  address is anchor - counter (anchor + counter in reverse
                  mode, where the anchor is start + 4).
       env reg 3  [rate:target]; rate is signed, logarithmic (8 steps per
-                 doubling of speed). Reads give the current level.
+                 doubling of speed); a target written with rate 0 is
+                 taken at once. Reads give the current level.
       env reg 7  read: current envelope level (firmware waits for 0)
-      env reg 8  write: set the envelope level immediately
+      env reg 8  written 8080 by the S-50 and S-550 at every release and
+                 0 at a voice kill, the target after a rate 0 write by the
+                 S-330 and W-30; no effect modelled
 
     Key-on is the 16-bit mask in ports 0/1 (bit per voice).
 
     Envelope events: when a ramp reaches its target the voice is flagged
-    and ENVINT (HSI.0 on the host) goes low while any voice is flagged.
+    and ENVINT (HSI.0 on the host) goes low while any voice is flagged; a
+    target written with rate 0 raises none.
     Port 1 reads return (voice + 1) of the lowest flagged voice (0 when
     none) without side effects; writing the voice's env reg 3, 7 or 8
     clears its flag. The S-330 and W-30 envelope services read port 1, program
@@ -60,6 +68,14 @@
     The S-330 confirms the layout: a sample loaded at word 0x1e000 is
     programmed as anchor 0x225ef (mode bits 2-3 = 2), counter 0x45ef << 14,
     loop length 0x2fd.
+
+    Sampling, from the W-30's sampling code: port 6 bit 0 turns the input
+    on and bit 1 records. Each frame takes the input as a 12-bit sample;
+    port 0 bit 0 then reads 1 until the port 5 read takes it (ports 4/5
+    read it while the input is on). Recording writes it to wave RAM at
+    the read address of voice 12, the voice the firmware sets up as a
+    forward tone, which is then silent. Port 7 is written 01 by the boot
+    ROM.
 
 ****************************************************************************/
 
@@ -122,7 +138,7 @@ sa16_base_device::sa16_base_device(const machine_config &mconfig, device_type ty
 	, device_memory_interface(mconfig, *this)
 	, m_space_config("waveram", ENDIANNESS_LITTLE, 16, 21, 0, address_map_constructor(FUNC(sa16_base_device::sa16), this))
 	, m_space_regs_config("regs", ENDIANNESS_LITTLE, 8, 4, 0, address_map_constructor(FUNC(sa16_base_device::regs_map), this))
-	, m_space_chanregs_config("chanregs", ENDIANNESS_LITTLE, 16, 11, 0, address_map_constructor(FUNC(sa16_base_device::chanregs_map), this))
+	, m_space_chanregs_config("chanregs", ENDIANNESS_LITTLE, 16, 9, 0, address_map_constructor(FUNC(sa16_base_device::chanregs_map), this))
 	, m_int_callback(*this)
 	, m_sh_callback(*this)
 	, m_stream(nullptr)
@@ -163,8 +179,10 @@ void sa16_base_device::regs_map(address_map &map)
 			{
 			case 0: return m_active_channels & 0xff;
 			case 1: return m_active_channels >> 8;
-			case 2: return m_regs800[m_reg800_roffset] & 0xff;
-			case 3: return m_regs800[m_reg800_roffset] >> 8;
+			case 2: return reg_r(m_reg800_roffset) & 0xff;
+			case 3: return reg_r(m_reg800_roffset) >> 8;
+			case 6: return m_sampling;
+			case 7: return m_port7;
 			case 8: return m_block;
 			default: return u8(0);
 			}
@@ -174,6 +192,8 @@ void sa16_base_device::regs_map(address_map &map)
 			{
 			case 0: m_active_channels = (m_active_channels & 0xff00) | data; break;
 			case 1: m_active_channels = (m_active_channels & 0x00ff) | (data << 8); break;
+			case 6: m_sampling = data; break;
+			case 7: m_port7 = data; break;
 			case 8: m_block = data; m_smpcounter = 0; break;
 			}
 		})
@@ -187,9 +207,13 @@ void sa16_base_device::regs_map(address_map &map)
 
 void sa16_base_device::chanregs_map(address_map &map)
 {
-	map(0x000, 0x7ff).lrw16(
-		NAME([this] (offs_t offset) -> u16 { return m_regs800[offset]; }),
-		NAME([this] (offs_t offset, u16 data) { m_regs800[offset] = data; })
+	map(0x000, 0x1ff).lrw16(
+		NAME([this] (offs_t offset) -> u16 { return reg_r(offset); }),
+		NAME([this] (offs_t offset, u16 data)
+		{
+			if (const int r = row(offset); r >= 0)
+				m_regs[r] = data;
+		})
 	);
 }
 
@@ -203,9 +227,10 @@ void sa16_base_device::device_start()
 	// Set up wave RAM cache for sound_stream_update
 	space(AS_WRAM).cache(m_wram_cache);
 
-	// Allocate sound stream: one output per voice at 30 kHz (clock / 896).
-	// The voices are mixed (and filtered) by the TVF (MB654419U) or the board.
-	m_stream = stream_alloc(0, NUM_VOICES, clock() / CLOCK_DIVIDER);
+	// Allocate sound stream: the sampling input, one output per voice at
+	// 30 kHz (clock / 896). The voices are mixed (and filtered) by the TVF
+	// (MB654419U) or the board.
+	m_stream = stream_alloc(1, NUM_VOICES, clock() / CLOCK_DIVIDER);
 
 	// Envelope events are detected inside the stream update; without this the
 	// interrupt could be up to one sound batch (~10 ms) late, which made chained
@@ -222,7 +247,11 @@ void sa16_base_device::device_start()
 	m_smpcounter = 0;
 	m_port_smp16 = 0;
 	m_block = 0;
-	std::fill(std::begin(m_regs800), std::end(m_regs800), 0);
+	std::fill(std::begin(m_regs), std::end(m_regs), 0);
+	m_sampling = 0;
+	m_port7 = 0;
+	m_input_latch = 0;
+	m_input_ready = false;
 
 	for (int v = 0; v < NUM_VOICES; v++)
 	{
@@ -240,7 +269,11 @@ void sa16_base_device::device_start()
 	save_item(NAME(m_smpcounter));
 	save_item(NAME(m_port_smp16));
 	save_item(NAME(m_block));
-	save_item(NAME(m_regs800));
+	save_item(NAME(m_regs));
+	save_item(NAME(m_sampling));
+	save_item(NAME(m_port7));
+	save_item(NAME(m_input_latch));
+	save_item(NAME(m_input_ready));
 	save_item(STRUCT_MEMBER(m_voice, m_env_level));
 	save_item(STRUCT_MEMBER(m_voice, m_env_frac));
 	save_item(STRUCT_MEMBER(m_voice, m_env_armed));
@@ -255,9 +288,13 @@ void sa16_base_device::device_start()
 void sa16_base_device::device_reset()
 {
 	m_block = 0;
-	std::fill(std::begin(m_regs800), std::end(m_regs800), 0);
+	std::fill(std::begin(m_regs), std::end(m_regs), 0);
 	m_active_channels = 0;
 	m_env_pending = 0;
+	m_sampling = 0;
+	m_port7 = 0;
+	m_input_latch = 0;
+	m_input_ready = false;
 	for (int v = 0; v < NUM_VOICES; v++)
 	{
 		m_voice[v].m_env_level = 0;
@@ -265,14 +302,7 @@ void sa16_base_device::device_reset()
 		m_voice[v].m_env_armed = false;
 		m_voice[v].m_alt_back = false;
 	}
-}
 
-void sa16_device::device_reset()
-{
-	sa16_base_device::device_reset();
-
-	// ENVINT (HSI0 on the host CPU) is high while idle. Measured on the S-330 with
-	// nothing playing: the line stays high and does not pulse.
 	update_int();
 }
 
@@ -281,21 +311,27 @@ void sa16_device::device_reset()
 //  voice register helpers
 //-------------------------------------------------
 
+int sa16_base_device::row(offs_t address)
+{
+	const int index = address & 0x0f;
+	return (index < ROWS_PER_BLOCK) ? (BIT(address, 4, 4) * ROWS_PER_BLOCK + index) : -1;
+}
+
+u16 sa16_base_device::reg_r(offs_t address) const
+{
+	const int r = row(address);
+	return (r < 0) ? 0 : m_regs[r];
+}
+
 u32 sa16_base_device::voice_counter(int voice) const
 {
-	return u32(m_regs800[voice_reg(voice, 1)]) << 16 | m_regs800[voice_reg(voice, 2)];
+	return u32(m_regs[voice_reg(voice, 1)]) << 16 | m_regs[voice_reg(voice, 2)];
 }
 
 void sa16_base_device::set_voice_counter(int voice, u32 counter)
 {
-	m_regs800[voice_reg(voice, 1)] = counter >> 16;
-	m_regs800[voice_reg(voice, 2)] = counter & 0xffff;
-}
-
-void sa16_base_device::env_level_write(int voice, u8 level)
-{
-	m_voice[voice].m_env_level = level;
-	m_voice[voice].m_env_frac = 0;
+	m_regs[voice_reg(voice, 1)] = counter >> 16;
+	m_regs[voice_reg(voice, 2)] = counter & 0xffff;
 }
 
 void sa16_base_device::raise_env_event(int voice)
@@ -327,6 +363,12 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 {
 	for (int i = 0; i < stream.samples(); i++)
 	{
+		if (BIT(m_sampling, 0))
+		{
+			m_input_latch = std::clamp<s32>(s32(stream.get(0, i) * 2048.0), -0x800, 0x7ff) & 0xfff;
+			m_input_ready = true;
+		}
+
 		for (int v = 0; v < NUM_VOICES; v++)
 		{
 			voice_t &voice = m_voice[v];
@@ -334,7 +376,7 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 			// --- Envelope ---
 			// [rate:target] in env reg 3. The rate is signed (negative while falling);
 			// its magnitude is logarithmic: 3-bit mantissa, 4-bit exponent.
-			const u16 r3 = m_regs800[env_reg(v, 3)];
+			const u16 r3 = m_regs[env_reg(v, 3)];
 			const u8 target = r3 & 0xff;
 			const u8 mag = std::abs(s8(r3 >> 8)) & 0x7f;
 
@@ -350,7 +392,7 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 				else
 					voice.m_env_level = std::max<s32>(target, s32(voice.m_env_level) - s32(steps));
 			}
-			if (voice.m_env_armed && mag != 0 && voice.m_env_level == target)
+			if (voice.m_env_armed && voice.m_env_level == target)
 				raise_env_event(v);
 
 			// --- Wave playback (key-on mask) ---
@@ -360,10 +402,10 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 				continue;
 			}
 
-			const u16 mode   = m_regs800[voice_reg(v, 4)];
-			const u32 pitch  = m_regs800[voice_reg(v, 0)];
-			const u32 anchor = u32(m_regs800[voice_reg(v, 6)]) | (u32(BIT(mode, 2, 2)) << 16);
-			const s64 loop   = s64(u32(m_regs800[voice_reg(v, 5)]) | (u32(BIT(mode, 4, 2)) << 16)) << 14;
+			const u16 mode   = m_regs[voice_reg(v, 4)];
+			const u32 pitch  = m_regs[voice_reg(v, 0)];
+			const u32 anchor = u32(m_regs[voice_reg(v, 6)]) | (u32(BIT(mode, 2, 2)) << 16);
+			const s64 loop   = s64(u32(m_regs[voice_reg(v, 5)]) | (u32(BIT(mode, 4, 2)) << 16)) << 14;
 
 			// The counter is advanced in a wider type, so that passing the end
 			// or the loop point can't overflow, and reduced to 32 bits after
@@ -373,10 +415,18 @@ void sa16_base_device::sound_stream_update(sound_stream &stream)
 			const u32 addr = (BIT(mode, 7) ? anchor + offset : anchor - offset) & 0x3ffff;
 			const u32 word = (u32(BIT(mode, 0, 2)) << 18) | addr;
 
-			// Read 12-bit sample from wave RAM, sign-extend to 16-bit
-			const s16 sample = s16(m_wram_cache.read_word(word << 1) << 4) >> 4;
-			// 12-bit sample x 8-bit level -> 16 bits per voice
-			stream.put_int(v, i, (s32(sample) * voice.m_env_level) >> 4, 32768);
+			if (BIT(m_sampling, 1) && v == RECORD_VOICE)
+			{
+				m_wram_cache.write_word(word << 1, m_input_latch);
+				stream.put(v, i, 0);
+			}
+			else
+			{
+				// Read 12-bit sample from wave RAM, sign-extend to 16-bit
+				const s16 sample = s16(m_wram_cache.read_word(word << 1) << 4) >> 4;
+				// 12-bit sample x 8-bit level -> 16 bits per voice
+				stream.put_int(v, i, (s32(sample) * voice.m_env_level) >> 4, 32768);
+			}
 
 			// Advance: the counter runs down to the end, then loops back
 			if (voice.m_alt_back)
@@ -437,8 +487,15 @@ u8 sa16_base_device::read(offs_t offset)
 
 	switch(offset)
 	{
-	case 0: // Play tone/channel
-		value = m_active_channels;
+	case 0: // Play tone/channel; bit 0: an input sample is waiting, while sampling
+		if (BIT(m_sampling, 0))
+		{
+			if (!machine().side_effects_disabled())
+				m_stream->update();
+			value = (m_active_channels & 0xfe) | (m_input_ready ? 1 : 0);
+		}
+		else
+			value = m_active_channels;
 		LOGMASKED(LOG_REG, "%s: active_channels[0..7] => %02x\n", machine().describe_context(), value);
 		break;
 	case 1: // Envelope event: (voice + 1) of the lowest flagged voice, 0 if none.
@@ -460,19 +517,18 @@ u8 sa16_base_device::read(offs_t offset)
 		{
 			if (!machine().side_effects_disabled())
 				m_stream->update();
-			const int block = m_reg800_roffset >> 4;
-			const int reg   = m_reg800_roffset & 0x0f;
+			const int reg = m_reg800_roffset & 0x0f;
 
-			if (block >= 1 && block <= NUM_VOICES && (reg == 0x03 || reg == 0x07))
+			if (reg == 0x03 || reg == 0x07)
 			{
 				// Envelope reg 3 (low byte) and reg 7 read back the current level.
 				// The firmware waits for reg 7 == 0 before reusing a voice and uses
 				// it as the loudness when stealing voices.
-				value = m_voice[block - 1].m_env_level;
+				value = m_voice[(BIT(m_reg800_roffset, 4, 4) + NUM_VOICES - 1) & (NUM_VOICES - 1)].m_env_level;
 			}
 			else
 			{
-				value = m_regs800[m_reg800_roffset];
+				value = reg_r(m_reg800_roffset);
 			}
 		}
 		LOGMASKED(LOG_REG, "%s: regs800[%03x].lo => %02x\n", machine().describe_context(), m_reg800_roffset, value);
@@ -480,16 +536,39 @@ u8 sa16_base_device::read(offs_t offset)
 	case 3:
 		if (!machine().side_effects_disabled())
 			m_stream->update();
-		value = m_regs800[m_reg800_roffset] >> 8;
+		value = reg_r(m_reg800_roffset) >> 8;
 		LOGMASKED(LOG_REG, "%s: regs800[%03x].hi => %02x\n", machine().describe_context(), m_reg800_roffset, value);
 		break;
-	case 4: // Waveram port low (12-bit word, left-justified: low nibble reads 0)
-		value = u8(wram_r16(block_base() + m_blockoffset) << 4);
+	case 4: // Waveram port low (12-bit word, left-justified: low nibble reads 0), or the input sample
+		if (BIT(m_sampling, 0))
+		{
+			if (!machine().side_effects_disabled())
+				m_stream->update();
+			value = u8(m_input_latch << 4);
+		}
+		else
+			value = u8(wram_r16(block_base() + m_blockoffset) << 4);
 		LOGMASKED(LOG_WRAM, "%s: WRAM[%08x].lo => %02x\n", machine().describe_context(), block_base() + m_blockoffset, value);
 		break;
-	case 5: // Waveram port high
-		value = u8(wram_r16(block_base() + m_blockoffset) >> 4);
+	case 5: // Waveram port high, or the input sample, which the read takes
+		if (BIT(m_sampling, 0))
+		{
+			if (!machine().side_effects_disabled())
+			{
+				m_stream->update();
+				m_input_ready = false;
+			}
+			value = u8(m_input_latch >> 4);
+		}
+		else
+			value = u8(wram_r16(block_base() + m_blockoffset) >> 4);
 		LOGMASKED(LOG_WRAM, "%s: WRAM[%08x].hi => %02x\n", machine().describe_context(), block_base() + m_blockoffset, value);
+		break;
+	case 6:
+		value = m_sampling;
+		break;
+	case 7:
+		value = m_port7;
 		break;
 	case 8:
 		value = m_block;
@@ -543,27 +622,31 @@ void sa16_base_device::write(offs_t offset, u8 data)
 	case 2:
 		LOGMASKED(LOG_REG, "%s: regs800[%03x].lo <= %02x\n", machine().describe_context(), m_reg800_woffset, data);
 		m_stream->update();
-		m_regs800[m_reg800_woffset] = (0xff00 & m_regs800[m_reg800_woffset]) | data;
+		if (const int r = row(m_reg800_woffset); r >= 0)
+			m_regs[r] = (0xff00 & m_regs[r]) | data;
 		break;
 	case 3:
 		LOGMASKED(LOG_REG, "%s: regs800[%03x].hi <= %02x\n", machine().describe_context(), m_reg800_woffset, data);
 		m_stream->update();
-		m_regs800[m_reg800_woffset] = (0x00ff & m_regs800[m_reg800_woffset]) | data<<8;
+		if (const int r = row(m_reg800_woffset); r >= 0)
 		{
+			m_regs[r] = (0x00ff & m_regs[r]) | data<<8;
+
 			// The high byte completes a register write
-			const int block = m_reg800_woffset >> 4;
+			const int block = BIT(m_reg800_woffset, 4, 4);
 			const int reg   = m_reg800_woffset & 0x0f;
-			if (block >= 1 && block <= NUM_VOICES && (reg == 0x03 || reg == 0x07 || reg == 0x08))
+			if (reg == 0x03 || reg == 0x07 || reg == 0x08)
 			{
 				// Writing the envelope acknowledges the voice's pending event
-				const int v = block - 1;
+				const int v = (block + NUM_VOICES - 1) & (NUM_VOICES - 1);
 				voice_t &voice = m_voice[v];
-				if (reg == 0x03)
-					voice.m_env_armed = true; // new target: raise an event when it is reached
-				else
-					voice.m_env_armed = false; // level set directly, no ramp to report
-				if (reg == 0x08)
-					env_level_write(v, m_regs800[m_reg800_woffset] & 0xff);
+				const bool ramp = BIT(m_regs[r], 8, 8) != 0;
+				voice.m_env_armed = reg == 0x03 && ramp; // new target: raise an event when it is reached
+				if (reg == 0x03 && !ramp)
+				{
+					voice.m_env_level = m_regs[r] & 0xff;
+					voice.m_env_frac = 0;
+				}
 				if (BIT(m_env_pending, v))
 				{
 					m_env_pending &= ~(1 << v);
@@ -571,7 +654,7 @@ void sa16_base_device::write(offs_t offset, u8 data)
 						update_int();
 				}
 			}
-			if (block < NUM_VOICES && (reg == 0x01 || reg == 0x02))
+			if (reg == 0x01 || reg == 0x02)
 				m_voice[block].m_alt_back = false; // new address counter
 		}
 		break;
@@ -583,6 +666,16 @@ void sa16_base_device::write(offs_t offset, u8 data)
 			word = (offset == 4) ? ((word & 0xff00) | data) : ((word & 0x00ff) | (data << 8));
 			wram_w16(block_base() + m_blockoffset, word >> 4);
 		}
+		break;
+	case 6:
+		LOGMASKED(LOG_REG, "%s: sampling <= %02x\n", machine().describe_context(), data);
+		m_stream->update();
+		m_sampling = data;
+		if (!BIT(data, 0))
+			m_input_ready = false;
+		break;
+	case 7:
+		m_port7 = data;
 		break;
 	case 8:
 		LOGMASKED(LOG_REG, "%s: set block = %04x\n", machine().describe_context(), data);
