@@ -65,6 +65,7 @@ public:
 		, m_wave(*this, "wave")
 		, m_keyscan(*this, "keyscan")
 		, m_tvf(*this, "tvf")
+		, m_tvf16(*this, "tvf16")
 		, m_analog(*this, "ACH%u", 0U)
 		, m_ext_port(*this, "extport")
 		, m_floppy_select(0)
@@ -84,8 +85,8 @@ protected:
 
 	void vram_map(address_map &map) ATTR_COLD;
 
-	// MB654419U TVF: one filter channel per SA-16/RF5C36 voice output; the
-	// caller routes the TVF output onwards
+	// MB654419U and TVF16: the 16 voices in, eight outputs; the caller
+	// routes the outputs onwards
 	void add_tvf(machine_config &config) ATTR_COLD;
 	void add_midi(machine_config &config) ATTR_COLD;
 
@@ -114,6 +115,7 @@ protected:
 	required_device<sa16_base_device> m_wave;
 	optional_device<mb63h149_device> m_keyscan;
 	optional_device<mb654419u_device> m_tvf;
+	optional_device<tvf16_device> m_tvf16;
 	optional_ioport_array<8> m_analog;
 	optional_device<msx_general_purpose_port_device> m_ext_port;
 
@@ -667,20 +669,17 @@ void roland_w30_state::leds_w(offs_t offset, u8 data)
 		m_leds[offset * 8 + i] = BIT(data, i);
 }
 
-// The A/D converter samples the mixed output of the TVF (MB654419U + TVF-16;
-// ACH7 on the S-330 and W-30, ACH6 on the S-550). After loading its system
-// software, the firmware checks the output path: with all 16 voices
-// playing a full-scale positive DC sample, it sets every envelope to 0x08 and
+// The A/D converter reads the DAC output (ACH7 on the S-330 and W-30, ACH6 on
+// the S-550), clamped to its 0-5 V range. After loading its system software,
+// the firmware checks the output path: with all 16 voices playing a full-scale
+// positive DC sample at unity TVF level, it sets every envelope to 0x08 and
 // then to 0x4e, and requires 1022 consecutive readings to be <= 0x1ff and then
 // >= 0x204. If the check keeps failing, the firmware gives up and reboots (an
 // endless splash screen loop).
-// The reference and gain of the analog path aren't known. They are modeled as
-// mid-scale at an output of two full-scale voices and 128 A/D steps per voice:
-// the two test levels (0.5 and 4.87 voices) then read 0x140 and 0x36f.
+// The DAC's span isn't known; it is modeled as +/-10 V.
 u16 roland_s50_base_state::analog_dac_value()
 {
-	const double level = m_tvf->output_level();
-	return std::clamp<s32>(0x200 + s32((level - 2.0) * 128.0), 0, 0x3ff);
+	return std::clamp<s32>(s16(m_tvf->dac_r()) / 16, 0, 0x3ff);
 }
 
 // S-330 boot controller selection override.
@@ -782,7 +781,7 @@ void roland_s550_state::mem_map(address_map &map)
 	m_io_view[0](0xd80a, 0xd80a).rw(FUNC(roland_s550_state::keysw_r), FUNC(roland_s550_state::keysw_w));
 	m_io_view[0](0xe000, 0xe000).w(FUNC(roland_s550_state::sram_bank_w));
 	m_io_view[0](0xe800, 0xe81f).w("outas", FUNC(bu3905_device::write)).umask16(0x00ff);
-	m_io_view[0](0xf000, 0xf01f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
+	m_io_view[0](0xf000, 0xf01f).m(m_tvf, FUNC(mb654419u_device::map)).umask16(0x00ff);
 	m_io_view[0](0xf800, 0xf81f).m("scsic", FUNC(mb89352_device::map)).umask16(0x00ff);
 	m_io_view[0](0xc000, 0xffff).rw(m_wave, FUNC(rf5c36_device::read), FUNC(rf5c36_device::write)).umask16(0xff00);
 	m_io_view[1](0xc000, 0xffff).unmaprw();
@@ -804,7 +803,7 @@ void roland_w30_state::w30_mem_map(address_map &map)
 	map(0xe000, 0xe01f).m("scsic", FUNC(mb89352_device::map)).umask16(0x00ff);
 	map(0xe400, 0xe403).rw("lcd", FUNC(lm24014h_device::read), FUNC(lm24014h_device::write)).umask16(0x00ff);
 	//map(0xe800, 0xe83f).w("output", FUNC(upd65006gf_376_3b8_device::write)).umask16(0x00ff);
-	map(0xf000, 0xf01f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
+	map(0xf000, 0xf01f).m(m_tvf, FUNC(mb654419u_device::map)).umask16(0x00ff);
 	map(0xc000, 0xf7ff).rw(m_wave, FUNC(sa16_device::read), FUNC(sa16_device::write)).umask16(0xff00);
 	map(0xf800, 0xffff).rw(FUNC(roland_w30_state::key_r), FUNC(roland_w30_state::key_w));
 }
@@ -835,7 +834,7 @@ void roland_s330_state::s330_mem_map(address_map &map)
 	map(0xd800, 0xd803).rw(FUNC(roland_s330_state::leds_r), FUNC(roland_s330_state::leds_w)).umask16(0x00ff);
 	map(0xd806, 0xd806).rw(FUNC(roland_s330_state::keysw_r), FUNC(roland_s330_state::keysw_w));
 	map(0xe800, 0xe81f).w("outas", FUNC(bu3905_device::write)).umask16(0x00ff);
-	map(0xf000, 0xf01f).rw(m_tvf, FUNC(mb654419u_device::read), FUNC(mb654419u_device::write)).umask16(0x00ff);
+	map(0xf000, 0xf01f).m(m_tvf, FUNC(mb654419u_device::map)).umask16(0x00ff);
 }
 
 void roland_s330_state::waveram_map(address_map &map)
@@ -1076,8 +1075,12 @@ static void scsi_devices(device_slot_interface &device)
 
 void roland_s50_base_state::add_tvf(machine_config &config)
 {
-	MB654419U(config, m_tvf, 20_MHz_XTAL);
-	for (int v = 0; v < mb654419u_device::NUM_CHANNELS; v++)
+	TVF16(config, m_tvf16, 20_MHz_XTAL);
+	m_tvf16->out_cb().set(m_tvf, FUNC(mb654419u_device::dsp_w));
+
+	MB654419U(config, m_tvf, 26.88_MHz_XTAL / 4); // ECLK
+	m_tvf->set_dsp(m_tvf16);
+	for (int v = 0; v < mb654419u_device::NUM_VOICES; v++)
 		m_wave->add_route(v, m_tvf, 1.0, v);
 }
 
@@ -1144,7 +1147,7 @@ void roland_s50_state::s50(machine_config &config)
 
 	RF5C36(config, m_wave, 26.88_MHz_XTAL);
 	m_wave->int_callback().set_inputline(m_maincpu, i8x9x_device::HSI0_LINE);
-	for (int v = 0; v < mb654419u_device::NUM_CHANNELS; v++)
+	for (int v = 0; v < mb654419u_device::NUM_VOICES; v++)
 		m_wave->add_route(v, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
@@ -1187,7 +1190,7 @@ void roland_s550_state::s550(machine_config &config)
 
 	m_wave->reset_routes();
 	add_tvf(config);
-	m_tvf->add_route(0, "speaker", 1.0);
+	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
@@ -1240,7 +1243,7 @@ void roland_w30_state::w30(machine_config &config)
 	//UPD65006GF_376_3B8(config, "output", 26.88_MHz_XTAL);
 
 	add_tvf(config);
-	m_tvf->add_route(0, "speaker", 1.0);
+	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
 
@@ -1298,7 +1301,7 @@ void roland_s330_state::s330(machine_config &config)
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
 	add_tvf(config);
-	m_tvf->add_route(0, "speaker", 1.0);
+	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
 
