@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:AJR, Carl Lom, giulioz
+// copyright-holders:AJR, Carl Lom, giulioz, superctr
 /***************************************************************************
 
     Roland RF5C36 (15229840) & SA-16 (15229874) Sampler Custom ICs
@@ -75,6 +75,7 @@ private:
 
 	TIMER_CALLBACK_MEMBER(update_tick);
 
+	s32 wave_sample(u32 word) { return s16(m_wram_cache.read_word(word << 1) << 4) >> 4; }
 	u16 wram_r16(offs_t offset) { return space(AS_WRAM).read_word(offset); }
 	void wram_w16(offs_t offset, u16 data) { space(AS_WRAM).write_word(offset, data); }
 
