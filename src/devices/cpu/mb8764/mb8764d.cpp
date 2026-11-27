@@ -11,11 +11,27 @@
 #include "emu.h"
 #include "mb8764d.h"
 
-const char *const mb8764_disassembler::s_alu[16] =
+namespace {
+
+constexpr char const *const ALU_NAMES[16] =
 {
 	"NOP", "ABS", "ADD", "NEG", "MLT", "SRA", "SUB", "SLA",
 	"MSM", "AND", "MRD", "ORA", "SUM", "DIV", "RED", "COM"
 };
+
+constexpr char const *const REG_NAMES[2][6] =
+{
+	{ "EO", "A", "B", "D", "EXA", nullptr },
+	{ "X", "Y", "C0", "C1", "PGM", "PGT" }
+};
+
+constexpr char const *const MASK_NAMES[19] =
+{
+	nullptr, nullptr, "TRC", "CLP", "OV", "ESS", "VS", "OF", "IF", "PCT",
+	"DMM", "Y", "X", "B", "A", "DMC", "F1", "F0", "D"
+};
+
+} // anonymous namespace
 
 u32 mb8764_disassembler::opcode_alignment() const
 {
@@ -27,24 +43,19 @@ std::string mb8764_disassembler::alu(u32 op)
 	switch (BIT(op, 20, 4))
 	{
 	case 0x0: case 0x1: case 0xc:
-		return s_alu[BIT(op, 17, 3) << 1];
+		return ALU_NAMES[BIT(op, 17, 3) << 1];
 	case 0x8:
 	{
 		static constexpr u8 codes[4] = { 0x0, 0x4, 0x8, 0xa };
-		return s_alu[codes[BIT(op, 18, 2)]];
+		return ALU_NAMES[codes[BIT(op, 18, 2)]];
 	}
 	default:
-		return s_alu[BIT(op, 16, 4)];
+		return ALU_NAMES[BIT(op, 16, 4)];
 	}
 }
 
 std::string mb8764_disassembler::regs(u32 field, bool group)
 {
-	static const char *const names[2][6] =
-	{
-		{ "EO", "A", "B", "D", "EXA", nullptr },
-		{ "X", "Y", "C0", "C1", "PGM", "PGT" }
-	};
 	std::string result;
 	for (int i = 0; i < 6; i++)
 	{
@@ -52,7 +63,7 @@ std::string mb8764_disassembler::regs(u32 field, bool group)
 		{
 			if (!result.empty())
 				result += ':';
-			result += names[group][i] ? names[group][i] : "?";
+			result += REG_NAMES[group][i] ? REG_NAMES[group][i] : "?";
 		}
 	}
 	return result;
@@ -65,11 +76,6 @@ std::string mb8764_disassembler::ram(u32 op)
 
 std::string mb8764_disassembler::mask(u32 op)
 {
-	static const char *const names[19] =
-	{
-		nullptr, nullptr, "TRC", "CLP", "OV", "ESS", "VS", "OF", "IF", "PCT",
-		"DMM", "Y", "X", "B", "A", "DMC", "F1", "F0", "D"
-	};
 	std::string result;
 	for (int i = 18; i >= 0; i--)
 	{
@@ -77,7 +83,7 @@ std::string mb8764_disassembler::mask(u32 op)
 		{
 			if (!result.empty())
 				result += ':';
-			result += names[i] ? names[i] : util::string_format("$%05X", 1 << i);
+			result += MASK_NAMES[i] ? MASK_NAMES[i] : util::string_format("$%05X", 1 << i);
 		}
 	}
 	return result;

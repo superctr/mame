@@ -11,7 +11,7 @@
 
 #pragma once
 
-class mb8764_device : public cpu_device
+class mb8764_base_device : public cpu_device
 {
 public:
 	enum
@@ -27,25 +27,24 @@ public:
 	// REQ: the output instruction puts EO on the data bus
 	auto out_cb() { return m_out_cb.bind(); }
 
-	// flag inputs FL0 and FL1
+	// flag input FL0
 	void fl0_w(int state);
-	void fl1_w(int state);
 
 	// one word through the input port (AIF, RCK)
 	void data_w(u16 data);
 
 protected:
-	mb8764_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor program_map);
+	mb8764_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor program_map);
 
 	// device_t implementation
 	virtual void device_start() override ATTR_COLD;
 	virtual void device_reset() override ATTR_COLD;
 
 	// device_execute_interface implementation
-	virtual u64 execute_clocks_to_cycles(u64 clocks) const noexcept override { return (clocks + 2 - 1) / 2; }
-	virtual u64 execute_cycles_to_clocks(u64 cycles) const noexcept override { return cycles * 2; }
-	virtual u32 execute_min_cycles() const noexcept override { return 1; }
-	virtual u32 execute_max_cycles() const noexcept override { return 1; }
+	virtual u64 execute_clocks_to_cycles(u64 clocks) const noexcept override;
+	virtual u64 execute_cycles_to_clocks(u64 cycles) const noexcept override;
+	virtual u32 execute_min_cycles() const noexcept override;
+	virtual u32 execute_max_cycles() const noexcept override;
 	virtual void execute_run() override;
 
 	// device_memory_interface implementation
@@ -58,12 +57,7 @@ protected:
 	virtual void state_import(const device_state_entry &entry) override;
 	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
-	address_space_config m_program_config;
-	address_space_config m_data_config;
-
-	memory_access<10, 2, -2, ENDIANNESS_BIG>::cache m_cache;
 	memory_access<10, 2, -2, ENDIANNESS_BIG>::specific m_program;
-	memory_access<8, 1, -1, ENDIANNESS_BIG>::specific m_data;
 
 private:
 	void data_map(address_map &map) ATTR_COLD;
@@ -79,6 +73,12 @@ private:
 	void clear(u32 mask);
 	void set(u32 mask);
 	bool condition(u32 op);
+
+	address_space_config m_program_config;
+	address_space_config m_data_config;
+
+	memory_access<10, 2, -2, ENDIANNESS_BIG>::cache m_cache;
+	memory_access<8, 1, -1, ENDIANNESS_BIG>::specific m_data;
 
 	devcb_write16 m_out_cb;
 
@@ -104,7 +104,7 @@ private:
 	u32 m_st;
 };
 
-class tvf16_device : public mb8764_device
+class tvf16_device : public mb8764_base_device
 {
 public:
 	tvf16_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);

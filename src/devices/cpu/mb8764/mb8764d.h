@@ -14,15 +14,10 @@
 class mb8764_disassembler : public util::disasm_interface
 {
 public:
-	mb8764_disassembler() = default;
-	virtual ~mb8764_disassembler() = default;
-
 	virtual u32 opcode_alignment() const override;
 	virtual offs_t disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params) override;
 
 private:
-	static const char *const s_alu[16];
-
 	static std::string alu(u32 op);
 	static std::string regs(u32 field, bool group);
 	static std::string ram(u32 op);

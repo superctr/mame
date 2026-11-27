@@ -26,12 +26,12 @@
 #include "mb8764.h"
 #include "mb8764d.h"
 
-#define LOG_UNKNOWN (1U << 1)
+#include <algorithm>
+#include <cstdlib>
+#include <iterator>
 
 #define VERBOSE (0)
 #include "logmacro.h"
-
-#define LOGUNKNOWN(...) LOGMASKED(LOG_UNKNOWN, __VA_ARGS__)
 
 
 DEFINE_DEVICE_TYPE(TVF16, tvf16_device, "tvf16", "Roland TVF16 DSP")
@@ -62,34 +62,15 @@ constexpr u32 ST_SETTABLE = ST_DMM | ST_PCT | ST_VS | ST_ESS | ST_CLP | ST_TRC;
 } // anonymous namespace
 
 
-mb8764_device::mb8764_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor program_map)
+mb8764_base_device::mb8764_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, address_map_constructor program_map)
 	: cpu_device(mconfig, type, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 32, 10, -2, program_map)
-	, m_data_config("data", ENDIANNESS_BIG, 16, 8, -1, address_map_constructor(FUNC(mb8764_device::data_map), this))
+	, m_data_config("data", ENDIANNESS_BIG, 16, 8, -1, address_map_constructor(FUNC(mb8764_base_device::data_map), this))
 	, m_out_cb(*this)
-	, m_icount(0)
-	, m_pc(0)
-	, m_pcs(0)
-	, m_a(0)
-	, m_b(0)
-	, m_d(0)
-	, m_tr{ 0, 0 }
-	, m_x(0)
-	, m_y(0)
-	, m_c0(0)
-	, m_c1(0)
-	, m_vp(0)
-	, m_dmc(0)
-	, m_pgm(0)
-	, m_pgt(0)
-	, m_exa(0)
-	, m_ei(0)
-	, m_eo(0)
-	, m_st(0)
 {
 }
 
-device_memory_interface::space_config_vector mb8764_device::memory_space_config() const
+device_memory_interface::space_config_vector mb8764_base_device::memory_space_config() const
 {
 	return space_config_vector{
 		std::make_pair(AS_PROGRAM, &m_program_config),
@@ -97,21 +78,38 @@ device_memory_interface::space_config_vector mb8764_device::memory_space_config(
 	};
 }
 
-void mb8764_device::data_map(address_map &map)
+void mb8764_base_device::data_map(address_map &map)
 {
 	map(0x00, 0xff).ram();
 }
 
-std::unique_ptr<util::disasm_interface> mb8764_device::create_disassembler()
+std::unique_ptr<util::disasm_interface> mb8764_base_device::create_disassembler()
 {
 	return std::make_unique<mb8764_disassembler>();
 }
 
-void mb8764_device::device_start()
+void mb8764_base_device::device_start()
 {
 	space(AS_PROGRAM).cache(m_cache);
 	space(AS_PROGRAM).specific(m_program);
 	space(AS_DATA).specific(m_data);
+
+	m_icount = 0;
+	m_pcs = 0;
+	m_a = 0;
+	m_b = 0;
+	m_d = 0;
+	std::fill(std::begin(m_tr), std::end(m_tr), 0);
+	m_x = 0;
+	m_y = 0;
+	m_c0 = 0;
+	m_c1 = 0;
+	m_vp = 0;
+	m_pgm = 0;
+	m_pgt = 0;
+	m_exa = 0;
+	m_ei = 0;
+	m_eo = 0;
 
 	set_icountptr(m_icount);
 
@@ -155,14 +153,14 @@ void mb8764_device::device_start()
 	save_item(NAME(m_st));
 }
 
-void mb8764_device::device_reset()
+void mb8764_base_device::device_reset()
 {
 	m_pc = 0;
 	m_dmc = 0;
 	m_st = 0;
 }
 
-void mb8764_device::state_import(const device_state_entry &entry)
+void mb8764_base_device::state_import(const device_state_entry &entry)
 {
 	switch (entry.index())
 	{
@@ -172,7 +170,7 @@ void mb8764_device::state_import(const device_state_entry &entry)
 	}
 }
 
-void mb8764_device::state_string_export(const device_state_entry &entry, std::string &str) const
+void mb8764_base_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
@@ -192,19 +190,13 @@ void mb8764_device::state_string_export(const device_state_entry &entry, std::st
 	}
 }
 
-void mb8764_device::fl0_w(int state)
+void mb8764_base_device::fl0_w(int state)
 {
 	if (state)
 		m_st |= ST_F0;
 }
 
-void mb8764_device::fl1_w(int state)
-{
-	if (state)
-		m_st |= ST_F1;
-}
-
-void mb8764_device::data_w(u16 data)
+void mb8764_base_device::data_w(u16 data)
 {
 	m_ei = data;
 	if (m_st & ST_DMM)
@@ -213,19 +205,19 @@ void mb8764_device::data_w(u16 data)
 		m_st |= ST_IF;
 }
 
-s32 mb8764_device::product() const
+s32 mb8764_base_device::product() const
 {
 	return (m_st & ST_TRC) ? (m_tr[1] >> 5) : ((m_tr[1] + 0x10) >> 5);
 }
 
-u16 mb8764_device::d_bus() const
+u16 mb8764_base_device::d_bus() const
 {
 	if ((m_st & ST_CLP) && (BIT(m_d, 25) != BIT(m_d, 24)))
 		return BIT(m_d, 25) ? 0x8000 : 0x7fff;
 	return (BIT(m_d, 25) << 15) | BIT(m_d, 9, 15);
 }
 
-void mb8764_device::alu(u8 code)
+void mb8764_base_device::alu(u8 code)
 {
 	s32 d;
 	switch (code)
@@ -246,7 +238,7 @@ void mb8764_device::alu(u8 code)
 	case 0xe: d = m_d - s32(m_a) * 512; break;          // RED
 	case 0xf: d = ~m_d; break;                          // COM
 	default:
-		LOGUNKNOWN("%03x: DIV\n", (m_pc - 1) & 0x3ff);
+		logerror("%03x: DIV unimplemented\n", (m_pc - 1) & 0x3ff);
 		return;
 	}
 
@@ -260,34 +252,34 @@ void mb8764_device::alu(u8 code)
 		m_st |= ST_OV;
 }
 
-u8 mb8764_device::index_y(u8 address) const
+u8 mb8764_base_device::index_y(u8 address) const
 {
 	if (m_st & ST_VS)
 		return (address & 0xf0) | ((address + m_y) & 0x0f);
 	return address + m_y;
 }
 
-u16 mb8764_device::ram_r(bool internal, u8 address)
+u16 mb8764_base_device::ram_r(bool internal, u8 address)
 {
 	if (!internal)
 	{
-		LOGUNKNOWN("%03x: expansion RAM read %02x\n", (m_pc - 1) & 0x3ff, address);
+		logerror("%03x: expansion RAM read %02x unimplemented\n", (m_pc - 1) & 0x3ff, address);
 		return 0;
 	}
 	return m_data.read_word(address);
 }
 
-void mb8764_device::ram_w(bool internal, u8 address, u16 data)
+void mb8764_base_device::ram_w(bool internal, u8 address, u16 data)
 {
 	if (!internal)
 	{
-		LOGUNKNOWN("%03x: expansion RAM write %02x = %04x\n", (m_pc - 1) & 0x3ff, address, data);
+		logerror("%03x: expansion RAM write %02x = %04x unimplemented\n", (m_pc - 1) & 0x3ff, address, data);
 		return;
 	}
 	m_data.write_word(address, data);
 }
 
-void mb8764_device::load_regs(u8 field, u16 data)
+void mb8764_base_device::load_regs(u8 field, u16 data)
 {
 	if (BIT(field, 5))
 		m_x = data & 0x7f;
@@ -303,7 +295,7 @@ void mb8764_device::load_regs(u8 field, u16 data)
 		m_pgt = BIT(data, 7, 3);
 }
 
-void mb8764_device::clear(u32 mask)
+void mb8764_base_device::clear(u32 mask)
 {
 	if (BIT(mask, 18))
 		m_d = 0;
@@ -318,18 +310,18 @@ void mb8764_device::clear(u32 mask)
 	if (BIT(mask, 11))
 		m_y = 0;
 	if (mask & 0x3)
-		LOGUNKNOWN("%03x: CLR %05x\n", (m_pc - 1) & 0x3ff, mask & 0x3);
+		logerror("%03x: CLR of unknown bits %05x\n", (m_pc - 1) & 0x3ff, mask & 0x3);
 	m_st &= ~(mask & ST_CLEARABLE);
 }
 
-void mb8764_device::set(u32 mask)
+void mb8764_base_device::set(u32 mask)
 {
 	if (mask & ~ST_SETTABLE)
-		LOGUNKNOWN("%03x: SET %05x\n", (m_pc - 1) & 0x3ff, mask & ~ST_SETTABLE);
+		logerror("%03x: SET of unknown bits %05x\n", (m_pc - 1) & 0x3ff, mask & ~ST_SETTABLE);
 	m_st |= mask & ST_SETTABLE;
 }
 
-bool mb8764_device::condition(u32 op)
+bool mb8764_base_device::condition(u32 op)
 {
 	switch (op & 0xfc00)
 	{
@@ -349,12 +341,12 @@ bool mb8764_device::condition(u32 op)
 	case 0xa000:
 		return m_st & ST_OF;
 	default:
-		LOGUNKNOWN("%03x: JOC condition %04x\n", (m_pc - 1) & 0x3ff, op & 0xfc00);
+		logerror("%03x: unknown JOC condition %04x\n", (m_pc - 1) & 0x3ff, op & 0xfc00);
 		return false;
 	}
 }
 
-void mb8764_device::execute_one(u32 op)
+void mb8764_base_device::execute_one(u32 op)
 {
 	switch (BIT(op, 20, 4))
 	{
@@ -363,7 +355,7 @@ void mb8764_device::execute_one(u32 op)
 	{
 		const u8 a = (BIT(op, 9, 7) + (BIT(op, 16) ? m_x : 0)) & 0x7f;
 		const u8 b = 0x80 | ((BIT(op, 8) ? index_y(op & 0x7f) : op) & 0x7f);
-		const u16 adata = BIT(op, 20) ? m_data.read_word(a) : u16(m_program.read_dword((m_pgt << 7) | a));
+		const u16 adata = BIT(op, 20) ? m_data.read_word(a) : u16(m_program.read_dword((m_pgt << 7) + a));
 		const u16 bdata = ram_r(BIT(op, 7), b);
 		alu(BIT(op, 17, 3) << 1);
 		m_a = adata;
@@ -386,7 +378,7 @@ void mb8764_device::execute_one(u32 op)
 		if (BIT(op, 11))
 			m_exa = data & 0x3ff;
 		if (BIT(op, 10))
-			LOGUNKNOWN("%03x: MOV to register %x\n", (m_pc - 1) & 0x3ff, BIT(op, 10, 6));
+			logerror("%03x: MOV to unknown register %x\n", (m_pc - 1) & 0x3ff, BIT(op, 10, 6));
 		break;
 	}
 
@@ -411,7 +403,7 @@ void mb8764_device::execute_one(u32 op)
 	{
 		static constexpr u8 codes[4] = { 0x0, 0x4, 0x8, 0xa };
 		if (BIT(op, 17) || BIT(op, 10))
-			LOGUNKNOWN("%03x: MOV %06x\n", (m_pc - 1) & 0x3ff, op);
+			logerror("%03x: unknown MOV form %06x\n", (m_pc - 1) & 0x3ff, op);
 		const u16 data = BIT(op, 16) ? u16(m_a) : d_bus();
 		alu(codes[BIT(op, 18, 2)]);
 		if (BIT(op, 11))
@@ -435,7 +427,9 @@ void mb8764_device::execute_one(u32 op)
 			m_y += u8(op);
 		}
 		else
+		{
 			m_a = s16(op);
+		}
 		break;
 
 	case 0xd: // JOC
@@ -443,12 +437,7 @@ void mb8764_device::execute_one(u32 op)
 		const bool jump = condition(op);
 		alu(BIT(op, 16, 4));
 		if (jump)
-		{
-			const u16 target = op & 0x3ff;
-			if (target == ((m_pc - 1) & 0x3ff) && !BIT(op, 16, 4) && ((op & 0xfc00) == 0x1000 || (op & 0xfc00) == 0x9000))
-				m_icount = 0;
-			m_pc = target;
-		}
+			m_pc = op & 0x3ff;
 		break;
 	}
 
@@ -470,7 +459,7 @@ void mb8764_device::execute_one(u32 op)
 			case 3: m_b = s16(op); break;
 			case 5: m_exa = op & 0x3ff; break;
 			default:
-				LOGUNKNOWN("%03x: %06x\n", (m_pc - 1) & 0x3ff, op);
+				logerror("%03x: unknown instruction %06x\n", (m_pc - 1) & 0x3ff, op);
 				break;
 			}
 		}
@@ -493,14 +482,14 @@ void mb8764_device::execute_one(u32 op)
 				m_pc = op & 0x3ff;
 				break;
 			default:
-				LOGUNKNOWN("%03x: %06x\n", (m_pc - 1) & 0x3ff, op);
+				logerror("%03x: unknown instruction %06x\n", (m_pc - 1) & 0x3ff, op);
 				break;
 			}
 		}
 		break;
 
 	default:
-		LOGUNKNOWN("%03x: %06x\n", (m_pc - 1) & 0x3ff, op);
+		logerror("%03x: unknown instruction %06x\n", (m_pc - 1) & 0x3ff, op);
 		break;
 	}
 
@@ -508,7 +497,27 @@ void mb8764_device::execute_one(u32 op)
 	m_tr[0] = s32(m_a) * m_b;
 }
 
-void mb8764_device::execute_run()
+u64 mb8764_base_device::execute_clocks_to_cycles(u64 clocks) const noexcept
+{
+	return (clocks + 2 - 1) / 2;
+}
+
+u64 mb8764_base_device::execute_cycles_to_clocks(u64 cycles) const noexcept
+{
+	return cycles * 2;
+}
+
+u32 mb8764_base_device::execute_min_cycles() const noexcept
+{
+	return 1;
+}
+
+u32 mb8764_base_device::execute_max_cycles() const noexcept
+{
+	return 1;
+}
+
+void mb8764_base_device::execute_run()
 {
 	while (m_icount > 0)
 	{
@@ -522,9 +531,7 @@ void mb8764_device::execute_run()
 
 
 tvf16_device::tvf16_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
-	: mb8764_device(mconfig, TVF16, tag, owner, clock, address_map_constructor(FUNC(tvf16_device::program_map), this))
-	, m_load_address(0)
-	, m_load_high(0)
+	: mb8764_base_device(mconfig, TVF16, tag, owner, clock, address_map_constructor(FUNC(tvf16_device::program_map), this))
 {
 }
 
@@ -535,7 +542,10 @@ void tvf16_device::program_map(address_map &map)
 
 void tvf16_device::device_start()
 {
-	mb8764_device::device_start();
+	mb8764_base_device::device_start();
+
+	m_load_address = 0;
+	m_load_high = 0;
 
 	save_item(NAME(m_load_address));
 	save_item(NAME(m_load_high));
@@ -544,7 +554,9 @@ void tvf16_device::device_start()
 void tvf16_device::program_w(u16 data)
 {
 	if (BIT(data, 15))
+	{
 		m_program.write_dword(m_load_address, (u32(m_load_high) << 15) | BIT(data, 0, 15));
+	}
 	else
 	{
 		m_load_address = (BIT(data, 9, 6) - 1) & 0x3f;
