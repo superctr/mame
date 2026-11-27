@@ -63,7 +63,11 @@
     left-justified in 16 bits (low nibble reads 0, as the c809/c80b sample
     port); the W-30 packs 3 bytes into 2 words relying on this. The word is
     selected by c011 (block = bank << 6 | address >> 12, 4K words) and an
-    access, read or write, to e001 + 2n (word n).
+    access, read or write, to e001 + 2n (word n). That access also sets the
+    c809/c80b sample port to word n + 1, from where it counts on within the
+    4K-word block, wrapping; c011 leaves it. The firmware loads a disk's
+    blocks after selecting word fff, one c011 write and 4096 words a block,
+    and zeroes a take's last eight words after selecting ff7.
 
     The S-330 confirms the layout: a sample loaded at word 0x1e000 is
     programmed as anchor 0x225ef (mode bits 2-3 = 2), counter 0x45ef << 14,
@@ -194,7 +198,7 @@ void sa16_base_device::regs_map(address_map &map)
 			case 1: m_active_channels = (m_active_channels & 0x00ff) | (data << 8); break;
 			case 6: m_sampling = data; break;
 			case 7: m_port7 = data; break;
-			case 8: m_block = data; m_smpcounter = 0; break;
+			case 8: m_block = data; break;
 			}
 		})
 	);
@@ -472,7 +476,10 @@ u8 sa16_base_device::read(offs_t offset)
 	if (offset >= 0x1000)
 	{
 		if (!machine().side_effects_disabled())
+		{
 			m_blockoffset = (offset - 0x1000) << 1;
+			m_smpcounter = (offset - 0x1000 + 1) & 0xfff;
+		}
 		return 0;
 	}
 	else if (offset >= 0x800) // 800h+ Set register offset
@@ -585,7 +592,7 @@ u8 sa16_base_device::read(offs_t offset)
 	case 0x405: // Sample port high (16-bit value); advances to the next word
 		value = wram_r16(block_base() + (m_smpcounter << 1)) >> 4;
 		if (!machine().side_effects_disabled())
-			m_smpcounter++;
+			m_smpcounter = (m_smpcounter + 1) & 0xfff;
 		break;
 	default:
 		LOGMASKED(LOG_UNIMPL, "%s: read from address %04x unimplemented\n", machine().describe_context(), offset);
@@ -604,6 +611,7 @@ void sa16_base_device::write(offs_t offset, u8 data)
 	if (offset >= 0x1000) // 1000h+: Set offset within block
 	{
 		m_blockoffset = (offset - 0x1000) << 1;
+		m_smpcounter = (offset - 0x1000 + 1) & 0xfff;
 		return;
 	}
 	else if (offset >= 0x800) // 800h+ Set "800"-register number to be written using regs800[] port below
@@ -686,7 +694,6 @@ void sa16_base_device::write(offs_t offset, u8 data)
 	case 8:
 		LOGMASKED(LOG_REG, "%s: set block = %04x\n", machine().describe_context(), data);
 		m_block = data;
-		m_smpcounter = 0;
 		break;
 	case 0x404: // Sample port low (16-bit value)
 		m_port_smp16 = (0xff00 & m_port_smp16) | data;
@@ -695,7 +702,7 @@ void sa16_base_device::write(offs_t offset, u8 data)
 		m_port_smp16 = (0x00ff & m_port_smp16) | data<<8;
 		LOGMASKED(LOG_REG, "%s: sample port write[%08x] <= %04x\n", machine().describe_context(), block_base() + (m_smpcounter << 1), m_port_smp16 >> 4);
 		wram_w16(block_base() + (m_smpcounter << 1), m_port_smp16 >> 4);
-		m_smpcounter++;
+		m_smpcounter = (m_smpcounter + 1) & 0xfff;
 		break;
 	default:
 		LOGMASKED(LOG_UNIMPL, "%s: write to address %04x unimplemented (data=%02x)\n", machine().describe_context(), offset, data);

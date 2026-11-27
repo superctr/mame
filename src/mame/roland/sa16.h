@@ -115,7 +115,7 @@ private:
 	u16 m_reg800_woffset;  // voice register selected for writes (d000+ writes)
 	u16 m_reg800_roffset;  // voice register selected for reads (d000+ reads)
 	u16 m_blockoffset;     // byte offset within the wave RAM block (e000+ access)
-	u32 m_smpcounter;      // sample port word counter
+	u16 m_smpcounter;      // sample port word within the block
 	u16 m_port_smp16;      // sample port value (16-bit)
 	u8 m_block;            // wave RAM block (c011)
 	u16 m_regs[NUM_VOICES * ROWS_PER_BLOCK]; // voice registers, 16 blocks of 9 rows
