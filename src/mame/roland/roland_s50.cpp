@@ -247,6 +247,8 @@ protected:
 	u8 psram_bank_r();
 	void psram_bank_w(u8 data);
 	void floppy_select_w(u8 data);
+	u16 key_wave_r(offs_t offset, u16 mem_mask);
+	void key_wave_w(offs_t offset, u16 data, u16 mem_mask);
 
 	// M60013 keyswitch/LED controller, shared with the S-330
 	u8 keysw_r();
@@ -628,6 +630,21 @@ void roland_s50_base_state::key_w(offs_t offset, u16 data, u16 mem_mask)
 	m_keyscan->write(offset, cell);
 }
 
+// The key scanner shares F800-FFFF with the SA-16's word selects
+u16 roland_w30_state::key_wave_r(offs_t offset, u16 mem_mask)
+{
+	if (ACCESSING_BITS_8_15)
+		m_wave->read(0x1c00 + offset);
+	return key_r(offset);
+}
+
+void roland_w30_state::key_wave_w(offs_t offset, u16 data, u16 mem_mask)
+{
+	if (ACCESSING_BITS_8_15)
+		m_wave->write(0x1c00 + offset, data >> 8);
+	key_w(offset, data, mem_mask);
+}
+
 // Keyswitch read register (M60013)
 //
 // Repeated reads from this register will read from consecutive keyswitch rows
@@ -852,7 +869,7 @@ void roland_w30_state::w30_mem_map(address_map &map)
 	//map(0xe800, 0xe83f).w("output", FUNC(upd65006gf_376_3b8_device::write)).umask16(0x00ff);
 	map(0xf000, 0xf01f).m(m_tvf, FUNC(mb654419u_device::map)).umask16(0x00ff);
 	map(0xc000, 0xf7ff).rw(m_wave, FUNC(sa16_device::read), FUNC(sa16_device::write)).umask16(0xff00);
-	map(0xf800, 0xffff).rw(FUNC(roland_w30_state::key_r), FUNC(roland_w30_state::key_w));
+	map(0xf800, 0xffff).rw(FUNC(roland_w30_state::key_wave_r), FUNC(roland_w30_state::key_wave_w));
 }
 
 void roland_s330_state::s330_mem_map(address_map &map)
