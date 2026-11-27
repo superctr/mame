@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:AJR, Carl Lom, giulioz
+// copyright-holders:AJR, Carl Lom, superctr, giulioz
 /****************************************************************************
 
     Driver for the Roland S-50 family of 12-bit samplers: S-50, S-550,
@@ -64,12 +64,8 @@ public:
 		, m_vdp(*this, "vdp")
 		, m_wave(*this, "wave")
 		, m_keyscan(*this, "keyscan")
-		, m_tvf(*this, "tvf")
-		, m_tvf16(*this, "tvf16")
 		, m_analog(*this, "ACH%u", 0U)
-		, m_ext_port(*this, "extport")
 		, m_floppy_select(0)
-		, m_ext_dir(0)
 	{
 	}
 
@@ -87,24 +83,22 @@ protected:
 
 	// MB654419U and TVF16: the 16 voices in, eight outputs; the caller
 	// routes the outputs onwards
-	void add_tvf(machine_config &config) ATTR_COLD;
+	void add_tvf(machine_config &config, required_device<mb654419u_device> &tvf, required_device<tvf16_device> &dsp) ATTR_COLD;
 	void add_midi(machine_config &config) ATTR_COLD;
 
 	// Analog inputs on the CPU A/D channels
 	template <int N> u16 analog_r() { return m_analog[N].read_safe(0); }
 	// Volume and expression are percentage adjusters, scaled to the 10-bit A/D range
 	template <int N> u16 adjuster_r() { return m_analog[N].read_safe(0) * 0x3ff / 100; }
-	// A/D converter input from the TVF output, used by the firmware's
-	// output path check
-	u16 analog_dac_value();
+	// A/D reading of a DAC word, used by the firmware's output path check
+	static u16 dac_ach_level(u16 word);
 
 	// EXT CTRL port: pins 1-4 and 6-7 read on bits 0-5; pins 6 and 7 are
 	// driven from bits 4 and 5 when the direction register makes them
 	// outputs, pin 8 from bit 6
-	void add_ext_port(machine_config &config) ATTR_COLD;
-	u8 ext_r();
-	void ext_w(u8 data);
-	void ext_dir_w(u8 data);
+	void add_ext_port(machine_config &config, required_device<msx_general_purpose_port_device> &port) ATTR_COLD;
+	static void ext_port_w(msx_general_purpose_port_device &port, u8 dir, u8 data);
+	static void ext_port_dir_w(msx_general_purpose_port_device &port, u8 dir);
 
 protected:
 	required_device<i8x9x_device> m_maincpu;
@@ -114,13 +108,9 @@ protected:
 	optional_device<tms3556_device> m_vdp;
 	required_device<sa16_base_device> m_wave;
 	optional_device<mb63h149_device> m_keyscan;
-	optional_device<mb654419u_device> m_tvf;
-	optional_device<tvf16_device> m_tvf16;
 	optional_ioport_array<8> m_analog;
-	optional_device<msx_general_purpose_port_device> m_ext_port;
 
 	u8 m_floppy_select;
-	u8 m_ext_dir;
 };
 
 class roland_s50_state : public roland_s50_base_state
@@ -168,10 +158,11 @@ public:
 		, m_lowram_bank(*this, "lowram")
 		, m_lowmem_view(*this, "lowmem")
 		, m_lowram(*this, "lowram", 0x10000U, ENDIANNESS_LITTLE)
+		, m_tvf(*this, "tvf")
+		, m_tvf16(*this, "tvf16")
+		, m_ext_port(*this, "extport")
 		, m_keysw(*this, "KEYSW%u", 0U)
 		, m_ctrltype(*this, "CTRLTYPE")
-		, m_keyrow(0)
-		, m_boot_inject_done(false)
 	{
 	}
 
@@ -190,17 +181,25 @@ private:
 	u8 leds_r(offs_t offset);
 	void leds_w(offs_t offset, u8 data);
 
+	u16 analog_dac_value();
+	void ext_w(u8 data);
+	void ext_dir_w(u8 data);
+
 	void mem_map(address_map &map) ATTR_COLD;
 
 	required_memory_bank m_lowram_bank;
 	memory_view m_lowmem_view;
 	memory_share_creator<u16> m_lowram;
+	required_device<mb654419u_device> m_tvf;
+	required_device<tvf16_device> m_tvf16;
+	required_device<msx_general_purpose_port_device> m_ext_port;
 	required_ioport_array<4> m_keysw;
 	required_ioport m_ctrltype;
 
 	u8 m_keyrow;
 	u8 m_led_latch[4];
 	bool m_boot_inject_done;
+	u8 m_ext_dir;
 };
 
 class roland_w30_state : public roland_s50_base_state
@@ -212,6 +211,8 @@ public:
 		, m_psram1_bank(*this, "psram1")
 		, m_psram2_bank(*this, "psram2")
 		, m_psram(*this, "psram", 0x20000U, ENDIANNESS_LITTLE)
+		, m_tvf(*this, "tvf")
+		, m_tvf16(*this, "tvf16")
 		, m_keysw(*this, "KEYSW%u", 0U)
 		, m_leds(*this, "LED%u", 0U)
 		, m_cursor_dial(*this, "CURSOR")
@@ -258,10 +259,14 @@ protected:
 	void hso2_w(int state);
 	void encoder_sample(encoder_state &enc, optional_ioport &dial);
 
+	u16 analog_dac_value();
+
 	memory_view m_bank1_view;
 	required_memory_bank m_psram1_bank;
 	required_memory_bank m_psram2_bank;
 	memory_share_creator<u16> m_psram;
+	required_device<mb654419u_device> m_tvf;
+	required_device<tvf16_device> m_tvf16;
 	required_ioport_array<4> m_keysw;
 	output_finder<16> m_leds;
 	optional_ioport m_cursor_dial;
@@ -281,6 +286,7 @@ public:
 		: roland_w30_state(mconfig, type, tag)
 		, m_lcdc(*this, "lcdc")
 		, m_ctrltype(*this, "CTRLTYPE")
+		, m_ext_port(*this, "extport")
 		, m_boot_inject_done(false)
 	{
 	}
@@ -298,15 +304,19 @@ protected:
 	void init_lcd_palette(palette_device &palette) const ATTR_COLD;
 	void init_vdp_palette(palette_device &palette) const ATTR_COLD;
 
+	void ext_w(u8 data);
+	void ext_dir_w(u8 data);
+
 	required_device<hd44780_device> m_lcdc;
 	required_ioport m_ctrltype;
+	required_device<msx_general_purpose_port_device> m_ext_port;
 	bool m_boot_inject_done; // true after first boot-scan row 1 has been served
+	u8 m_ext_dir;
 };
 
 void roland_s50_base_state::machine_start()
 {
 	save_item(NAME(m_floppy_select));
-	save_item(NAME(m_ext_dir));
 }
 
 void roland_s50_state::machine_start()
@@ -329,10 +339,12 @@ void roland_s550_state::machine_start()
 	m_lowram_bank->set_entry(0);
 
 	std::fill(std::begin(m_led_latch), std::end(m_led_latch), 0);
+	m_ext_dir = 0;
 
 	save_item(NAME(m_keyrow));
 	save_item(NAME(m_led_latch));
 	save_item(NAME(m_boot_inject_done));
+	save_item(NAME(m_ext_dir));
 }
 
 void roland_s550_state::machine_reset()
@@ -395,7 +407,10 @@ void roland_s330_state::machine_start()
 {
 	roland_w30_state::machine_start();
 
+	m_ext_dir = 0;
+
 	save_item(NAME(m_boot_inject_done));
+	save_item(NAME(m_ext_dir));
 }
 
 void roland_s330_state::machine_reset()
@@ -558,27 +573,43 @@ u8 roland_s50_base_state::panel_link_r()
 	return 1;
 }
 
-u8 roland_s50_base_state::ext_r()
+void roland_s50_base_state::ext_port_w(msx_general_purpose_port_device &port, u8 dir, u8 data)
 {
-	return m_ext_port->read();
+	if (BIT(dir, 0))
+		port.pin_6_w(BIT(data, 4));
+	if (BIT(dir, 1))
+		port.pin_7_w(BIT(data, 5));
+	port.pin_8_w(BIT(data, 6));
 }
 
-void roland_s50_base_state::ext_w(u8 data)
+void roland_s50_base_state::ext_port_dir_w(msx_general_purpose_port_device &port, u8 dir)
 {
-	if (BIT(m_ext_dir, 0))
-		m_ext_port->pin_6_w(BIT(data, 4));
-	if (BIT(m_ext_dir, 1))
-		m_ext_port->pin_7_w(BIT(data, 5));
-	m_ext_port->pin_8_w(BIT(data, 6));
+	if (!BIT(dir, 0))
+		port.pin_6_w(1);
+	if (!BIT(dir, 1))
+		port.pin_7_w(1);
 }
 
-void roland_s50_base_state::ext_dir_w(u8 data)
+void roland_s550_state::ext_w(u8 data)
+{
+	ext_port_w(*m_ext_port, m_ext_dir, data);
+}
+
+void roland_s550_state::ext_dir_w(u8 data)
 {
 	m_ext_dir = data;
-	if (!BIT(data, 0))
-		m_ext_port->pin_6_w(1);
-	if (!BIT(data, 1))
-		m_ext_port->pin_7_w(1);
+	ext_port_dir_w(*m_ext_port, data);
+}
+
+void roland_s330_state::ext_w(u8 data)
+{
+	ext_port_w(*m_ext_port, m_ext_dir, data);
+}
+
+void roland_s330_state::ext_dir_w(u8 data)
+{
+	m_ext_dir = data;
+	ext_port_dir_w(*m_ext_port, data);
 }
 
 u16 roland_s50_base_state::key_r(offs_t offset)
@@ -683,9 +714,19 @@ void roland_w30_state::leds_w(offs_t offset, u8 data)
 // >= 0x204. If the check keeps failing, the firmware gives up and reboots (an
 // endless splash screen loop).
 // The DAC's span isn't known; it is modeled as +/-10 V.
-u16 roland_s50_base_state::analog_dac_value()
+u16 roland_s50_base_state::dac_ach_level(u16 word)
 {
-	return std::clamp<s32>(s16(m_tvf->dac_r()) / 16, 0, 0x3ff);
+	return std::clamp<s32>(s16(word) / 16, 0, 0x3ff);
+}
+
+u16 roland_s550_state::analog_dac_value()
+{
+	return dac_ach_level(m_tvf->dac_r());
+}
+
+u16 roland_w30_state::analog_dac_value()
+{
+	return dac_ach_level(m_tvf->dac_r());
 }
 
 // S-330 boot controller selection override.
@@ -776,7 +817,7 @@ void roland_s550_state::mem_map(address_map &map)
 	map(0xc000, 0xffff).view(m_io_view);
 	m_io_view[0](0xc200, 0xc200).rw(FUNC(roland_s550_state::floppy_status_r), FUNC(roland_s550_state::floppy_select_w));
 	m_io_view[0](0xc300, 0xc300).r(FUNC(roland_s550_state::panel_link_r));
-	m_io_view[0](0xc500, 0xc500).rw(FUNC(roland_s550_state::ext_r), FUNC(roland_s550_state::ext_w));
+	m_io_view[0](0xc500, 0xc500).r(m_ext_port, FUNC(msx_general_purpose_port_device::read)).w(FUNC(roland_s550_state::ext_w));
 	m_io_view[0](0xc600, 0xc600).w(FUNC(roland_s550_state::ext_dir_w));
 	m_io_view[0](0xc800, 0xc807).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
 	m_io_view[0](0xd000, 0xd000).r(m_vdp, FUNC(tms3556_device::vram_r));
@@ -826,7 +867,7 @@ void roland_s330_state::s330_mem_map(address_map &map)
 
 	map(0xc200, 0xc200).rw(FUNC(roland_s330_state::floppy_status_r), FUNC(roland_s330_state::floppy_select_w));
 	map(0xc300, 0xc302).rw(m_lcdc, FUNC(hd44780_device::read), FUNC(hd44780_device::write)).umask16(0x00ff);
-	map(0xc400, 0xc400).rw(FUNC(roland_s330_state::ext_r), FUNC(roland_s330_state::ext_w));
+	map(0xc400, 0xc400).r(m_ext_port, FUNC(msx_general_purpose_port_device::read)).w(FUNC(roland_s330_state::ext_w));
 	map(0xc500, 0xc500).w(FUNC(roland_s330_state::ext_dir_w));
 	map(0xc600, 0xc600).rw(FUNC(roland_s330_state::psram_bank_r), FUNC(roland_s330_state::psram_bank_w));
 	map(0xc800, 0xc806).rw(m_fdc, FUNC(wd1772_device::read), FUNC(wd1772_device::write)).umask16(0x00ff);
@@ -1079,15 +1120,15 @@ static void scsi_devices(device_slot_interface &device)
 	device.option_add("harddisk", NSCSI_HARDDISK);
 }
 
-void roland_s50_base_state::add_tvf(machine_config &config)
+void roland_s50_base_state::add_tvf(machine_config &config, required_device<mb654419u_device> &tvf, required_device<tvf16_device> &dsp)
 {
-	TVF16(config, m_tvf16, 20_MHz_XTAL);
-	m_tvf16->out_cb().set(m_tvf, FUNC(mb654419u_device::dsp_w));
+	TVF16(config, dsp, 20_MHz_XTAL);
+	dsp->out_cb().set(tvf, FUNC(mb654419u_device::dsp_w));
 
-	MB654419U(config, m_tvf, 26.88_MHz_XTAL / 4); // ECLK
-	m_tvf->set_dsp(m_tvf16);
+	MB654419U(config, tvf, 26.88_MHz_XTAL / 4); // ECLK
+	tvf->set_dsp(dsp);
 	for (int v = 0; v < mb654419u_device::NUM_VOICES; v++)
-		m_wave->add_route(v, m_tvf, 1.0, v);
+		m_wave->add_route(v, tvf, 1.0, v);
 }
 
 static void ext_ctrl_devices(device_slot_interface &device)
@@ -1096,9 +1137,9 @@ static void ext_ctrl_devices(device_slot_interface &device)
 	device.option_add("rc100", ROLAND_RC100);
 }
 
-void roland_s50_base_state::add_ext_port(machine_config &config)
+void roland_s50_base_state::add_ext_port(machine_config &config, required_device<msx_general_purpose_port_device> &port)
 {
-	MSX_GENERAL_PURPOSE_PORT(config, m_ext_port, ext_ctrl_devices, "mouse");
+	MSX_GENERAL_PURPOSE_PORT(config, port, ext_ctrl_devices, "mouse");
 }
 
 void roland_s50_base_state::add_midi(machine_config &config)
@@ -1153,8 +1194,7 @@ void roland_s50_state::s50(machine_config &config)
 
 	RF5C36(config, m_wave, 26.88_MHz_XTAL);
 	m_wave->int_callback().set_inputline(m_maincpu, i8x9x_device::HSI0_LINE);
-	for (int v = 0; v < mb654419u_device::NUM_VOICES; v++)
-		m_wave->add_route(v, "speaker", 1.0);
+	m_wave->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
 	MICROPHONE(config, "mic").add_route(0, m_wave, 1.0, 0);
@@ -1196,12 +1236,12 @@ void roland_s550_state::s550(machine_config &config)
 	BU3905(config, "outas");
 
 	m_wave->reset_routes();
-	add_tvf(config);
+	add_tvf(config, m_tvf, m_tvf16);
 	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
-	add_ext_port(config);
+	add_ext_port(config, m_ext_port);
 }
 
 void roland_w30_state::w30(machine_config &config)
@@ -1249,7 +1289,7 @@ void roland_w30_state::w30(machine_config &config)
 
 	//UPD65006GF_376_3B8(config, "output", 26.88_MHz_XTAL);
 
-	add_tvf(config);
+	add_tvf(config, m_tvf, m_tvf16);
 	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
@@ -1308,7 +1348,7 @@ void roland_s330_state::s330(machine_config &config)
 	m_wave->int_callback().set_inputline(m_maincpu, i8x9x_device::HSI0_LINE);
 	m_wave->sh_callback().set("outas", FUNC(bu3905_device::axi_w));
 
-	add_tvf(config);
+	add_tvf(config, m_tvf, m_tvf16);
 	m_tvf->add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	SPEAKER(config, "speaker").front_center();
@@ -1316,7 +1356,7 @@ void roland_s330_state::s330(machine_config &config)
 
 	BU3905(config, "outas");
 
-	add_ext_port(config);
+	add_ext_port(config, m_ext_port);
 
 	add_midi(config);
 
@@ -1369,7 +1409,7 @@ ROM_END
 } // anonymous namespace
 
 
-SYST(1987, s50,  0,   0, s50,  s50,  roland_s50_state,  empty_init, "Roland", "S-50 Digital Sampling Keyboard", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING)
+SYST(1987, s50,  0,   0, s50,  s50,  roland_s50_state,  empty_init, "Roland", "S-50 Digital Sampling Keyboard", MACHINE_NOT_WORKING)
 SYST(1987, s550, s50, 0, s550, s550, roland_s550_state, empty_init, "Roland", "S-550 Digital Sampler", MACHINE_IMPERFECT_SOUND)
 SYST(1988, w30,  0,   0, w30,  w30,  roland_w30_state,  empty_init, "Roland", "W-30 Music Workstation", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_CONTROLS | MACHINE_SUPPORTS_SAVE)
 SYST(1988, s330, w30, 0, s330, s330, roland_s330_state, empty_init, "Roland", "S-330 Digital Sampler", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE)
